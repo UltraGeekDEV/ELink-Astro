@@ -1,3 +1,4 @@
+using ELink.Core;
 using ELink.Contracts.Indi;
 using ELink.Indi.Client;
 using Event.CoreFunctionality;

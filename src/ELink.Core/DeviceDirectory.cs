@@ -4,7 +4,7 @@ using ELink.Contracts.Indi;
 using Event.CoreFunctionality;
 using Event.Connections.Models.BaseBinaryConvertibles;
 
-namespace ELink.IndiBridge;
+namespace ELink.Core;
 
 /// <summary>The devices one node offers, announced on the mesh and listable by anyone: a consumer calls
 /// <see cref="EquipmentIds.List"/> and, because a call reaches every provider, gets every bridge's devices.</summary>

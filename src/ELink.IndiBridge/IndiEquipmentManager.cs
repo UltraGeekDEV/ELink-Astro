@@ -1,3 +1,4 @@
+using ELink.Core;
 using ELink.Contracts.Equipment;
 using ELink.Indi.Client;
 using ELink.Indi.Protocol;

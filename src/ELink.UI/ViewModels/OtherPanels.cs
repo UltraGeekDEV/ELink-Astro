@@ -16,13 +16,53 @@ public partial class FocuserPanelViewModel(MeshSession mesh, string id, string d
     [ObservableProperty] private string _temperatureText = "--";
     [ObservableProperty] private int _targetPosition = 50000;
     [ObservableProperty] private int _stepSize = 100;
+    // what this focuser can do (from the INDI properties its driver defines)
+    [ObservableProperty] private bool _canMoveAbsolute;
+    [ObservableProperty] private bool _canMoveSteps;
+    [ObservableProperty] private bool _canMoveTimed;
+    [ObservableProperty] private bool _canAbort;
+    [ObservableProperty] private bool _canSync;
+    [ObservableProperty] private bool _canReverse;
+    [ObservableProperty] private bool _reversed;
+    [ObservableProperty] private bool _hasBacklash;
+    [ObservableProperty] private bool _backlashEnabled;
+    [ObservableProperty] private int _backlashSteps;
+    [ObservableProperty] private bool _hasSpeed;
+    [ObservableProperty] private double _speed;
+    [ObservableProperty] private string _capabilities = "";
+    // inputs
+    [ObservableProperty] private int _syncPosition;
+    [ObservableProperty] private int _timedMilliseconds = 500;
+    [ObservableProperty] private int _newMaxPosition;
+    [ObservableProperty] private bool _backlashInput;
+    [ObservableProperty] private int _backlashStepsInput;
+    [ObservableProperty] private double _speedInput = 1;
+
+    public string ReverseButtonText => Reversed ? "Normal direction" : "Reverse direction";
+    partial void OnReversedChanged(bool value) => OnPropertyChanged(nameof(ReverseButtonText));
 
     public override async Task StartAsync()
     {
+        bool first = true;
         var f = Follow<FocuserState>(s =>
         {
             Connected = s.Connected.Value; Position = s.Position.Value; MaxPosition = s.MaxPosition.Value; Moving = s.Moving.Value;
             TemperatureText = double.IsNaN(s.Temperature.Value) ? "--" : $"{s.Temperature.Value:0.0} °C";
+            CanMoveAbsolute = s.CanMoveAbsolute.Value; CanMoveSteps = s.CanMoveRelative.Value || s.CanMoveAbsolute.Value;
+            CanMoveTimed = s.CanMoveTimed.Value; CanAbort = s.CanAbort.Value; CanSync = s.CanSync.Value;
+            CanReverse = s.CanReverse.Value; Reversed = s.Reversed.Value;
+            HasBacklash = s.HasBacklash.Value; BacklashEnabled = s.BacklashEnabled.Value; BacklashSteps = s.BacklashSteps.Value;
+            HasSpeed = !double.IsNaN(s.Speed.Value); Speed = HasSpeed ? s.Speed.Value : 0;
+            var caps = new List<string>();
+            if (s.CanMoveAbsolute.Value) caps.Add("absolute");
+            if (s.CanMoveRelative.Value) caps.Add("relative");
+            if (s.CanMoveTimed.Value) caps.Add("timed");
+            if (s.CanSync.Value) caps.Add("sync");
+            if (s.CanReverse.Value) caps.Add("reverse");
+            if (s.HasBacklash.Value) caps.Add("backlash");
+            if (HasSpeed) caps.Add("speed");
+            Capabilities = Connected ? string.Join(" · ", caps) : "";
+            if (first && Connected) { first = false; NewMaxPosition = MaxPosition; BacklashInput = BacklashEnabled; BacklashStepsInput = BacklashSteps; SyncPosition = Position; SpeedInput = Speed; }
             if (s.Message.Text != "") Message = s.Message.Text;
         });
         await f.StartAsync();
@@ -32,7 +72,14 @@ public partial class FocuserPanelViewModel(MeshSession mesh, string id, string d
     [RelayCommand] private Task MoveToAsync() => Call("MoveTo", (BinaryConvertibleInt32)TargetPosition);
     [RelayCommand] private Task InAsync() => Call("MoveBy", (BinaryConvertibleInt32)(-StepSize));
     [RelayCommand] private Task OutAsync() => Call("MoveBy", (BinaryConvertibleInt32)StepSize);
+    [RelayCommand] private Task TimedInAsync() => Call("MoveTimed", new FocusTimedMove { Outward = false, Milliseconds = TimedMilliseconds });
+    [RelayCommand] private Task TimedOutAsync() => Call("MoveTimed", new FocusTimedMove { Outward = true, Milliseconds = TimedMilliseconds });
     [RelayCommand] private Task AbortAsync() => Call("Abort");
+    [RelayCommand] private Task SyncAsync() => Call("Sync", (BinaryConvertibleInt32)SyncPosition);
+    [RelayCommand] private Task ReverseAsync() => Call("SetReverse", (BinaryConvertibleBool)!Reversed);
+    [RelayCommand] private Task BacklashAsync() => Call("SetBacklash", new FocusBacklash { Enabled = BacklashInput, Steps = BacklashStepsInput });
+    [RelayCommand] private Task MaxAsync() => Call("SetMaxPosition", (BinaryConvertibleInt32)NewMaxPosition);
+    [RelayCommand] private Task SpeedAsync() => Call("SetSpeed", (BinaryConvertibleDouble)SpeedInput);
 }
 
 public partial class FilterWheelPanelViewModel(MeshSession mesh, string id, string displayName)
