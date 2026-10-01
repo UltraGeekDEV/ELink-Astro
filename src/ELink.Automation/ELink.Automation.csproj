@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\ELink.Contracts\ELink.Contracts.csproj" />
+    <ProjectReference Include="..\ELink.Core\ELink.Core.csproj" />
+    <ProjectReference Include="..\ELink.Imaging\ELink.Imaging.csproj" />
+  </ItemGroup>
+</Project>
