@@ -40,11 +40,11 @@ ID scheme: `ELink.<Kind>.<DeviceName>.<Thing>` e.g. `ELink.Camera.CCD_Simulator.
 - [ ] CI-free build/test scripts (`build.sh`, `test.sh`); indiserver sim launcher script
 
 ### Phase 1 — INDI <-> EVent translation layer (FIRST TARGET)
-- [ ] Read INDI dev guide / protocol spec (XML wire protocol, property vectors, BLOBs, standard properties)
-- [ ] INDI XML protocol client in C#: streaming parser/writer
+- [x] Read INDI dev guide / protocol spec
+- [x] INDI XML protocol client in C# (framer + codec + live model, tested vs real indiserver)
       (defXXXVector, setXXXVector, newXXXVector, delProperty, getProperties, message, enableBLOB)
-- [ ] INDI property model: device -> property -> element, with state (Idle/Ok/Busy/Alert), perms, rules, timeouts
-- [ ] BLOB handling (base64, `.fits`, `.z` compression), enableBLOB per device, size-safe streaming
+- [x] INDI property model (immutable snapshots)
+- [x] BLOB handling (base64, .z decompress, enableBLOB)
 - [ ] Generic layer: every INDI property mirrored into EVent via NON dynamic objects
       (`ELink.Indi.<server>.<device>.<property>` events + `.Set` functions) — works for any driver
 - [ ] Typed layer: standard-property mappers (CONNECTION, EQUATORIAL_EOD_COORD, ON_COORD_SET, TELESCOPE_*,
