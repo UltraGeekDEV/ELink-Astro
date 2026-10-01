@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>elink</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.22" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The all-in-one process: the only place where UI and backend meet, and they still talk through EVent. -->
+    <ProjectReference Include="..\ELink.UI\ELink.UI.csproj" />
+    <ProjectReference Include="..\ELink.IndiBridge\ELink.IndiBridge.csproj" />
+    <ProjectReference Include="..\ELink.Compose\ELink.Compose.csproj" />
+  </ItemGroup>
+</Project>
