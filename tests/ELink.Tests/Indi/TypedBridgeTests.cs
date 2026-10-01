@@ -66,6 +66,9 @@ public class TypedBridgeTests(IndiServerFixture server) : IAsyncLifetime
     {
         T? last = default;
         await _consumer.HookEventAsync(EquipmentIds.State(kind, id), (T s) => last = s);
+        // state events fire on change only: seed with the current state like any late joiner
+        var now = await _consumer.CallFunctionAsync<NOTESVoid, T>(EquipmentIds.GetState(kind, id), NOTESVoid.Void);
+        last ??= now!.Single();
         return () => last;
     }
 

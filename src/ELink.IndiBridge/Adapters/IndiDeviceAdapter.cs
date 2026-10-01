@@ -3,6 +3,7 @@ using ELink.Indi.Client;
 using ELink.Indi.Protocol;
 using Event.CoreFunctionality;
 using EVent.Connections.Models.BaseBinaryConvertibles;
+using Event.Connections.Models.BaseBinaryConvertibles;
 
 namespace ELink.IndiBridge.Adapters;
 
@@ -47,6 +48,7 @@ public abstract class IndiDeviceAdapter<TState> : IEquipmentAdapter where TState
     public async Task StartAsync()
     {
         await RegisterCommandAsync<BinaryConvertibleBool, CommandResult>("Connect", ConnectAsync, "connect or disconnect the device");
+        await RegisterCommandAsync<NOTESVoid, TState>("GetState", _ => Task.FromResult(BuildState()), "the current state, for consumers that join after the last state event");
         await RegisterCommandsAsync();
         _handler = OnChange;
         Client.Changed += _handler;

@@ -94,6 +94,8 @@ public static class EquipmentIds
 
     public static string Root(string kind, string id) => $"ELink.{kind}.{id}";
     public static string State(string kind, string id) => Root(kind, id) + ".State";
+    /// <summary>Every device also has <c>GetState</c> (Void in, its state type out): state events fire only on change, so a late joiner calls this once.</summary>
+    public static string GetState(string kind, string id) => Command(kind, id, "GetState");
     public static string Command(string kind, string id, string command) => Root(kind, id) + "." + command;
 
     /// <summary>EVent IDs allow letters, digits, '_' and '-' here; everything else becomes '_'.</summary>
