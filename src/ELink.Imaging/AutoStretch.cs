@@ -47,7 +47,7 @@ public static class AutoStretch
         return (m - 1) * x / ((2 * m - 1) * x - m);
     }
 
-    /// <summary>Renders to premultiplied BGRA8888, top row first (FITS rows run bottom-up), channels stretched
+    /// <summary>Renders to premultiplied BGRA8888, top row first (FITS rows run bottom-up unless ROWORDER says TOP-DOWN), channels stretched
     /// independently when the image has three, linked on the luminance statistics otherwise.</summary>
     public static byte[] ToBgra(FitsImage img)
     {
@@ -55,7 +55,7 @@ public static class AutoStretch
         var p = new Params[Math.Min(img.Channels, 3)];
         for (int c = 0; c < p.Length; c++) p[c] = Compute(img.Data.AsSpan(c * plane, plane), img.Range);
         var lut = new byte[p.Length][];
-        const int steps = 4096;
+        const int steps = 65535;   // one entry per 16-bit level: dim frames live in the lowest few dozen levels
         for (int c = 0; c < p.Length; c++)
         {
             lut[c] = new byte[steps + 1];
@@ -68,7 +68,7 @@ public static class AutoStretch
         var bgra = new byte[plane * 4];
         for (int y = 0; y < h; y++)
         {
-            int srcRow = (h - 1 - y) * w, dstRow = y * w * 4;
+            int srcRow = (img.TopDown ? y : h - 1 - y) * w, dstRow = y * w * 4;
             for (int x = 0; x < w; x++)
             {
                 byte r, g, b;
@@ -87,6 +87,6 @@ public static class AutoStretch
     private static byte Sample(FitsImage img, byte[] lut, int channel, int index)
     {
         double v = img.Data[channel * img.Width * img.Height + index] / img.Range;
-        return lut[(int)Math.Clamp(v * 4096, 0, 4096)];
+        return lut[(int)Math.Clamp(v * 65535, 0, 65535)];
     }
 }

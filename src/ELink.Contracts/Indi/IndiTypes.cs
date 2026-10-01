@@ -250,6 +250,19 @@ public class IndiLinkState : IBinaryConvertible
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();
 }
 
+/// <summary>The INDI servers one bridge node serves.</summary>
+public class IndiServerList : IBinaryConvertible
+{
+    public BinaryConvertibleCollection<BinaryConvertibleString> Names { get; set; } = new();
+
+    public override string Name => "IndiServerList";
+    private static readonly NOTESDescriptor d = new();
+    public override NOTESDescriptor Descriptor => d;
+    static IndiServerList() { d.RegisterField("Names", (IndiServerList x) => x.Names).Description("server names, as used in Indi.<name>.* IDs"); }
+    public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
+    public override byte[] ToBytes() => d.ToBytes(this).ToArray();
+}
+
 /// <summary>Event and function IDs of the generic INDI mirror, per bridge (server) name.</summary>
 public static class IndiIds
 {
@@ -259,6 +272,9 @@ public static class IndiIds
         var chars = text.Select(c => char.IsLetterOrDigit(c) || c is '_' or '-' ? c : '_').ToArray();
         return new string(chars);
     }
+
+    /// <summary>Function: Void in, one <see cref="IndiServerList"/> per bridge out.</summary>
+    public const string Servers = "Indi.Servers";
 
     public static string Root(string server) => "Indi." + Segment(server);
     public static string Property(string server) => Root(server) + ".Property";     // event  IndiPropertyEvent

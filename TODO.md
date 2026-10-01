@@ -76,10 +76,10 @@ ID scheme: `ELink.<Kind>.<DeviceName>.<Thing>` e.g. `ELink.Camera.CCD_Simulator.
 - [ ] Frame storage (FITS writer with headers), session log
 
 ### Phase 5 — Avalonia UI
-- [ ] ViewModel base classes bound to EVent (state hook -> property, command -> function call), no backend refs
-- [ ] App shell, mesh connection/discovery panel, device browser (from directory + descriptions)
-- [ ] Generic property panel (works for any NON endpoint), then typed panels: mount, camera, focuser, ...
-- [ ] Smart scope composer (drag/compose), live image viewer (FITS stretch), sequence editor
+- [x] ViewModel base classes bound to EVent (state hook -> property, command -> function call), no backend refs
+- [x] App shell, mesh connection/discovery panel, device browser (from directory + descriptions)
+- [x] Generic property panel (works for any NON endpoint), then typed panels: mount, camera, focuser, ...
+- [x] Smart scope composer (form based; drag/compose canvas later) (drag/compose), live image viewer (FITS stretch), sequence editor
 
 ## Notes / decisions
 - EVent package in `~/ELink/package` has no nuget/ folder; real feed is `~/Desktop/EVent/EVent/dist/EVent/nuget`.

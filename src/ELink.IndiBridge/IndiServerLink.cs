@@ -21,6 +21,7 @@ public sealed class IndiServerLink : IAsyncDisposable
     {
         _node = node; _name = serverName; _host = host; _port = port;
         _generic = new IndiGenericPublisher(node, serverName);
+        directory.AddServer(serverName);
         _equipment = new IndiEquipmentManager(node, directory, serverName, idFor);
     }
 

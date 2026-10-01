@@ -5,5 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <!-- No resident compiler servers: each keeps ~400 MB alive after the build and they pile up. -->
+    <UseSharedCompilation>false</UseSharedCompilation>
   </PropertyGroup>
 </Project>

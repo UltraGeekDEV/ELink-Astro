@@ -1,0 +1,85 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:ELink.UI.ViewModels"
+        x:Class="ELink.UI.Views.MainWindow"
+        Title="ELink" Background="#12161D" Width="1280" Height="820" MinWidth="900" MinHeight="600">
+  <Grid RowDefinitions="Auto,*">
+    <Border Grid.Row="0" Background="#171B23" Padding="12,8" IsVisible="{Binding ShowConnectionBar}">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <StackPanel Classes="row" VerticalAlignment="Center">
+          <TextBlock Classes="title" Text="ELink" VerticalAlignment="Center"/>
+          <TextBlock Text="mesh" Classes="label" VerticalAlignment="Center" Margin="12,0,0,0"/>
+          <TextBox Text="{Binding Host}" Width="140" Watermark="host"/>
+          <NumericUpDown Value="{Binding Port}" Minimum="1" Maximum="65535" FormatString="0" Width="120" ShowButtonSpinner="False"/>
+          <Button Content="Connect" Classes="primary" Command="{Binding ConnectCommand}"/>
+        </StackPanel>
+        <TextBlock Grid.Column="2" Text="{Binding ConnectionStatus}" VerticalAlignment="Center" Opacity="0.7"/>
+      </Grid>
+    </Border>
+
+    <Grid Grid.Row="1" ColumnDefinitions="260,*">
+      <Border Grid.Column="0" Background="#1A1F28" Padding="12">
+        <ScrollViewer>
+          <StackPanel Spacing="4">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Classes="section" Text="EQUIPMENT"/>
+              <Button Grid.Column="1" Content="↻" Padding="6,0" Command="{Binding RefreshCommand}" ToolTip.Tip="Ask the mesh again"/>
+            </Grid>
+            <TextBlock Text="Nothing yet: connect to a mesh with a bridge." Classes="label" TextWrapping="Wrap"
+                       IsVisible="{Binding !Catalog.Devices.Count}"/>
+            <ItemsControl ItemsSource="{Binding Catalog.Devices}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Background="Transparent"
+                          Command="{Binding $parent[ItemsControl].DataContext.OpenDeviceCommand}"
+                          CommandParameter="{Binding}">
+                    <StackPanel>
+                      <TextBlock Text="{Binding Label}"/>
+                      <TextBlock Classes="label" Text="{Binding Kind}"/>
+                    </StackPanel>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <TextBlock Classes="section" Text="SMART SCOPES" Margin="0,16,0,8"/>
+            <TextBlock Text="None composed yet. Use the Compose tab." Classes="label" TextWrapping="Wrap"
+                       IsVisible="{Binding !Catalog.Scopes.Count}"/>
+            <ItemsControl ItemsSource="{Binding Catalog.Scopes}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Background="Transparent"
+                          Command="{Binding $parent[ItemsControl].DataContext.OpenScopeCommand}"
+                          CommandParameter="{Binding}">
+                    <StackPanel>
+                      <TextBlock Text="{Binding DisplayName}"/>
+                      <TextBlock Classes="label" Text="{Binding Detail}"/>
+                    </StackPanel>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </ScrollViewer>
+      </Border>
+
+      <TabControl Grid.Column="1" ItemsSource="{Binding Tabs}" SelectedItem="{Binding SelectedTab}" Padding="0">
+        <TabControl.ItemTemplate>
+          <DataTemplate>
+            <StackPanel Classes="row">
+              <TextBlock Text="{Binding Title}" VerticalAlignment="Center"/>
+              <Button Content="✕" Padding="4,0" FontSize="10" Background="Transparent" IsVisible="{Binding Closable}"
+                      Command="{Binding $parent[TabControl].DataContext.CloseTabCommand}"
+                      CommandParameter="{Binding}"/>
+            </StackPanel>
+          </DataTemplate>
+        </TabControl.ItemTemplate>
+        <TabControl.ContentTemplate>
+          <DataTemplate>
+            <ScrollViewer Padding="16"><ContentControl Content="{Binding Content}"/></ScrollViewer>
+          </DataTemplate>
+        </TabControl.ContentTemplate>
+      </TabControl>
+    </Grid>
+  </Grid>
+</Window>

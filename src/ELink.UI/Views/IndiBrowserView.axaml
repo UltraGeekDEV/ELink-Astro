@@ -1,0 +1,60 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="ELink.UI.Views.IndiBrowserView">
+  <StackPanel MaxWidth="980" Spacing="0">
+    <Border Classes="card">
+      <StackPanel Spacing="8">
+        <TextBlock Classes="title" Text="INDI properties"/>
+        <TextBlock Opacity="0.75" TextWrapping="Wrap" Text="Every property of every device on a bridged INDI server, live, whatever the driver. Edit a value and press Apply, or press a switch."/>
+        <StackPanel Classes="row">
+          <StackPanel><TextBlock Classes="label" Text="Server"/><ComboBox ItemsSource="{Binding Servers}" SelectedItem="{Binding SelectedServer}" Width="180"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Device"/><ComboBox ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}" Width="260"/></StackPanel>
+          <Button Content="↻" Command="{Binding RefreshServersCommand}" VerticalAlignment="Bottom"/>
+        </StackPanel>
+        <TextBlock Classes="error" Text="{Binding Message}" IsVisible="{Binding Message.Length}"/>
+      </StackPanel>
+    </Border>
+    <ItemsControl ItemsSource="{Binding Properties}">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate>
+          <Border Classes="card" Padding="10" Margin="0,0,0,8">
+            <StackPanel Spacing="6">
+              <Grid ColumnDefinitions="*,Auto,Auto">
+                <TextBlock Text="{Binding Header}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                <Border Grid.Column="1" Classes="pill" Margin="0,0,6,0"><TextBlock Classes="label" Text="{Binding Group}"/></Border>
+                <Border Grid.Column="2" Classes="pill"><TextBlock Classes="label" Text="{Binding State}"/></Border>
+              </Grid>
+              <ItemsControl ItemsSource="{Binding Elements}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Grid ColumnDefinitions="220,*,Auto" Margin="0,2">
+                      <TextBlock Text="{Binding Label}" Opacity="0.75" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                      <TextBlock Grid.Column="1" Text="{Binding Value}" VerticalAlignment="Center" FontFamily="Cascadia Mono,Consolas,DejaVu Sans Mono,monospace"/>
+                      <StackPanel Grid.Column="2" Classes="row" IsVisible="{Binding CanSwitch}">
+                        <Button Content="On" Padding="10,2"
+                                Command="{Binding $parent[UserControl].DataContext.SwitchOnCommand}" CommandParameter="{Binding}"/>
+                      </StackPanel>
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <StackPanel IsVisible="{Binding IsEditable}" Spacing="4">
+                <ItemsControl ItemsSource="{Binding Elements}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Grid ColumnDefinitions="220,*" Margin="0,2">
+                        <TextBlock Text="{Binding Label}" Opacity="0.6" VerticalAlignment="Center" FontSize="11"/>
+                        <TextBox Grid.Column="1" Text="{Binding Edit}" MaxWidth="360" HorizontalAlignment="Left" MinWidth="240"/>
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Button Content="Apply" Classes="primary" HorizontalAlignment="Left"
+                        Command="{Binding $parent[UserControl].DataContext.ApplyCommand}" CommandParameter="{Binding}"/>
+              </StackPanel>
+            </StackPanel>
+          </Border>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+  </StackPanel>
+</UserControl>

@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.3.22" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.22" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.22" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The UI knows the contracts and the EVent helpers, never a backend. A test enforces this list. -->
+    <ProjectReference Include="..\ELink.Contracts\ELink.Contracts.csproj" />
+    <ProjectReference Include="..\ELink.Core\ELink.Core.csproj" />
+    <ProjectReference Include="..\ELink.Imaging\ELink.Imaging.csproj" />
+  </ItemGroup>
+</Project>

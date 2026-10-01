@@ -1,0 +1,33 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="ELink.UI.Views.FilterWheelPanelView">
+  <StackPanel MaxWidth="760" Spacing="0">
+    <Border Classes="card">
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel>
+          <TextBlock Classes="title" Text="{Binding DisplayName}"/>
+          <TextBlock Classes="label" Text="{Binding Id}"/>
+        </StackPanel>
+        <Button Grid.Column="1" Content="{Binding ConnectButtonText}" Command="{Binding ConnectCommand}" VerticalAlignment="Center"/>
+      </Grid>
+    </Border>
+    <Border Classes="card">
+      <StackPanel Spacing="10">
+        <StackPanel Classes="row">
+          <StackPanel><TextBlock Classes="label" Text="SLOT"/><TextBlock Classes="value" Text="{Binding Slot}"/></StackPanel>
+          <StackPanel Margin="24,0,0,0"><TextBlock Classes="label" Text="MOVING"/><TextBlock Classes="value" Text="{Binding Moving}"/></StackPanel>
+        </StackPanel>
+        <TextBlock Classes="section" Text="FILTERS"/>
+        <ItemsControl ItemsSource="{Binding Filters}">
+          <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Button Content="{Binding}" Margin="0,0,8,8" MinWidth="90"
+                      Command="{Binding $parent[UserControl].DataContext.SelectCommand}" CommandParameter="{Binding}"/>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </Border>
+    <TextBlock Classes="error" Text="{Binding Message}" IsVisible="{Binding Message.Length}"/>
+  </StackPanel>
+</UserControl>

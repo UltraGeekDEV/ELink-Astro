@@ -45,6 +45,28 @@ public class ImagingTests
     }
 
     [Fact]
+    public void AutoStretchShowsAVeryDimFrame()
+    {
+        // like a 1 s simulator exposure: everything within the lowest ten levels of a 16-bit range
+        var rnd = new Random(2);
+        var px = new ushort[100 * 100];
+        for (int i = 0; i < px.Length; i++) px[i] = (ushort)rnd.Next(0, 10);
+        var bgra = AutoStretch.ToBgra(FitsImage.Parse(FitsImage.Write16(100, 100, px)));
+        int lit = 0; for (int i = 0; i < px.Length; i++) if (bgra[i * 4] > 20) lit++;
+        Assert.True(lit > px.Length / 2, "a dim but varying frame must not render black");
+    }
+
+    [Fact]
+    public void TopDownRowOrderIsHonoured()
+    {
+        var px = new ushort[4 * 4]; px[0] = 60000;   // first data row, first column
+        var plain = AutoStretch.ToBgra(FitsImage.Parse(FitsImage.Write16(4, 4, px)));
+        var top = AutoStretch.ToBgra(FitsImage.Parse(FitsImage.Write16(4, 4, px, new Dictionary<string, string> { ["ROWORDER"] = "'TOP-DOWN'" })));
+        Assert.True(plain[(3 * 4 + 0) * 4] > 200);   // bottom-up: the first data row is drawn last
+        Assert.True(top[0] > 200);                    // top-down: first row is the top row
+    }
+
+    [Fact]
     public void MtfFixedPoints()
     {
         Assert.Equal(0, AutoStretch.Mtf(0.3, 0), 9);

@@ -1,0 +1,81 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="ELink.UI.Views.ComposerView">
+  <StackPanel MaxWidth="940" Spacing="0">
+    <Border Classes="card">
+      <StackPanel Spacing="4">
+        <TextBlock Classes="title" Text="Compose"/>
+        <TextBlock TextWrapping="Wrap" Opacity="0.75"
+                   Text="A smart scope is point-to plus shoot-at. Turn mounts into pointers and cameras into shooters, then combine any pointers and shooters, including other scopes, into a scope."/>
+      </StackPanel>
+    </Border>
+
+    <Border Classes="card">
+      <StackPanel Spacing="10">
+        <TextBlock Classes="section" Text="1 · POINTER FROM A MOUNT"/>
+        <StackPanel Classes="row">
+          <StackPanel><TextBlock Classes="label" Text="New pointer id"/><TextBox Text="{Binding NewPointerId}" Width="160" Watermark="e.g. eq6"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Mount"/><ComboBox ItemsSource="{Binding Mounts}" SelectedItem="{Binding SelectedMount}" Width="240"/></StackPanel>
+          <Button Content="Define pointer" Command="{Binding DefinePointerCommand}" VerticalAlignment="Bottom"/>
+        </StackPanel>
+      </StackPanel>
+    </Border>
+
+    <Border Classes="card">
+      <StackPanel Spacing="10">
+        <TextBlock Classes="section" Text="2 · SHOOTER FROM A CAMERA"/>
+        <StackPanel Classes="row">
+          <StackPanel><TextBlock Classes="label" Text="New shooter id"/><TextBox Text="{Binding NewShooterId}" Width="160" Watermark="e.g. main-cam"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Camera"/><ComboBox ItemsSource="{Binding Cameras}" SelectedItem="{Binding SelectedCamera}" Width="200"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Filter wheel (optional)"/><ComboBox ItemsSource="{Binding Wheels}" SelectedItem="{Binding SelectedWheel}" Width="200"/></StackPanel>
+          <Button Content="Define shooter" Command="{Binding DefineShooterCommand}" VerticalAlignment="Bottom"/>
+        </StackPanel>
+      </StackPanel>
+    </Border>
+
+    <Border Classes="card">
+      <StackPanel Spacing="10">
+        <TextBlock Classes="section" Text="3 · SMART SCOPE"/>
+        <StackPanel Classes="row">
+          <StackPanel><TextBlock Classes="label" Text="Scope id"/><TextBox Text="{Binding ScopeId}" Width="160" Watermark="e.g. wide"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Display name"/><TextBox Text="{Binding ScopeName}" Width="240"/></StackPanel>
+        </StackPanel>
+        <Grid ColumnDefinitions="*,16,*">
+          <StackPanel>
+            <TextBlock Classes="label" Text="Pointers (all are sent to the same target)"/>
+            <TextBlock Text="define a pointer above" Classes="label" IsVisible="{Binding !PointerChoices.Count}"/>
+            <ItemsControl ItemsSource="{Binding PointerChoices}">
+              <ItemsControl.ItemTemplate><DataTemplate><CheckBox IsChecked="{Binding IsSelected}" Content="{Binding Label}"/></DataTemplate></ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+          <StackPanel Grid.Column="2">
+            <TextBlock Classes="label" Text="Shooters (offset of each from the pointing axis, arcmin)"/>
+            <TextBlock Text="define a shooter above" Classes="label" IsVisible="{Binding !ShooterChoices.Count}"/>
+            <ItemsControl ItemsSource="{Binding ShooterChoices}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <StackPanel Classes="row">
+                    <CheckBox IsChecked="{Binding IsSelected}" Content="{Binding Label}" MinWidth="200"/>
+                    <NumericUpDown Value="{Binding EastArcmin}" Width="100" FormatString="0.#" ShowButtonSpinner="False" ToolTip.Tip="east offset, arcmin"/>
+                    <NumericUpDown Value="{Binding NorthArcmin}" Width="100" FormatString="0.#" ShowButtonSpinner="False" ToolTip.Tip="north offset, arcmin"/>
+                  </StackPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </Grid>
+        <Button Content="Define scope" Classes="primary" Command="{Binding DefineScopeCommand}" HorizontalAlignment="Left"/>
+      </StackPanel>
+    </Border>
+
+    <Border Classes="card">
+      <StackPanel Spacing="8">
+        <TextBlock Classes="section" Text="DEFINED"/>
+        <StackPanel Classes="row">
+          <ComboBox ItemsSource="{Binding Existing}" SelectedItem="{Binding SelectedExisting}" Width="300"/>
+          <Button Content="Remove" Classes="danger" Command="{Binding RemoveCommand}"/>
+        </StackPanel>
+      </StackPanel>
+    </Border>
+    <TextBlock Text="{Binding Message}" TextWrapping="Wrap" IsVisible="{Binding Message.Length}"/>
+  </StackPanel>
+</UserControl>

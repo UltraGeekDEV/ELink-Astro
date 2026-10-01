@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using ELink.Contracts.Equipment;
+using ELink.Contracts.Indi;
 using Event.CoreFunctionality;
 using Event.Connections.Models.BaseBinaryConvertibles;
 
@@ -14,14 +15,28 @@ public sealed class DeviceDirectory
 
     public DeviceDirectory(TypeSafeEVentNode node) { _node = node; }
 
+    private readonly ConcurrentDictionary<string, byte> _servers = new();
+
     public IReadOnlyCollection<DeviceInfo> Devices => _devices.Values.ToArray();
 
-    public Task StartAsync() => _node.RegisterFunctionAsync<NOTESVoid, DeviceList>(EquipmentIds.List, _ =>
+    /// <summary>Remember that this node serves an INDI server (listed by <see cref="IndiIds.Servers"/>).</summary>
+    public void AddServer(string name) => _servers[name] = 0;
+
+    public async Task StartAsync()
     {
-        var list = new DeviceList();
-        foreach (var d in _devices.Values) list.Devices.Add(d);
-        return Task.FromResult(list);
-    }, "the equipment this node provides (Mount, Camera, Focuser, ...)");
+        await _node.RegisterFunctionAsync<NOTESVoid, DeviceList>(EquipmentIds.List, _ =>
+        {
+            var list = new DeviceList();
+            foreach (var d in _devices.Values) list.Devices.Add(d);
+            return Task.FromResult(list);
+        }, "the equipment this node provides (Mount, Camera, Focuser, ...)");
+        await _node.RegisterFunctionAsync<NOTESVoid, IndiServerList>(IndiIds.Servers, _ =>
+        {
+            var list = new IndiServerList();
+            foreach (var n in _servers.Keys.Order()) list.Names.Add(n);
+            return Task.FromResult(list);
+        }, "the INDI servers this node bridges");
+    }
 
     public async Task AddAsync(DeviceInfo info)
     {

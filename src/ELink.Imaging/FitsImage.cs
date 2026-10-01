@@ -15,6 +15,8 @@ public sealed class FitsImage
     public IReadOnlyDictionary<string, string> Header { get; }
     /// <summary>The largest value the sensor/format can produce (65535 for 16-bit, 255 for 8-bit), 1 for float data.</summary>
     public double Range { get; }
+    /// <summary>Row 0 is the top of the picture (ROWORDER = 'TOP-DOWN', as INDI and most capture software write it).</summary>
+    public bool TopDown => Header.TryGetValue("ROWORDER", out var o) && o.StartsWith("TOP", StringComparison.OrdinalIgnoreCase);
 
     private FitsImage(int w, int h, int c, float[] data, Dictionary<string, string> header, double range)
     { Width = w; Height = h; Channels = c; Data = data; Header = header; Range = range; }
