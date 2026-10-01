@@ -1,4 +1,5 @@
 using ELink.Contracts;
+using EVent.Connections.Models.BaseBinaryConvertibles;
 using ELink.Contracts.Composition;
 using ELink.Contracts.Equipment;
 using ELink.Core;
@@ -137,5 +138,36 @@ public sealed class FakeAutofocus : IAsyncDisposable
         await _cmds.AddAsync<NOTESVoid, CommandResult>(ELink.Contracts.Automation.AutofocusIds.Abort, _ => Task.FromResult(CommandResult.Success()), "fake abort");
         await _pub.StartAsync();
     }
+    public ValueTask DisposeAsync() { _cmds.Dispose(); _pub.Dispose(); return ValueTask.CompletedTask; }
+}
+
+/// <summary>A rotator that exists only as EVent endpoints; records every angle it was asked to go to.</summary>
+public sealed class FakeRotator : IAsyncDisposable
+{
+    private readonly CommandSet _cmds;
+    private readonly StatePublisher<RotatorState> _pub;
+    private readonly string _id;
+    private double _angle; private bool _moving;
+    public List<double> Moves { get; } = new();
+
+    public FakeRotator(TypeSafeEVentNode node, string id)
+    {
+        _id = id; _cmds = new CommandSet(node);
+        _pub = new(node, EquipmentIds.State(DeviceKinds.Rotator, id), EquipmentIds.GetState(DeviceKinds.Rotator, id),
+            () => new RotatorState { Connected = true, AngleDegrees = _angle, Moving = _moving });
+    }
+
+    public async Task StartAsync()
+    {
+        await _cmds.AddAsync<BinaryConvertibleDouble, CommandResult>(EquipmentIds.Command(DeviceKinds.Rotator, _id, "MoveTo"), async a =>
+        {
+            Moves.Add(a.Value);
+            _moving = true; await _pub.PublishAsync();
+            _ = Task.Run(async () => { await Task.Delay(40); _angle = a.Value; _moving = false; await _pub.PublishAsync(); });
+            return CommandResult.Success();
+        }, "fake rotate");
+        await _pub.StartAsync();
+    }
+
     public ValueTask DisposeAsync() { _cmds.Dispose(); _pub.Dispose(); return ValueTask.CompletedTask; }
 }

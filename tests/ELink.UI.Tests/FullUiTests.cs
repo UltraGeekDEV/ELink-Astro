@@ -153,22 +153,29 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         Assert.True(await Eventually(() => vm.Autofocus.Shooters.Contains("cam") && vm.Autofocus.Focusers.Contains("Focuser_Simulator")));
         Shot(window, "07c-autofocus");
 
-        // mosaic through the UI: preview the tiling, scan 3 panels twice with single shots, watch the coverage map fill
+        // mosaic through the UI: paint a small area to 2 s per spot with single shots, watch the coverage map fill
         var mosaic = vm.Mosaic;
         Assert.True(await Eventually(() => mosaic.Scopes.Contains("main")));
         mosaic.SelectedScope = "main";
         mosaic.Label = "UIField"; mosaic.CenterRa = "06:00:00"; mosaic.CenterDec = "10:00:00";
-        mosaic.FovWidth = 1.0; mosaic.FovHeight = 0.5; mosaic.FrameWidth = 0.5; mosaic.FrameHeight = 0.5; mosaic.Overlap = 0.2;
-        mosaic.ExposureSeconds = 1; mosaic.Passes = 2;
+        mosaic.FovWidth = 0.4; mosaic.FovHeight = 0.3; mosaic.Stepover = 0.05;
+        mosaic.Frames[0].Width = 0.2; mosaic.Frames[0].Height = 0.2;
+        mosaic.AddFrameCommand.Execute(null);                                   // a second, differently shaped frame: heterogeneous
+        Assert.Equal(2, mosaic.Frames.Count);
+        mosaic.Frames[1].Width = 0.1; mosaic.Frames[1].Height = 0.06; mosaic.Frames[1].Rotation = 30; mosaic.Frames[1].OffsetEast = 0.04;
+        mosaic.RemoveFrameCommand.Execute(mosaic.Frames[1]);
+        Assert.Single(mosaic.Frames);
+        mosaic.ExposureSeconds = 1; mosaic.TargetMinutes = 2.0 / 60; mosaic.MaxVisits = 0;
         await mosaic.PreviewCommand.ExecuteAsync(null);
         Assert.Equal("", mosaic.Message);
-        Assert.Contains("3 × 1 = 3 panels", mosaic.Summary);
-        Assert.Equal(3, mosaic.Cells.Count);
+        Assert.Contains("hop", mosaic.Summary);
         await mosaic.StartRunCommand.ExecuteAsync(null);
         Assert.Equal("", mosaic.Message);
-        Assert.True(await Eventually(() => mosaic.Phase == "Done", 240000), $"{mosaic.Phase} {mosaic.Message}");
-        Assert.True(await Eventually(() => mosaic.Cells.All(c => c.Frames == 2)), string.Join(",", mosaic.Cells.Select(c => c.Frames)));
-        Assert.Contains("6 shots", mosaic.Progress);
+        Assert.True(await Eventually(() => mosaic.Phase == "Done", 300000), $"{mosaic.Phase} {mosaic.Message}");
+        Assert.True(await Eventually(() => mosaic.CoverageText.Contains("100% complete")), mosaic.CoverageText);
+        Assert.NotNull(mosaic.Map);
+        Assert.True(await Eventually(() => mosaic.Outlines.Count == 1));
+        Assert.Contains("shots", mosaic.Progress);
         vm.SelectedTab = vm.Tabs.First(t => t.Content is MosaicViewModel);
         Shot(window, "07d-mosaic");
 

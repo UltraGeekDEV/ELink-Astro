@@ -17,8 +17,9 @@ using Xunit;
 
 namespace ELink.Tests.Automation;
 
-/// <summary>The whole chain for real: INDI telescope + CCD simulators -> bridge node -> composition / mosaic / storage node -> a
-/// controlling node that only knows EVent IDs. The simulated mount really slews between the panels.</summary>
+/// <summary>The whole chain for real: INDI telescope + CCD + rotator simulators -> bridge node -> composition / mosaic / storage
+/// node -> a controlling node that only knows EVent IDs. The simulated mount really slews between the poses, the rotator turns
+/// between passes, and the frames land on disk.</summary>
 [Collection("indiserver")]
 public class MosaicStackTests(IndiServerFixture server)
 {
@@ -31,7 +32,7 @@ public class MosaicStackTests(IndiServerFixture server)
     }
 
     [Fact]
-    public async Task SimulatedMountScansAMosaicOfSingleShotsAndTheFramesLandOnDisk()
+    public async Task SimulatedMountPaintsAVirtualFovWithRotatedPassesAndTheFramesLandOnDisk()
     {
         Assert.True(server.Available);
         int bridgePort = FreePort();
@@ -55,15 +56,17 @@ public class MosaicStackTests(IndiServerFixture server)
             Assert.True(await Eventually(() =>
             {
                 var all = ui.CallFunctionAsync<NOTESVoid, DeviceList>(EquipmentIds.List, NOTESVoid.Void).GetAwaiter().GetResult()!.SelectMany(l => l.Devices).ToList();
-                return all.Any(d => d.Kind.Text == "Mount" && d.Id.Text == "Telescope_Simulator") && all.Any(d => d.Kind.Text == "Camera" && d.Id.Text == "CCD_Simulator");
+                return new[] { ("Mount", "Telescope_Simulator"), ("Camera", "CCD_Simulator"), ("Rotator", "Rotator_Simulator") }.All(w => all.Any(d => d.Kind.Text == w.Item1 && d.Id.Text == w.Item2));
             }));
-            foreach (var (k, i) in new[] { ("Mount", "Telescope_Simulator"), ("Camera", "CCD_Simulator") })
+            foreach (var (k, i) in new[] { ("Mount", "Telescope_Simulator"), ("Camera", "CCD_Simulator"), ("Rotator", "Rotator_Simulator") })
                 Assert.True((await Commands.CallAsync(ui, EquipmentIds.Command(k, i, "Connect"), (BinaryConvertibleBool)true)).Ok.Value);
             var mount = new RemoteState<MountState>(ui, EquipmentIds.State("Mount", "Telescope_Simulator"), EquipmentIds.GetState("Mount", "Telescope_Simulator"));
             await mount.StartAsync();
             await mount.WaitAsync(m => m.Connected.Value, TimeSpan.FromSeconds(30));
             await Commands.CallAsync(ui, EquipmentIds.Command("Mount", "Telescope_Simulator", "Park"), (BinaryConvertibleBool)false);
             await mount.WaitAsync(m => m.Phase.Text != "Parked" && m.Phase.Text != "Parking", TimeSpan.FromSeconds(30));
+            var rotator = new RemoteState<RotatorState>(ui, EquipmentIds.State("Rotator", "Rotator_Simulator"), EquipmentIds.GetState("Rotator", "Rotator_Simulator"));
+            await rotator.StartAsync();
 
             Assert.True((await Commands.CallAsync(ui, ScopeIds.DefineMountPointer, new MountPointerDefinition { Id = "eq", MountId = "Telescope_Simulator" })).Ok.Value);
             Assert.True((await Commands.CallAsync(ui, ScopeIds.DefineCameraShooter, new CameraShooterDefinition { Id = "cam", CameraId = "CCD_Simulator" })).Ok.Value);
@@ -75,29 +78,40 @@ public class MosaicStackTests(IndiServerFixture server)
             await ui.HookEventAsync(MosaicIds.State, (MosaicState s) => state = s);
             var request = new MosaicRequest
             {
-                Label = "Field", ScopeId = "main", Passes = 2,
+                Label = "Field", ScopeId = "main", RotatorId = "Rotator_Simulator", TargetSeconds = 2,
                 Center = new SkyTarget { RaHours = 5.0, DecDegrees = 30, Epoch = "J2000" },
-                FovWidthDegrees = 1.0, FovHeightDegrees = 0.5, FrameWidthDegrees = 0.5, FrameHeightDegrees = 0.5, Overlap = 0.2,
+                FovWidthDegrees = 0.4, FovHeightDegrees = 0.3, PositionAngleDegrees = 10, StepoverDegrees = 0.05,
                 Exposure = new ShooterExposure { Seconds = 1 }, SlewTimeoutSeconds = 120,
             };
-            var layout = Assert.Single((await ui.CallFunctionAsync<MosaicRequest, MosaicLayout>(MosaicIds.Plan, request))!);
-            Assert.Equal((3, 1), (layout.Cols.Value, layout.Rows.Value));
+            request.Frames.Add(new MosaicFrame { WidthDegrees = 0.2, HeightDegrees = 0.2 });
+            request.FieldRotations.Add(0); request.FieldRotations.Add(90);
+
+            var preview = Assert.Single((await ui.CallFunctionAsync<MosaicRequest, MosaicPreview>(MosaicIds.Plan, request))!);
+            Assert.Equal("", preview.Error.Text);
+            Assert.True(preview.EstimatedVisits.Value is > 5 and < 80, $"estimated {preview.EstimatedVisits.Value}");
 
             var started = await Commands.CallAsync(ui, MosaicIds.Start, request);
             Assert.True(started.Ok.Value, started.Error.Text);
-            Assert.True(await Eventually(() => state is { Phase.Text: "Done" or "Error" or "Aborted" }, 300000), $"{state?.Phase.Text} {state?.Message.Text} visits {state?.VisitsDone.Value}");
+            Assert.True(await Eventually(() => state is { Phase.Text: "Done" or "Error" or "Aborted" }, 480000), $"{state?.Phase.Text} {state?.Message.Text} visits {state?.Visits.Value}");
             Assert.Equal("Done", state!.Phase.Text);
-            Assert.Equal(6, state.VisitsDone.Value);                                           // 3 panels x 2 passes, single shots
-            Assert.All(state.Layout.Panels, p => Assert.Equal(2, p.Frames.Value));
+            int visits = state.Visits.Value;
+            Assert.True(visits >= 8, $"{visits} visits");
+            Assert.True(state.MinSeconds.Value >= 2 - 1e-6, $"every spot must have 2 s: min {state.MinSeconds.Value}");
+            Assert.Equal(2, state.Passes.Value);                                                  // one light pass per field rotation
 
-            // the frames are on disk, one per visit, named per panel, each stamped with where the mount was pointing
-            Assert.True(await Eventually(() => storage.FramesSaved == 6, 60000), $"saved {storage.FramesSaved}");
-            var files = Directory.GetFiles(saveDir, "*.fits", SearchOption.AllDirectories).Order().ToArray();
-            Assert.Equal(6, files.Length);
-            Assert.Equal(3, files.Select(f => Path.GetFileName(f).Split("_Light")[0]).Distinct().Count());     // Field_r1c1, Field_r1c2, Field_r1c3
-            var ras = files.Select(f => FitsImage.Parse(File.ReadAllBytes(f))).Select(i => i.GetDouble("RA") / 15).ToArray();
-            Assert.Equal(3, ras.Select(r => Math.Round(r, 2)).Distinct().Count());          // three different pointings
-            Assert.InRange(ras.Max() - ras.Min(), 0.75 / 15 / Math.Cos(30 * Math.PI / 180), 1.2 / 15 / Math.Cos(30 * Math.PI / 180));   // the mosaic's width (about 0.8 deg between outer centres)
+            // single shots, one frame per visit, saved with their object name and pointing; they spread over the area and a bit beyond
+            Assert.True(await Eventually(() => storage.FramesSaved == visits, 120000), $"saved {storage.FramesSaved} of {visits}");
+            var files = Directory.GetFiles(saveDir, "*.fits", SearchOption.AllDirectories);
+            Assert.Equal(visits, files.Length);
+            Assert.All(files, f => Assert.StartsWith("Field_Light_1s_", Path.GetFileName(f)));
+            var poses = files.Select(f => FitsImage.Parse(File.ReadAllBytes(f))).Select(i => Gnomonic.FromSky(5.0, 30, i.GetDouble("RA") / 15, i.GetDouble("DEC"))).ToList();
+            Assert.InRange(poses.Select(p => Math.Round(p.EastDegrees, 2)).Distinct().Count(), 4, 1000);
+            Assert.True(poses.All(p => Math.Abs(p.EastDegrees) < 0.2 + 0.2 && Math.Abs(p.NorthDegrees) < 0.15 + 0.2), "poses stay within one frame's reach of the area");
+
+            // the rotator really turned: it ended at the last pass's angle
+            Assert.True(await Eventually(() => rotator.Latest is { Moving.Value: false }));
+            double angle = rotator.Latest!.AngleDegrees.Value;
+            Assert.True(Math.Abs(angle) < 0.6 || Math.Abs(angle - 90) < 0.6, $"rotator at {angle}");
         }
         finally { try { Directory.Delete(saveDir, true); } catch { } }
     }
