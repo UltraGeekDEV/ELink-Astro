@@ -26,6 +26,7 @@
     <ProjectReference Include="..\..\src\ELink.Indi\ELink.Indi.csproj" />
     <ProjectReference Include="..\..\src\ELink.Core\ELink.Core.csproj" />
     <ProjectReference Include="..\..\src\ELink.Contracts\ELink.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\ELink.IndiBridge\ELink.IndiBridge.csproj" />
   </ItemGroup>
 
 </Project>

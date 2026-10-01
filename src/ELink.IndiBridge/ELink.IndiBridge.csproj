@@ -1,11 +1,9 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <ProjectReference Include="..\ELink.Indi\ELink.Indi.csproj" />
     <ProjectReference Include="..\ELink.Contracts\ELink.Contracts.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="EVent" Version="0.1.0" />
+    <ProjectReference Include="..\ELink.Core\ELink.Core.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

@@ -22,7 +22,8 @@ public class IndiClientTests(IndiServerFixture server)
     {
         await using var c = await Connect();
         await c.WaitForAsync("Telescope Simulator", "CONNECTION", _ => true, T);
-        await c.WaitForAsync("CCD Simulator", "CONNECTION", _ => true, T);
+        foreach (var d in new[] { "CCD Simulator", "Focuser Simulator", "Filter Simulator", "Rotator Simulator" })
+            await c.WaitForAsync(d, "CONNECTION", _ => true, T);
         Assert.Contains("Telescope Simulator", c.Devices);
         Assert.Contains("CCD Simulator", c.Devices);
         Assert.Contains("Focuser Simulator", c.Devices);

@@ -45,7 +45,7 @@ ID scheme: `ELink.<Kind>.<DeviceName>.<Thing>` e.g. `ELink.Camera.CCD_Simulator.
       (defXXXVector, setXXXVector, newXXXVector, delProperty, getProperties, message, enableBLOB)
 - [x] INDI property model (immutable snapshots)
 - [x] BLOB handling (base64, .z decompress, enableBLOB)
-- [ ] Generic layer: every INDI property mirrored into EVent via NON dynamic objects
+- [x] Generic layer (static typed IndiProperty/Set/Snapshot/Blob contracts; any driver works) — originally planned as NON dynamic objects; static types are simpler and UI-friendly
       (`ELink.Indi.<server>.<device>.<property>` events + `.Set` functions) — works for any driver
 - [ ] Typed layer: standard-property mappers (CONNECTION, EQUATORIAL_EOD_COORD, ON_COORD_SET, TELESCOPE_*,
       CCD_EXPOSURE, CCD_FRAME/BINNING/TEMPERATURE/COOLER, CCD1 BLOB, ABS_FOCUS_POSITION / REL_FOCUS,
