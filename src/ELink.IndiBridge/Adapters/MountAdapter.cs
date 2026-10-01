@@ -1,0 +1,95 @@
+using ELink.Contracts.Equipment;
+using ELink.Core.Astro;
+using ELink.Indi.Protocol;
+using Event.Connections.Models.BaseBinaryConvertibles;
+using EVent.Connections.Models.BaseBinaryConvertibles;
+
+namespace ELink.IndiBridge.Adapters;
+
+/// <summary>INDI telescope (mount) driver to the ELink Mount contract.</summary>
+public sealed class MountAdapter(AdapterContext ctx) : IndiDeviceAdapter<MountState>(ctx)
+{
+    public override string Kind => DeviceKinds.Mount;
+
+    // INDI telescopes publish JNow (EQUATORIAL_EOD_COORD) or J2000 (EQUATORIAL_COORD); use what the driver has.
+    private (string Property, string Epoch)? Coordinates =>
+        P("EQUATORIAL_EOD_COORD") is not null ? ("EQUATORIAL_EOD_COORD", "JNow")
+        : P("EQUATORIAL_COORD") is not null ? ("EQUATORIAL_COORD", "J2000") : null;
+
+    protected override MountState BuildState()
+    {
+        var s = new MountState { Connected = Connected };
+        if (!Connected) { s.Phase = "Disconnected"; return s; }
+        var c = Coordinates;
+        var coords = c is null ? null : P(c.Value.Property);
+        if (coords is not null)
+        {
+            s.RaHours = coords.Number("RA"); s.DecDegrees = coords.Number("DEC"); s.Epoch = c!.Value.Epoch;
+        }
+        var track = P("TELESCOPE_TRACK_STATE");
+        s.Tracking = track?.Switch("TRACK_ON") ?? false;
+        var park = P("TELESCOPE_PARK");
+        s.Parked = park?.Switch("PARK") == true && park.State == IndiState.Ok;
+        s.PierSide = P("TELESCOPE_PIER_SIDE") is { } pier ? (pier.Switch("PIER_EAST") ? "East" : pier.Switch("PIER_WEST") ? "West" : "Unknown") : "Unknown";
+
+        s.Phase =
+            coords?.State == IndiState.Alert || park?.State == IndiState.Alert ? "Error"
+            : park?.State == IndiState.Busy ? "Parking"
+            : s.Parked ? "Parked"
+            : coords?.State == IndiState.Busy ? "Slewing"
+            : s.Tracking ? "Tracking" : "Idle";
+        s.Message = s.Phase == "Error" ? "the driver reported an alert; see the INDI log" : "";
+        return s;
+    }
+
+    protected override async Task RegisterCommandsAsync()
+    {
+        await RegisterCommandAsync<SkyTarget, CommandResult>("Goto", t => MoveAsync(t, "TRACK"), "slew to a sky position and start tracking it");
+        await RegisterCommandAsync<SkyTarget, CommandResult>("Sync", t => MoveAsync(t, "SYNC"), "tell the mount that it currently points at this position");
+        await RegisterCommandAsync<NOTESVoid, CommandResult>("Abort", _ => AbortAsync(), "stop any slew immediately");
+        await RegisterCommandAsync<BinaryConvertibleBool, CommandResult>("Park", ParkAsync, "park (true) or unpark (false) the mount");
+        await RegisterCommandAsync<BinaryConvertibleBool, CommandResult>("SetTracking", TrackAsync, "start or stop tracking");
+    }
+
+    private async Task<CommandResult> MoveAsync(SkyTarget target, string mode)
+    {
+        var c = Coordinates;
+        if (c is null) return CommandResult.Fail($"{Device} has no equatorial coordinates property");
+        if (Need("ON_COORD_SET", mode) is { } missing) return missing;
+        double ra = target.RaHours.Value, dec = target.DecDegrees.Value;
+        if (double.IsNaN(ra) || double.IsNaN(dec) || dec < -90 || dec > 90) return CommandResult.Fail("invalid coordinates");
+        string from = target.Epoch.Text, to = c.Value.Epoch;
+        if (from != "JNow" && from != "J2000") return CommandResult.Fail($"unknown epoch {from}");
+        if (from != to)
+        {
+            var now = DateTime.UtcNow;
+            (ra, dec) = to == "JNow" ? Precession.J2000ToDate(ra, dec, now) : Precession.DateToJ2000(ra, dec, now);
+        }
+        ra = Precession.NormalizeHours(ra);
+        return await Send(async () =>
+        {
+            await SetSwitch("ON_COORD_SET", mode);
+            await Client.SetNumbersAsync(Device, c.Value.Property, new[] { ("RA", ra), ("DEC", dec) });
+        });
+    }
+
+    private async Task<CommandResult> AbortAsync()
+    {
+        if (Need("TELESCOPE_ABORT_MOTION", "ABORT") is { } missing) return missing;
+        return await Send(() => SetSwitch("TELESCOPE_ABORT_MOTION", "ABORT"));
+    }
+
+    private async Task<CommandResult> ParkAsync(BinaryConvertibleBool park)
+    {
+        string element = park.Value ? "PARK" : "UNPARK";
+        if (Need("TELESCOPE_PARK", element) is { } missing) return missing;
+        return await Send(() => SetSwitch("TELESCOPE_PARK", element));
+    }
+
+    private async Task<CommandResult> TrackAsync(BinaryConvertibleBool on)
+    {
+        string element = on.Value ? "TRACK_ON" : "TRACK_OFF";
+        if (Need("TELESCOPE_TRACK_STATE", element) is { } missing) return missing;
+        return await Send(() => SetSwitch("TELESCOPE_TRACK_STATE", element));
+    }
+}

@@ -228,6 +228,28 @@ public class IndiBlobEvent : IBinaryConvertible
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();
 }
 
+/// <summary>Whether the bridge is connected to its INDI server.</summary>
+public class IndiLinkState : IBinaryConvertible
+{
+    public BinaryConvertibleBool Connected { get; set; } = false;
+    public BinaryConvertibleString Server { get; set; } = "";
+    public BinaryConvertibleString Endpoint { get; set; } = "";
+    public BinaryConvertibleString Error { get; set; } = "";
+
+    public override string Name => "IndiLinkState";
+    private static readonly NOTESDescriptor d = new();
+    public override NOTESDescriptor Descriptor => d;
+    static IndiLinkState()
+    {
+        d.RegisterField("Connected", (IndiLinkState x) => x.Connected);
+        d.RegisterField("Server", (IndiLinkState x) => x.Server);
+        d.RegisterField("Endpoint", (IndiLinkState x) => x.Endpoint).Description("host:port of the INDI server");
+        d.RegisterField("Error", (IndiLinkState x) => x.Error).Description("why the last attempt failed, empty when connected");
+    }
+    public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
+    public override byte[] ToBytes() => d.ToBytes(this).ToArray();
+}
+
 /// <summary>Event and function IDs of the generic INDI mirror, per bridge (server) name.</summary>
 public static class IndiIds
 {
@@ -242,6 +264,7 @@ public static class IndiIds
     public static string Property(string server) => Root(server) + ".Property";     // event  IndiPropertyEvent
     public static string Log(string server) => Root(server) + ".Log";               // event  IndiLogEvent
     public static string Blob(string server) => Root(server) + ".Blob";             // event  IndiBlobEvent
+    public static string Link(string server) => Root(server) + ".Link";             // event  IndiLinkState
     public static string Snapshot(string server) => Root(server) + ".Snapshot";     // func   NOTESVoid -> IndiSnapshot
     public static string Set(string server) => Root(server) + ".Set";               // func   IndiSetRequest -> IndiResult
     public static string EnableBlob(string server) => Root(server) + ".EnableBlob"; // func   IndiBlobRequest -> IndiResult
