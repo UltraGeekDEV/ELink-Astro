@@ -65,6 +65,8 @@ public class ShotEvent : IBinaryConvertible
     public BinaryConvertibleString Timestamp { get; set; } = "";
     public BinaryConvertibleDouble PointingRaHours { get; set; } = double.NaN;
     public BinaryConvertibleDouble PointingDecDegrees { get; set; } = double.NaN;
+    public BinaryConvertibleString ObjectName { get; set; } = "";
+    public BinaryConvertibleString PlanId { get; set; } = "";
     public RawBytes Data { get; set; } = new();
 
     public override string Name => "ShotEvent";
@@ -80,6 +82,8 @@ public class ShotEvent : IBinaryConvertible
         d.RegisterField("Timestamp", (ShotEvent x) => x.Timestamp);
         d.RegisterField("PointingRaHours", (ShotEvent x) => x.PointingRaHours).Description("J2000, NaN if unknown; added by a smart scope that knows where it pointed");
         d.RegisterField("PointingDecDegrees", (ShotEvent x) => x.PointingDecDegrees).Description("J2000, NaN if unknown");
+        d.RegisterField("ObjectName", (ShotEvent x) => x.ObjectName).Description("what was being observed, as named by the Observe request; empty for manual exposures");
+        d.RegisterField("PlanId", (ShotEvent x) => x.PlanId).Description("sequence plan the frame belongs to, if any");
         d.RegisterField("Data", (ShotEvent x) => x.Data);
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);

@@ -41,12 +41,22 @@ public sealed class FitsImage
                 {
                     string value = line[10..];
                     int slash = value.IndexOf('/');
-                    // strings may contain '/', so only cut a comment after the closing quote
+                    // strings may contain '/' and doubled quotes (''), so only cut a comment after the real closing quote
                     if (value.TrimStart().StartsWith('\''))
                     {
-                        int close = value.IndexOf('\'', value.IndexOf('\'') + 1);
-                        value = close > 0 ? value[..(close + 1)] : value;
-                        value = value.Trim().Trim('\'').TrimEnd();
+                        int open = value.IndexOf('\'');
+                        var sb = new StringBuilder();
+                        int j = open + 1;
+                        for (; j < value.Length; j++)
+                        {
+                            if (value[j] == '\'')
+                            {
+                                if (j + 1 < value.Length && value[j + 1] == '\'') { sb.Append('\''); j++; continue; }
+                                break;
+                            }
+                            sb.Append(value[j]);
+                        }
+                        value = sb.ToString().TrimEnd();
                     }
                     else value = (slash >= 0 ? value[..slash] : value).Trim();
                     header[key] = value;

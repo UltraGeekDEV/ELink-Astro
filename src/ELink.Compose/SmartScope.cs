@@ -30,6 +30,7 @@ public sealed class SmartScope : IAsyncDisposable
     private ScopeState _scope = new();
     private CancellationTokenSource? _observe;
     private Task? _observeTask;
+    private (string Object, string Plan) _tag = ("", "");
 
     public SmartScope(TypeSafeEVentNode node, ScopeDefinition definition)
     {
@@ -142,15 +143,20 @@ public sealed class SmartScope : IAsyncDisposable
     /// <summary>A child shooter delivered a frame: note it for a running Observe and pass it on as our own, with pointing.</summary>
     private async Task RelayShotAsync(ShotEvent shot)
     {
-        _shots.Release();
+        // Read the run's tags first: once the round is counted the run may end, and the tags with it.
+        (string obj, string plan) tag;
+        lock (_scopeGate) tag = _tag;
         var p = _pointers.Count > 0 ? _pointers[0].State.Latest : null;
         var relayed = new ShotEvent
         {
             Shooter = shot.Shooter, Format = shot.Format, ExposureSeconds = shot.ExposureSeconds, FrameType = shot.FrameType,
             Filter = shot.Filter, Timestamp = shot.Timestamp, Data = shot.Data,
+            ObjectName = shot.ObjectName.Text != "" ? shot.ObjectName.Text : tag.obj,
+            PlanId = shot.PlanId.Text != "" ? shot.PlanId.Text : tag.plan,
             PointingRaHours = double.IsNaN(shot.PointingRaHours.Value) ? (p?.RaHours.Value ?? double.NaN) : shot.PointingRaHours.Value,
             PointingDecDegrees = double.IsNaN(shot.PointingDecDegrees.Value) ? (p?.DecDegrees.Value ?? double.NaN) : shot.PointingDecDegrees.Value,
         };
+        _shots.Release();
         try { await _node.FireEventAsync(ShooterIds.Shot(_id), relayed); } catch (ObjectDisposedException) { }
     }
 
@@ -185,6 +191,7 @@ public sealed class SmartScope : IAsyncDisposable
         {
             if (_observe is not null) return CommandResult.Fail("already observing");
             _observe = new CancellationTokenSource();
+            _tag = (r.ObjectName.Text, r.PlanId.Text);
             _scope = new ScopeState { Phase = "Pointing", Observing = true, ShotsPlanned = r.Count.Value, ShotsDone = 0 };
         }
         var cts = _observe;
@@ -231,7 +238,7 @@ public sealed class SmartScope : IAsyncDisposable
         catch (Exception ex) { endPhase = "Error"; endMessage = ex.Message; }
         finally
         {
-            lock (_scopeGate) { _observe = null; }
+            lock (_scopeGate) { _observe = null; _tag = ("", ""); }
             cts.Dispose();
             await SetScope(s => { s.Observing = false; s.Phase = endPhase; s.Message = endMessage; });
         }

@@ -97,6 +97,26 @@ public class SmartScopeTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ObservedFramesCarryTheRunsObjectAndPlanButManualOnesDoNot()
+    {
+        await using var p = new FakePointer(_node, "tm", 50); await p.StartAsync();
+        await using var a = new FakeShooter(_node, "ta"); await a.StartAsync();
+        await using var scope = new SmartScope(_node, Scope("tagged", new[] { "tm" }, ("ta", 0, 0)));
+        await scope.StartAsync();
+        var (shots, state) = await Watch("tagged");
+
+        Assert.True((await Commands.CallAsync(_node, ScopeIds.Command("tagged", "Observe"), new ObserveRequest
+        { Exposure = new ShooterExposure { Seconds = 0.1 }, Count = 2, ObjectName = "M 31", PlanId = "night7" })).Ok.Value);
+        Assert.True(await Eventually(() => state() is { Observing.Value: false, ShotsDone.Value: 2 }));
+        Assert.True(await Eventually(() => { lock (shots) return shots.Count == 2; }));
+        lock (shots) Assert.All(shots, s => { Assert.Equal("M 31", s.ObjectName.Text); Assert.Equal("night7", s.PlanId.Text); });
+
+        Assert.True((await Commands.CallAsync(_node, ShooterIds.Expose("tagged"), new ShooterExposure { Seconds = 0.1 })).Ok.Value);
+        Assert.True(await Eventually(() => { lock (shots) return shots.Count == 3; }));
+        lock (shots) { Assert.Equal("", shots[2].ObjectName.Text); Assert.Equal("", shots[2].PlanId.Text); }
+    }
+
+    [Fact]
     public async Task ShooterOffsetMovesThePointingAxis()
     {
         await using var p = new FakePointer(_node, "m"); await p.StartAsync();

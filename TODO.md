@@ -74,7 +74,7 @@ ID scheme: `ELink.<Kind>.<DeviceName>.<Thing>` e.g. `ELink.Camera.CCD_Simulator.
 - [x] Autofocus (HFR star measurement, hyperbola/parabola fit, coarse + fine sweeps) as a mesh service
 - [ ] Meridian flip, dithering, guiding (PHD2/INDI guider) as modules
 - [x] Sequencer (plans of blocks, autofocus, pause/resume, weather interlock); [ ] scheduler/priorities, dome interlock
-- [ ] Frame storage (FITS writer with headers), session log
+- [x] Frame storage (FITS headers stamped, night folders, JSON-lines session log)
 
 ### Phase 5 — Avalonia UI
 - [x] ViewModel base classes bound to EVent (state hook -> property, command -> function call), no backend refs

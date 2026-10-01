@@ -74,3 +74,35 @@ public class ImagingTests
         Assert.Equal(0.5, AutoStretch.Mtf(0.3, 0.3), 9);
     }
 }
+
+public class FitsHeaderTests
+{
+    [Fact]
+    public void AddsAndReplacesCardsWithoutTouchingTheData()
+    {
+        var px = new ushort[8 * 8]; for (int i = 0; i < px.Length; i++) px[i] = (ushort)(i * 500);
+        var original = FitsImage.Write16(8, 8, px, new Dictionary<string, string> { ["EXPTIME"] = "5.0" });
+        var edited = FitsHeader.Set(original, new Dictionary<string, string>
+        {
+            ["EXPTIME"] = FitsHeader.NumberCard("EXPTIME", 30.5, "exposure"),
+            ["OBJECT"] = FitsHeader.StringCard("OBJECT", "M 42"),
+            ["OBSNOTE"] = FitsHeader.StringCard("OBSNOTE", "it's fine"),
+        });
+        Assert.Equal(0, edited.Length % 2880);
+        var img = FitsImage.Parse(edited);
+        Assert.Equal(30.5, img.GetDouble("EXPTIME"));
+        Assert.Equal("M 42", img.Get("OBJECT"));
+        Assert.Equal("it's fine", img.Get("OBSNOTE"));                                // doubled quotes round-trip
+        for (int i = 0; i < px.Length; i++) Assert.Equal(px[i], img.Data[i]);       // pixels untouched
+    }
+
+    [Fact]
+    public void GrowsTheHeaderByWholeBlocks()
+    {
+        var original = FitsImage.Write16(4, 4, new ushort[16]);
+        var many = Enumerable.Range(0, 60).ToDictionary(i => $"KEY{i:000}", i => FitsHeader.NumberCard($"KEY{i:000}", i));
+        var edited = FitsHeader.Set(original, many);
+        Assert.Equal(original.Length + 2880, edited.Length);                      // 68 cards no longer fit one block, two do
+        Assert.Equal(59, FitsImage.Parse(edited).GetDouble("KEY059"));
+    }
+}

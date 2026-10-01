@@ -62,6 +62,8 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         await host.StartAsync();
         await using var autofocus = new AutofocusService(hostNode); await autofocus.StartAsync();
         await using var sequencer = new SequencerService(hostNode); await sequencer.StartAsync();
+        string saveDir = Path.Combine(Path.GetTempPath(), "elink-ui-save-" + Guid.NewGuid().ToString("N"));
+        await using var storage = new StorageService(hostNode, saveDir); await storage.StartAsync();
 
         // frontend: a separate node that joins the mesh
         var session = await MeshSession.CreateAsync(null, "UI-Test");
@@ -128,6 +130,11 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         Shot(window, "07-scope-done");
 
         // sequencer through the UI: one block, one frame
+        var store = vm.Storage;
+        Assert.True(await Eventually(() => store.Shooters.Contains("main")));
+        store.SelectedShooter = "main";
+        await store.WatchCommand.ExecuteAsync(null);
+        Assert.True(await Eventually(() => store.Watching.Contains("main")));
         var seq = vm.Sequencer;
         Assert.True(await Eventually(() => seq.Scopes.Contains("main")));
         seq.SelectedScope = "main";
@@ -136,6 +143,9 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         Assert.Equal("", seq.Message);
         Assert.True(await Eventually(() => seq.Phase == "Done", 120000), $"{seq.Phase} {seq.StateMessage}");
         Assert.Contains("1 total", seq.Progress);
+        Assert.True(await Eventually(() => store.FramesSaved >= 1), "the frame was not saved");
+        Assert.True(await Eventually(() => store.Recent.Count >= 1));
+        Assert.Single(Directory.GetFiles(saveDir, "UI_block_*.fits", SearchOption.AllDirectories));
         vm.SelectedTab = vm.Tabs.First(t => t.Content is SequencerViewModel);
         Shot(window, "07b-sequencer");
         vm.SelectedTab = vm.Tabs.First(t => t.Content is AutofocusViewModel);
@@ -153,5 +163,6 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
 
         vm.Dispose();
         window.Close();
+        try { Directory.Delete(saveDir, true); } catch { }
     }
 }

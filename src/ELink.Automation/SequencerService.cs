@@ -128,7 +128,7 @@ public sealed class SequencerService : IAsyncDisposable
                     }
                     await Set(s => s.Phase = "Running");
                     int doneBefore = count - remaining, totalBefore = total;
-                    int done = await ObserveOnce(scope, scopeState, weather, block, remaining, doneBefore, totalBefore, ct);
+                    int done = await ObserveOnce(scope, plan.Id.Text, scopeState, weather, block, remaining, doneBefore, totalBefore, ct);
                     remaining -= done; total += done;
                     int inBlock = count - remaining, all = total;
                     await Set(s => { s.ShotsInBlock = inBlock; s.ShotsTotal = all; });
@@ -169,21 +169,22 @@ public sealed class SequencerService : IAsyncDisposable
     }
 
     /// <summary>One Observe call. Returns the exposure rounds that finished; fewer than asked if interrupted.</summary>
-    private async Task<int> ObserveOnce(string scope, RemoteState<ScopeState> scopeState, RemoteState<WeatherState>? weather, SequenceBlock block, int count,
+    private async Task<int> ObserveOnce(string scope, string planId, RemoteState<ScopeState> scopeState, RemoteState<WeatherState>? weather, SequenceBlock block, int count,
         int doneBefore, int totalBefore, CancellationToken ct)
     {
         // show the scope's progress live: rounds finished so far in this block and in the plan
         Action<ScopeState> progress = st => { if (st.Observing.Value) _ = Set(x => { x.ShotsInBlock = doneBefore + st.ShotsDone.Value; x.ShotsTotal = totalBefore + st.ShotsDone.Value; }); };
         scopeState.Changed += progress;
-        try { return await ObserveCore(scope, scopeState, weather, block, count, ct); }
+        try { return await ObserveCore(scope, planId, scopeState, weather, block, count, ct); }
         finally { scopeState.Changed -= progress; }
     }
 
-    private async Task<int> ObserveCore(string scope, RemoteState<ScopeState> scopeState, RemoteState<WeatherState>? weather, SequenceBlock block, int count, CancellationToken ct)
+    private async Task<int> ObserveCore(string scope, string planId, RemoteState<ScopeState> scopeState, RemoteState<WeatherState>? weather, SequenceBlock block, int count, CancellationToken ct)
     {
         var start = await Commands.CallAsync(_node, ScopeIds.Command(scope, "Observe"), new ObserveRequest
         {
             Target = block.Target, Exposure = block.Exposure, Count = count, SlewTimeoutSeconds = 600,
+            ObjectName = block.Label.Text, PlanId = planId,
         });
         if (!start.Ok.Value) throw new InvalidOperationException(start.Error.Text);
 

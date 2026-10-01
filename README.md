@@ -21,7 +21,7 @@ C# / .NET 8, Avalonia UI.
 | `ELink.IndiBridge` | the INDI <-> EVent translation: generic mirror of every property + typed adapters per device kind |
 | `ELink.Compose` | smart scopes, mount pointers, camera shooters, composition host with JSON persistence |
 | `ELink.Imaging` | FITS reader, screen auto-stretch, star detection and HFR |
-| `ELink.Automation` | autofocus and sequencer services (weather guard, pause/resume), driven only by EVent IDs |
+| `ELink.Automation` | autofocus, sequencer (weather guard, pause/resume) and frame storage services, driven only by EVent IDs |
 | `ELink.UI` / `ELink.App` | Avalonia UI (library) and its stand-alone executable `elink-ui` |
 | `ELink.Bridge` | headless INDI bridge executable |
 | `ELink.Station` | all-in-one executable `elink`: bridge + composition host + UI on one node |

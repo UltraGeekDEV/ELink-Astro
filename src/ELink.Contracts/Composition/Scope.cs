@@ -53,6 +53,8 @@ public class ObserveRequest : IBinaryConvertible
     public ShooterExposure Exposure { get; set; } = new();
     public BinaryConvertibleInt32 Count { get; set; } = 1;
     public BinaryConvertibleDouble SlewTimeoutSeconds { get; set; } = 300.0;
+    public BinaryConvertibleString ObjectName { get; set; } = "";
+    public BinaryConvertibleString PlanId { get; set; } = "";
 
     public override string Name => "ObserveRequest";
     private static readonly NOTESDescriptor d = new();
@@ -63,6 +65,8 @@ public class ObserveRequest : IBinaryConvertible
         d.RegisterField("Exposure", (ObserveRequest x) => x.Exposure);
         d.RegisterField("Count", (ObserveRequest x) => x.Count).Range(1, 100000);
         d.RegisterField("SlewTimeoutSeconds", (ObserveRequest x) => x.SlewTimeoutSeconds);
+        d.RegisterField("ObjectName", (ObserveRequest x) => x.ObjectName).Description("stamped on every frame of this run (FITS OBJECT, file names)");
+        d.RegisterField("PlanId", (ObserveRequest x) => x.PlanId).Description("stamped on every frame of this run");
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();

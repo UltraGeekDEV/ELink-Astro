@@ -9,6 +9,7 @@ using ELink.Core;
 using ELink.Core.Astro;
 using ELink.UI.Infrastructure;
 using Event.Connections.Models.BaseBinaryConvertibles;
+using EVent.Connections.Models.BaseBinaryConvertibles;
 
 namespace ELink.UI.ViewModels;
 
@@ -219,4 +220,68 @@ public sealed partial class SequencerViewModel : ObservableObject, IDisposable
     [RelayCommand] private Task AbortAsync() => Send(SequencerIds.Abort, NOTESVoid.Void);
 
     public void Dispose() => _follower?.Dispose();
+}
+
+/// <summary>Where frames go: pick the directory, choose which shooters are saved, see what was written.</summary>
+public sealed partial class StorageViewModel : ObservableObject, IDisposable
+{
+    private readonly MeshSession _mesh;
+    private readonly CatalogViewModel _catalog;
+    private Follower<StorageState>? _follower;
+    private Action<FrameSaved>? _savedHook;
+
+    public StorageViewModel(MeshSession mesh, CatalogViewModel catalog)
+    {
+        _mesh = mesh; _catalog = catalog;
+        catalog.CompositionChanged += () => UiThread.Post(RebuildChoices);
+        RebuildChoices();
+    }
+
+    public ObservableCollection<string> Shooters { get; } = new();
+    public ObservableCollection<string> Watching { get; } = new();
+    public ObservableCollection<string> Recent { get; } = new();
+    [ObservableProperty] private string? _selectedShooter;
+    [ObservableProperty] private string _directory = "";
+    [ObservableProperty] private string _directoryInput = "";
+    [ObservableProperty] private int _framesSaved;
+    [ObservableProperty] private string _lastFile = "";
+    [ObservableProperty] private string _message = "";
+
+    private void RebuildChoices()
+    {
+        var c = _catalog.Composition;
+        var items = c.CameraShooters.Select(s => s.Id.Text).Concat(c.Scopes.Select(s => s.Id.Text)).ToList();
+        if (!Shooters.SequenceEqual(items)) { Shooters.Clear(); foreach (var i in items) Shooters.Add(i); }
+        SelectedShooter ??= Shooters.FirstOrDefault();
+    }
+
+    public async Task StartAsync()
+    {
+        _follower = new Follower<StorageState>(_mesh.Node, StorageIds.State, StorageIds.GetState, s =>
+        {
+            Directory = s.Directory.Text; if (DirectoryInput == "") DirectoryInput = s.Directory.Text;
+            FramesSaved = s.FramesSaved.Value; LastFile = s.LastFile.Text; Message = s.Message.Text;
+            var w = s.Watching.Select(x => x.Text).ToList();
+            if (!Watching.SequenceEqual(w)) { Watching.Clear(); foreach (var i in w) Watching.Add(i); }
+        });
+        await _follower.StartAsync();
+        _savedHook = f => UiThread.Post(() =>
+        {
+            Recent.Insert(0, $"{DateTime.Now:HH:mm:ss}  {System.IO.Path.GetFileName(f.Path.Text)}");
+            while (Recent.Count > 30) Recent.RemoveAt(Recent.Count - 1);
+        });
+        await _mesh.Node.HookEventAsync(StorageIds.Saved, _savedHook, "storage log");
+    }
+
+    private async Task Run(Task<CommandResult> call) { var r = await call; Message = r.Ok.Value ? "" : r.Error.Text; }
+
+    [RelayCommand] private Task SetDirectoryAsync() => Run(Commands.CallAsync(_mesh.Node, StorageIds.SetDirectory, (BinaryConvertibleString)DirectoryInput));
+    [RelayCommand] private Task WatchAsync() => SelectedShooter is null ? Task.CompletedTask : Run(Commands.CallAsync(_mesh.Node, StorageIds.Watch, new StorageWatch { ShooterId = SelectedShooter, Enabled = true }));
+    [RelayCommand] private Task UnwatchAsync(string? id) => id is null ? Task.CompletedTask : Run(Commands.CallAsync(_mesh.Node, StorageIds.Watch, new StorageWatch { ShooterId = id, Enabled = false }));
+
+    public void Dispose()
+    {
+        _follower?.Dispose();
+        if (_savedHook is not null) { try { _mesh.Node.UnhookEvent(StorageIds.Saved, _savedHook); } catch (ObjectDisposedException) { } }
+    }
 }

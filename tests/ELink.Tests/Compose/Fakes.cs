@@ -61,6 +61,8 @@ public sealed class FakeShooter : IAsyncDisposable
     private string _phase = "Idle";
     public int Exposures;
     public List<ShooterExposure> Requests { get; } = new();
+    /// <summary>Deliver real FITS frames instead of three dummy bytes.</summary>
+    public bool Fits { get; set; }
 
     public FakeShooter(TypeSafeEVentNode node, string id)
     {
@@ -79,7 +81,10 @@ public sealed class FakeShooter : IAsyncDisposable
             {
                 await Task.Delay((int)(e.Seconds.Value * 1000));
                 await _node.FireEventAsync(ShooterIds.Shot(_id), new ShotEvent
-                { Shooter = _id, Format = ".fake", ExposureSeconds = e.Seconds, FrameType = e.FrameType, Data = new RawBytes(new byte[] { 1, 2, 3 }) });
+                {
+                    Shooter = _id, Format = Fits ? ".fits" : ".fake", ExposureSeconds = e.Seconds, FrameType = e.FrameType, Filter = e.Filter,
+                    Data = new RawBytes(Fits ? ELink.Imaging.FitsImage.Write16(16, 16, new ushort[256]) : new byte[] { 1, 2, 3 }),
+                });
                 _phase = "Idle"; await _pub.PublishAsync();
             });
             return CommandResult.Success();

@@ -10,9 +10,11 @@ using ELink.UI;
 // ELink station: INDI bridge + composition host + UI in one process, on one EVent node. The UI and the backend
 // still only talk through EVent (here over the node's local loopback). The node also listens, so other ELink
 // processes (another UI, a sequencer) can join this station's mesh.
-//   elink [--indi host[:port][=name]]... [--port 5698] [--listen 127.0.0.1] [--compose file.json] [--no-ui]
+//   elink [--indi host[:port][=name]]... [--port 5698] [--listen 127.0.0.1] [--compose file.json] [--save-dir DIR] [--save SHOOTER]... [--no-ui]
 var indi = new List<(string Name, string Host, int Port)>();
 int port = ElinkNode.DefaultPort; var listen = IPAddress.Loopback; bool ui = true;
+string saveDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "ELink");
+var save = new List<string>();
 string compose = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "elink", "compose.json");
 for (int i = 0; i < args.Length; i++)
 {
@@ -23,6 +25,8 @@ for (int i = 0; i < args.Length; i++)
         case "--listen": listen = IPAddress.Parse(Next()); break;
         case "--compose": compose = Next(); break;
         case "--no-ui": ui = false; break;
+        case "--save-dir": saveDir = Next(); break;
+        case "--save": save.Add(Next()); break;
         case "--indi":
             {
                 string spec = Next(), name = "";
@@ -35,7 +39,7 @@ for (int i = 0; i < args.Length; i++)
                 break;
             }
         default:
-            Console.WriteLine("usage: elink [--indi host[:port][=name]]... [--port 5698] [--listen 127.0.0.1] [--compose file.json] [--no-ui]");
+            Console.WriteLine("usage: elink [--indi host[:port][=name]]... [--port 5698] [--listen 127.0.0.1] [--compose file.json] [--save-dir DIR] [--save SHOOTER]... [--no-ui]");
             return args[i] is "-h" or "--help" ? 0 : 1;
     }
 }
@@ -51,6 +55,9 @@ await using var autofocus = new AutofocusService(node);
 await autofocus.StartAsync();
 await using var sequencer = new SequencerService(node);
 await sequencer.StartAsync();
+await using var storage = new StorageService(node, saveDir);
+await storage.StartAsync();
+foreach (var id in save) await Commands.CallAsync(node, ELink.Contracts.Automation.StorageIds.Watch, new ELink.Contracts.Automation.StorageWatch { ShooterId = id });
 var links = new List<IndiServerLink>();
 foreach (var (name, h, p) in indi)
 {
