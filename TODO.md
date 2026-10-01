@@ -47,13 +47,13 @@ ID scheme: `ELink.<Kind>.<DeviceName>.<Thing>` e.g. `ELink.Camera.CCD_Simulator.
 - [x] BLOB handling (base64, .z decompress, enableBLOB)
 - [x] Generic layer (static typed IndiProperty/Set/Snapshot/Blob contracts; any driver works) — originally planned as NON dynamic objects; static types are simpler and UI-friendly
       (`ELink.Indi.<server>.<device>.<property>` events + `.Set` functions) — works for any driver
-- [x] Typed layer (Mount, Camera, Focuser, FilterWheel, Rotator done; Dome/Weather/GPS/LightPanel/DustCover pending): standard-property mappers (CONNECTION, EQUATORIAL_EOD_COORD, ON_COORD_SET, TELESCOPE_*,
+- [x] Typed layer (Mount, Camera, Focuser, FilterWheel, Rotator, Dome, Weather, GPS done; LightPanel/DustCover pending): standard-property mappers (CONNECTION, EQUATORIAL_EOD_COORD, ON_COORD_SET, TELESCOPE_*,
       CCD_EXPOSURE, CCD_FRAME/BINNING/TEMPERATURE/COOLER, CCD1 BLOB, ABS_FOCUS_POSITION / REL_FOCUS,
       FILTER_SLOT, ABS_ROTATOR_ANGLE, DOME_*, WEATHER_*, GEOGRAPHIC_COORD, TIME_UTC, ...) to ELink.Contracts types
 - [x] Capability detection: device interface bitmask (DRIVER_INFO) -> which EVent endpoints to publish
 - [x] Reconnect/lifecycle: indiserver drops, device add/remove, property re-sync, backpressure
 - [x] Bridge executable (`dotnet run --project src/ELink.Bridge -- --indi localhost=sim`): config for multiple indiservers, namespace per server
-- [x] Integration tests against INDI simulators: telescope, ccd, focuser, wheel, rotator (dome/weather/gps/guide pending with their adapters)
+- [x] Integration tests against INDI simulators: telescope, ccd, focuser, wheel, rotator dome, weather, gps (guide pending)
 - [ ] Reverse direction (stretch): expose EVent-described devices as an INDI server
 
 ### Phase 2 — Contracts and device model

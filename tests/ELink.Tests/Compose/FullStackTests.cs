@@ -49,7 +49,8 @@ public class FullStackTests(IndiServerFixture server)
         Assert.True(await Eventually(() =>
         {
             var all = ui.CallFunctionAsync<NOTESVoid, DeviceList>(EquipmentIds.List, NOTESVoid.Void).GetAwaiter().GetResult()!.SelectMany(l => l.Devices).ToList();
-            return new[] { "Mount", "Camera", "FilterWheel" }.All(k => all.Any(d => d.Kind.Text == k));
+            return new[] { ("Mount", "Telescope_Simulator"), ("Camera", "CCD_Simulator"), ("FilterWheel", "Filter_Simulator") }
+                .All(w => all.Any(d => d.Kind.Text == w.Item1 && d.Id.Text == w.Item2));
         }));
         foreach (var (k, i) in new[] { ("Mount", "Telescope_Simulator"), ("Camera", "CCD_Simulator"), ("FilterWheel", "Filter_Simulator") })
             Assert.True((await Commands.CallAsync(ui, EquipmentIds.Command(k, i, "Connect"), (BinaryConvertibleBool)true)).Ok.Value);

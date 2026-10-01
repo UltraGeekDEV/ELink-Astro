@@ -1,0 +1,36 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="ELink.UI.Views.DomePanelView">
+  <StackPanel MaxWidth="760" Spacing="0">
+    <Border Classes="card">
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel>
+          <TextBlock Classes="title" Text="{Binding DisplayName}"/>
+          <TextBlock Classes="label" Text="{Binding Id}"/>
+        </StackPanel>
+        <Button Grid.Column="1" Content="{Binding ConnectButtonText}" Command="{Binding ConnectCommand}" VerticalAlignment="Center"/>
+      </Grid>
+    </Border>
+    <Border Classes="card">
+      <Grid ColumnDefinitions="*,*,*">
+        <StackPanel><TextBlock Classes="label" Text="AZIMUTH"/><TextBlock Classes="value" Text="{Binding Azimuth, StringFormat={}{0:0.0}°}"/></StackPanel>
+        <StackPanel Grid.Column="1"><TextBlock Classes="label" Text="SHUTTER"/><TextBlock Classes="value" Text="{Binding Shutter}"/></StackPanel>
+        <StackPanel Grid.Column="2"><TextBlock Classes="label" Text="MOVING / PARKED"/><TextBlock FontSize="16"><Run Text="{Binding Moving}"/> · <Run Text="{Binding Parked}"/></TextBlock></StackPanel>
+      </Grid>
+    </Border>
+    <Border Classes="card">
+      <StackPanel Spacing="10">
+        <StackPanel Classes="row">
+          <StackPanel><TextBlock Classes="label" Text="Azimuth °"/><NumericUpDown Value="{Binding TargetAzimuth}" Minimum="-360" Maximum="720" FormatString="0.#" Width="160"/></StackPanel>
+          <Button Content="Turn" Classes="primary" Command="{Binding GotoCommand}" VerticalAlignment="Bottom"/>
+          <Button Content="Abort" Classes="danger" Command="{Binding AbortCommand}" VerticalAlignment="Bottom"/>
+        </StackPanel>
+        <StackPanel Classes="row">
+          <Button Content="Open shutter" Command="{Binding OpenShutterCommand}"/>
+          <Button Content="Close shutter" Command="{Binding CloseShutterCommand}"/>
+          <Button Content="Park / unpark" Command="{Binding ParkCommand}"/>
+        </StackPanel>
+      </StackPanel>
+    </Border>
+    <TextBlock Classes="error" Text="{Binding Message}" IsVisible="{Binding Message.Length}"/>
+  </StackPanel>
+</UserControl>

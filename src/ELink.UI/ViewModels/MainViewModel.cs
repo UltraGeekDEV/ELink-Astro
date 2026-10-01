@@ -72,6 +72,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             DeviceKinds.Focuser => new FocuserPanelViewModel(Mesh, item.Id, item.DisplayName),
             DeviceKinds.FilterWheel => new FilterWheelPanelViewModel(Mesh, item.Id, item.DisplayName),
             DeviceKinds.Rotator => new RotatorPanelViewModel(Mesh, item.Id, item.DisplayName),
+            DeviceKinds.Dome => new DomePanelViewModel(Mesh, item.Id, item.DisplayName),
+            DeviceKinds.Weather => new WeatherPanelViewModel(Mesh, item.Id, item.DisplayName),
+            DeviceKinds.Gps => new GpsPanelViewModel(Mesh, item.Id, item.DisplayName),
             _ => null,
         };
         if (panel is null) return;

@@ -10,6 +10,9 @@
     <DataTemplate DataType="vm:FocuserPanelViewModel"><v:FocuserPanelView/></DataTemplate>
     <DataTemplate DataType="vm:FilterWheelPanelViewModel"><v:FilterWheelPanelView/></DataTemplate>
     <DataTemplate DataType="vm:RotatorPanelViewModel"><v:RotatorPanelView/></DataTemplate>
+    <DataTemplate DataType="vm:DomePanelViewModel"><v:DomePanelView/></DataTemplate>
+    <DataTemplate DataType="vm:WeatherPanelViewModel"><v:WeatherPanelView/></DataTemplate>
+    <DataTemplate DataType="vm:GpsPanelViewModel"><v:GpsPanelView/></DataTemplate>
     <DataTemplate DataType="vm:ScopePanelViewModel"><v:ScopePanelView/></DataTemplate>
     <DataTemplate DataType="vm:ComposerViewModel"><v:ComposerView/></DataTemplate>
     <DataTemplate DataType="vm:IndiBrowserViewModel"><v:IndiBrowserView/></DataTemplate>

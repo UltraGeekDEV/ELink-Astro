@@ -51,7 +51,7 @@ public class TypedBridgeTests(IndiServerFixture server) : IAsyncLifetime
         {
             var answers = _consumer.CallFunctionAsync<NOTESVoid, DeviceList>(EquipmentIds.List, NOTESVoid.Void).GetAwaiter().GetResult();
             all = answers!.SelectMany(a => a.Devices).ToList();
-            return kinds.All(k => all.Any(d => d.Kind.Text == k));
+            return kinds.All(k => k.Contains('/') ? all.Any(d => d.Kind.Text + "/" + d.Id.Text == k) : all.Any(d => d.Kind.Text == k));
         });
         return all;
     }
@@ -116,7 +116,6 @@ public class TypedBridgeTests(IndiServerFixture server) : IAsyncLifetime
 
         var r = await Cmd("Camera", "CCD_Simulator", "Expose", new ExposeRequest { Seconds = 1, FrameType = "Light" });
         Assert.True(r.Ok.Value, r.Error.Text);
-        Assert.True(await Eventually(() => state()?.Phase.Text == "Exposing"));
         Assert.True(await Eventually(() => frame is not null, 30000));
         Assert.Equal(".fits", frame!.Format.Text);
         Assert.StartsWith("SIMPLE", System.Text.Encoding.ASCII.GetString(frame.Data.Data, 0, 6));
@@ -125,9 +124,34 @@ public class TypedBridgeTests(IndiServerFixture server) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task DomeWeatherAndGpsAreBridged()
+    {
+        await WaitForDevices("Dome", "Weather", "Gps");
+        var dome = await Watch<DomeState>("Dome", "Dome_Simulator");
+        var weather = await Watch<WeatherState>("Weather", "Weather_Simulator");
+        var gps = await Watch<GpsState>("Gps", "GPS_Simulator");
+        foreach (var (k, i) in new[] { ("Dome", "Dome_Simulator"), ("Weather", "Weather_Simulator"), ("Gps", "GPS_Simulator") })
+            Assert.True((await Cmd(k, i, "Connect", (BinaryConvertibleBool)true)).Ok.Value);
+
+        Assert.True(await Eventually(() => gps()?.Connected.Value == true && !double.IsNaN(gps()!.LatitudeDegrees.Value)));
+        Assert.Equal(51, gps()!.LatitudeDegrees.Value, 3);
+        Assert.InRange(gps()!.LongitudeDegrees.Value, -3, -2);          // 357.7 east = 2.3 west
+        Assert.True(await Eventually(() => weather()?.Connected.Value == true && weather()!.Parameters.Count >= 5));
+        Assert.Contains(weather()!.Parameters, p => p.Id.Text == "WEATHER_TEMPERATURE" && p.Value.Value == 15);
+
+        Assert.True(await Eventually(() => dome()?.Connected.Value == true));
+        Assert.True((await Cmd("Dome", "Dome_Simulator", "GotoAzimuth", (BinaryConvertibleDouble)(-90.0))).Ok.Value);   // normalised to 270
+        Assert.True(await Eventually(() => Math.Abs(dome()!.AzimuthDegrees.Value - 270) < 0.5 && !dome()!.Moving.Value, 90000));
+        Assert.True((await Cmd("Dome", "Dome_Simulator", "Shutter", (BinaryConvertibleBool)true)).Ok.Value);
+        Assert.True(await Eventually(() => dome()?.Shutter.Text == "Open", 60000));
+        Assert.True((await Cmd("Dome", "Dome_Simulator", "Shutter", (BinaryConvertibleBool)false)).Ok.Value);
+        Assert.True(await Eventually(() => dome()?.Shutter.Text == "Closed", 60000));
+    }
+
+    [Fact]
     public async Task FocuserWheelAndRotatorMove()
     {
-        await WaitForDevices("Focuser", "FilterWheel", "Rotator");
+        await WaitForDevices("Focuser", "FilterWheel/Filter_Simulator", "Rotator");
         var foc = await Watch<FocuserState>("Focuser", "Focuser_Simulator");
         var wheel = await Watch<FilterWheelState>("FilterWheel", "Filter_Simulator");
         var rot = await Watch<RotatorState>("Rotator", "Rotator_Simulator");

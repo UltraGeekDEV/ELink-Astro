@@ -1,0 +1,24 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="ELink.UI.Views.GpsPanelView">
+  <StackPanel MaxWidth="760" Spacing="0">
+    <Border Classes="card">
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel>
+          <TextBlock Classes="title" Text="{Binding DisplayName}"/>
+          <TextBlock Classes="label" Text="{Binding Id}"/>
+        </StackPanel>
+        <Button Grid.Column="1" Content="{Binding ConnectButtonText}" Command="{Binding ConnectCommand}" VerticalAlignment="Center"/>
+      </Grid>
+    </Border>
+    <Border Classes="card">
+      <Grid ColumnDefinitions="*,*,*" RowDefinitions="Auto,Auto,Auto">
+        <StackPanel><TextBlock Classes="label" Text="LATITUDE"/><TextBlock Classes="value" Text="{Binding LatitudeText}"/></StackPanel>
+        <StackPanel Grid.Column="1"><TextBlock Classes="label" Text="LONGITUDE"/><TextBlock Classes="value" Text="{Binding LongitudeText}"/></StackPanel>
+        <StackPanel Grid.Column="2"><TextBlock Classes="label" Text="ELEVATION"/><TextBlock Classes="value" Text="{Binding ElevationText}"/></StackPanel>
+        <StackPanel Grid.Row="1" Grid.ColumnSpan="3" Margin="0,12,0,0"><TextBlock Classes="label" Text="TIME (UTC)"/><TextBlock Classes="value" Text="{Binding TimeUtc}"/></StackPanel>
+        <Button Grid.Row="2" Content="Refresh fix" Command="{Binding RefreshCommand}" Margin="0,12,0,0" HorizontalAlignment="Left"/>
+      </Grid>
+    </Border>
+    <TextBlock Classes="error" Text="{Binding Message}" IsVisible="{Binding Message.Length}"/>
+  </StackPanel>
+</UserControl>

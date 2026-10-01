@@ -82,3 +82,86 @@ public partial class RotatorPanelViewModel(MeshSession mesh, string id, string d
     [RelayCommand] private Task SyncAsync() => Call("Sync", (BinaryConvertibleDouble)TargetAngle);
     [RelayCommand] private Task AbortAsync() => Call("Abort");
 }
+
+public partial class DomePanelViewModel(MeshSession mesh, string id, string displayName)
+    : DevicePanelViewModel(mesh, DeviceKinds.Dome, id, displayName)
+{
+    [ObservableProperty] private double _azimuth;
+    [ObservableProperty] private bool _moving;
+    [ObservableProperty] private string _shutter = "Unknown";
+    [ObservableProperty] private bool _parked;
+    [ObservableProperty] private double _targetAzimuth;
+
+    public override async Task StartAsync()
+    {
+        var f = Follow<DomeState>(s =>
+        {
+            Connected = s.Connected.Value; Azimuth = s.AzimuthDegrees.Value; Moving = s.Moving.Value; Shutter = s.Shutter.Text; Parked = s.Parked.Value;
+            if (s.Message.Text != "") Message = s.Message.Text;
+        });
+        await f.StartAsync();
+    }
+
+    [RelayCommand] private Task ConnectAsync() => ToggleConnectAsync();
+    [RelayCommand] private Task GotoAsync() => Call("GotoAzimuth", (BinaryConvertibleDouble)TargetAzimuth);
+    [RelayCommand] private Task OpenShutterAsync() => Call("Shutter", (BinaryConvertibleBool)true);
+    [RelayCommand] private Task CloseShutterAsync() => Call("Shutter", (BinaryConvertibleBool)false);
+    [RelayCommand] private Task ParkAsync() => Call("Park", (BinaryConvertibleBool)!Parked);
+    [RelayCommand] private Task AbortAsync() => Call("Abort");
+}
+
+public sealed class WeatherRow
+{
+    public WeatherRow(string label, string value, string status) { Label = label; Value = value; Status = status; }
+    public string Label { get; }
+    public string Value { get; }
+    public string Status { get; }
+}
+
+public partial class WeatherPanelViewModel(MeshSession mesh, string id, string displayName)
+    : DevicePanelViewModel(mesh, DeviceKinds.Weather, id, displayName)
+{
+    [ObservableProperty] private string _safety = "Unknown";
+    [ObservableProperty] private bool _safe;
+    public ObservableCollection<WeatherRow> Parameters { get; } = new();
+
+    public override async Task StartAsync()
+    {
+        var f = Follow<WeatherState>(s =>
+        {
+            Connected = s.Connected.Value; Safety = s.Safety.Text; Safe = s.Safe.Value;
+            Parameters.Clear();
+            foreach (var p in s.Parameters)
+                Parameters.Add(new WeatherRow(p.Label.Text != "" ? p.Label.Text : p.Id.Text, p.Value.Value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture), p.Status.Text));
+        });
+        await f.StartAsync();
+    }
+
+    [RelayCommand] private Task ConnectAsync() => ToggleConnectAsync();
+    [RelayCommand] private Task RefreshAsync() => Call("Refresh");
+}
+
+public partial class GpsPanelViewModel(MeshSession mesh, string id, string displayName)
+    : DevicePanelViewModel(mesh, DeviceKinds.Gps, id, displayName)
+{
+    [ObservableProperty] private bool _hasFix;
+    [ObservableProperty] private string _latitudeText = "--";
+    [ObservableProperty] private string _longitudeText = "--";
+    [ObservableProperty] private string _elevationText = "--";
+    [ObservableProperty] private string _timeUtc = "";
+
+    public override async Task StartAsync()
+    {
+        var f = Follow<GpsState>(s =>
+        {
+            Connected = s.Connected.Value; HasFix = s.HasFix.Value; TimeUtc = s.TimeUtc.Text;
+            LatitudeText = double.IsNaN(s.LatitudeDegrees.Value) ? "--" : ELink.Core.Astro.Sexagesimal.Format(s.LatitudeDegrees.Value, 0);
+            LongitudeText = double.IsNaN(s.LongitudeDegrees.Value) ? "--" : ELink.Core.Astro.Sexagesimal.Format(s.LongitudeDegrees.Value, 0);
+            ElevationText = double.IsNaN(s.ElevationMeters.Value) ? "--" : $"{s.ElevationMeters.Value:0} m";
+        });
+        await f.StartAsync();
+    }
+
+    [RelayCommand] private Task ConnectAsync() => ToggleConnectAsync();
+    [RelayCommand] private Task RefreshAsync() => Call("Refresh");
+}
