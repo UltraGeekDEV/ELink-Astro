@@ -62,6 +62,7 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         await host.StartAsync();
         await using var autofocus = new AutofocusService(hostNode); await autofocus.StartAsync();
         await using var sequencer = new SequencerService(hostNode); await sequencer.StartAsync();
+        await using var mosaicSvc = new MosaicService(hostNode); await mosaicSvc.StartAsync();
         string saveDir = Path.Combine(Path.GetTempPath(), "elink-ui-save-" + Guid.NewGuid().ToString("N"));
         await using var storage = new StorageService(hostNode, saveDir); await storage.StartAsync();
 
@@ -151,6 +152,25 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         vm.SelectedTab = vm.Tabs.First(t => t.Content is AutofocusViewModel);
         Assert.True(await Eventually(() => vm.Autofocus.Shooters.Contains("cam") && vm.Autofocus.Focusers.Contains("Focuser_Simulator")));
         Shot(window, "07c-autofocus");
+
+        // mosaic through the UI: preview the tiling, scan 3 panels twice with single shots, watch the coverage map fill
+        var mosaic = vm.Mosaic;
+        Assert.True(await Eventually(() => mosaic.Scopes.Contains("main")));
+        mosaic.SelectedScope = "main";
+        mosaic.Label = "UIField"; mosaic.CenterRa = "06:00:00"; mosaic.CenterDec = "10:00:00";
+        mosaic.FovWidth = 1.0; mosaic.FovHeight = 0.5; mosaic.FrameWidth = 0.5; mosaic.FrameHeight = 0.5; mosaic.Overlap = 0.2;
+        mosaic.ExposureSeconds = 1; mosaic.Passes = 2;
+        await mosaic.PreviewCommand.ExecuteAsync(null);
+        Assert.Equal("", mosaic.Message);
+        Assert.Contains("3 × 1 = 3 panels", mosaic.Summary);
+        Assert.Equal(3, mosaic.Cells.Count);
+        await mosaic.StartRunCommand.ExecuteAsync(null);
+        Assert.Equal("", mosaic.Message);
+        Assert.True(await Eventually(() => mosaic.Phase == "Done", 240000), $"{mosaic.Phase} {mosaic.Message}");
+        Assert.True(await Eventually(() => mosaic.Cells.All(c => c.Frames == 2)), string.Join(",", mosaic.Cells.Select(c => c.Frames)));
+        Assert.Contains("6 shots", mosaic.Progress);
+        vm.SelectedTab = vm.Tabs.First(t => t.Content is MosaicViewModel);
+        Shot(window, "07d-mosaic");
 
         // generic INDI browser
         vm.SelectedTab = vm.Tabs.First(t => t.Content is IndiBrowserViewModel);

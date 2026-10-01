@@ -72,7 +72,8 @@ ID scheme: `ELink.<Kind>.<DeviceName>.<Thing>` e.g. `ELink.Camera.CCD_Simulator.
 ### Phase 4 — Automation
 - [ ] Plate solve service (astrometry.net / ASTAP via EVent function), center-on-target
 - [x] Autofocus (HFR star measurement, hyperbola/parabola fit, coarse + fine sweeps) as a mesh service
-- [ ] Meridian flip, dithering, guiding (PHD2/INDI guider) as modules
+- [x] Mosaic scanner (Seestar-style virtual FOV, single shots, serpentine route, producer/executor/recorder pipeline over channels, live dRPC control)
+- [ ] Meridian flip (deferred), dithering, guiding (PHD2/INDI guider) as modules
 - [x] Sequencer (plans of blocks, autofocus, pause/resume, weather interlock); [ ] scheduler/priorities, dome interlock
 - [x] Frame storage (FITS headers stamped, night folders, JSON-lines session log)
 

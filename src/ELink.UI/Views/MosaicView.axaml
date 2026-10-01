@@ -1,0 +1,82 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="ELink.UI.Views.MosaicView">
+  <StackPanel MaxWidth="980" Spacing="0">
+    <Border Classes="card">
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel>
+          <TextBlock Classes="title" Text="Mosaic"/>
+          <TextBlock Classes="label" TextWrapping="Wrap" Text="Set a virtual field of view. The scope keeps moving over it, one single shot per panel, round after round, until the whole area is covered evenly."/>
+        </StackPanel>
+        <StackPanel Grid.Column="1" HorizontalAlignment="Right">
+          <TextBlock Classes="value" Text="{Binding Phase}" HorizontalAlignment="Right"/>
+          <TextBlock Classes="label" Text="{Binding Progress}" HorizontalAlignment="Right"/>
+        </StackPanel>
+      </Grid>
+    </Border>
+    <Border Classes="card">
+      <StackPanel Spacing="10">
+        <TextBlock Classes="section" Text="AREA"/>
+        <StackPanel Classes="row">
+          <StackPanel><TextBlock Classes="label" Text="Name"/><TextBox Text="{Binding Label}" Width="130"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Centre RA (J2000)"/><TextBox Text="{Binding CenterRa}" Width="120"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Centre Dec (J2000)"/><TextBox Text="{Binding CenterDec}" Width="120"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Width °"/><NumericUpDown Value="{Binding FovWidth}" Minimum="0.01" Maximum="60" Increment="0.1" FormatString="0.###" Width="120"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Height °"/><NumericUpDown Value="{Binding FovHeight}" Minimum="0.01" Maximum="60" Increment="0.1" FormatString="0.###" Width="120"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Angle °"/><NumericUpDown Value="{Binding PositionAngle}" Minimum="-180" Maximum="180" FormatString="0.#" Width="110"/></StackPanel>
+        </StackPanel>
+        <TextBlock Classes="section" Text="FRAME" Margin="0,6,0,0"/>
+        <StackPanel Classes="row">
+          <StackPanel><TextBlock Classes="label" Text="Frame width °"/><NumericUpDown Value="{Binding FrameWidth}" Minimum="0.001" Increment="0.05" FormatString="0.####" Width="130"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Frame height °"/><NumericUpDown Value="{Binding FrameHeight}" Minimum="0.001" Increment="0.05" FormatString="0.####" Width="130"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Overlap"/><NumericUpDown Value="{Binding Overlap}" Minimum="0" Maximum="0.8" Increment="0.05" FormatString="0.##" Width="110"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Camera"/><ComboBox ItemsSource="{Binding Cameras}" SelectedItem="{Binding SelectedCamera}" Width="170"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Focal length mm"/><NumericUpDown Value="{Binding FocalLength}" Minimum="1" FormatString="0.#" Width="130"/></StackPanel>
+          <Button Content="Frame from camera" Command="{Binding ComputeFrameCommand}" VerticalAlignment="Bottom"/>
+        </StackPanel>
+        <TextBlock Classes="section" Text="SCAN" Margin="0,6,0,0"/>
+        <StackPanel Classes="row">
+          <StackPanel><TextBlock Classes="label" Text="Smart scope"/><ComboBox ItemsSource="{Binding Scopes}" SelectedItem="{Binding SelectedScope}" Width="170"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Weather guard"/><ComboBox ItemsSource="{Binding Weather}" SelectedItem="{Binding SelectedWeather}" Width="170"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Seconds per shot"/><NumericUpDown Value="{Binding ExposureSeconds}" Minimum="0.1" FormatString="0.##" Width="130"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Rounds (0 = until stopped)"/><NumericUpDown Value="{Binding Passes}" Minimum="0" FormatString="0" Width="140"/></StackPanel>
+        </StackPanel>
+        <StackPanel Classes="row">
+          <Button Content="Preview" Command="{Binding PreviewCommand}"/>
+          <Button Content="Start" Classes="primary" Command="{Binding StartRunCommand}"/>
+          <Button Content="Pause" Command="{Binding PauseCommand}"/>
+          <Button Content="Resume" Command="{Binding ResumeCommand}"/>
+          <Button Content="Abort" Classes="danger" Command="{Binding AbortCommand}"/>
+          <Button Content="Apply rounds while running" Command="{Binding ApplyPassesCommand}"/>
+        </StackPanel>
+        <TextBlock Text="{Binding Summary}" Classes="label"/>
+        <TextBlock Classes="error" Text="{Binding Message}" IsVisible="{Binding Message.Length}"/>
+      </StackPanel>
+    </Border>
+    <Border Classes="card">
+      <StackPanel Spacing="6">
+        <TextBlock Classes="section" Text="COVERAGE (shots per panel; click a panel to skip it or bring it back)"/>
+        <Border Background="#171B23" CornerRadius="6" Width="560" Height="300" HorizontalAlignment="Left">
+          <ItemsControl ItemsSource="{Binding Cells}" Width="560" Height="300">
+            <ItemsControl.ItemsPanel><ItemsPanelTemplate><Canvas Width="560" Height="300"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+            <ItemsControl.Styles>
+              <Style Selector="ContentPresenter">
+                <Setter Property="Canvas.Left" Value="{Binding X}"/>
+                <Setter Property="Canvas.Top" Value="{Binding Y}"/>
+              </Style>
+            </ItemsControl.Styles>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Button Width="{Binding Size}" Height="{Binding Size}" Padding="0" Background="{Binding Fill}"
+                        BorderThickness="2" BorderBrush="{Binding Edge}"
+                        HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                        Command="{Binding $parent[UserControl].DataContext.ToggleCellCommand}" CommandParameter="{Binding}">
+                  <TextBlock Text="{Binding Label}" FontSize="18" FontWeight="SemiBold"/>
+                </Button>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </Border>
+      </StackPanel>
+    </Border>
+  </StackPanel>
+</UserControl>

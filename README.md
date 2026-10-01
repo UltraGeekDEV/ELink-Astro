@@ -21,7 +21,7 @@ C# / .NET 8, Avalonia UI.
 | `ELink.IndiBridge` | the INDI <-> EVent translation: generic mirror of every property + typed adapters per device kind |
 | `ELink.Compose` | smart scopes, mount pointers, camera shooters, composition host with JSON persistence |
 | `ELink.Imaging` | FITS reader, screen auto-stretch, star detection and HFR |
-| `ELink.Automation` | autofocus, sequencer (weather guard, pause/resume) and frame storage services, driven only by EVent IDs |
+| `ELink.Automation` | autofocus, sequencer (weather guard, pause/resume), mosaic scanner and frame storage services, driven only by EVent IDs |
 | `ELink.UI` / `ELink.App` | Avalonia UI (library) and its stand-alone executable `elink-ui` |
 | `ELink.Bridge` | headless INDI bridge executable |
 | `ELink.Station` | all-in-one executable `elink`: bridge + composition host + UI on one node |
@@ -37,6 +37,8 @@ dotnet run --project src/ELink.Station -- --indi localhost:7624                 
 dotnet run --project src/ELink.Bridge  -- --indi localhost --port 5698
 dotnet run --project src/ELink.App     -- --host 127.0.0.1 --port 5698
 ```
+
+**Mosaic:** set a virtual field of view and a frame size; the scope keeps moving over the area taking *single* shots, panel after panel, round after round (a serpentine route, so every hop is to a neighbour and consecutive rounds join without a jump). A producer plans the route into a bounded queue, an executor slews and shoots through the smart scope, a recorder builds the coverage map; `SetPasses` and `SkipPanel` change the run while it goes. Stacking is out of scope: frames are saved per panel.
 
 In the UI: open equipment from the left, compose pointers/shooters/scopes on the **Compose** tab, run **Observe**
 (point, wait until settled, take N exposures) on a scope's tab, or browse and edit any raw INDI property on the **INDI** tab.

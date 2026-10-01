@@ -18,6 +18,7 @@
     <DataTemplate DataType="vm:AutofocusViewModel"><v:AutofocusView/></DataTemplate>
     <DataTemplate DataType="vm:SequencerViewModel"><v:SequencerView/></DataTemplate>
     <DataTemplate DataType="vm:StorageViewModel"><v:StorageView/></DataTemplate>
+    <DataTemplate DataType="vm:MosaicViewModel"><v:MosaicView/></DataTemplate>
     <DataTemplate DataType="vm:IndiBrowserViewModel"><v:IndiBrowserView/></DataTemplate>
   </Application.DataTemplates>
 

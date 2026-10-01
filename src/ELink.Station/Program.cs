@@ -55,6 +55,8 @@ await using var autofocus = new AutofocusService(node);
 await autofocus.StartAsync();
 await using var sequencer = new SequencerService(node);
 await sequencer.StartAsync();
+await using var mosaic = new MosaicService(node);
+await mosaic.StartAsync();
 await using var storage = new StorageService(node, saveDir);
 await storage.StartAsync();
 foreach (var id in save) await Commands.CallAsync(node, ELink.Contracts.Automation.StorageIds.Watch, new ELink.Contracts.Automation.StorageWatch { ShooterId = id });
