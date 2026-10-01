@@ -14,7 +14,7 @@ namespace ELink.Tests.Indi;
 [Collection("indiserver")]
 public class GenericBridgeTests(IndiServerFixture server)
 {
-    private static int FreePort() { var l = new TcpListener(IPAddress.Loopback, 0); l.Start(); var p = ((IPEndPoint)l.LocalEndpoint).Port; l.Stop(); return p; }
+    private static int FreePort() => ELink.Testing.TestPorts.Next();
 
     private static async Task<bool> Eventually(Func<bool> cond, int ms = 20000)
     {

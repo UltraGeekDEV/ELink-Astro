@@ -17,7 +17,7 @@ namespace ELink.Tests.Atlas;
 public class StellariumLiveTests(ITestOutputHelper output)
 {
     private static bool Enabled => Environment.GetEnvironmentVariable("ELINK_LIVE_STELLARIUM") == "1" && File.Exists("/usr/bin/stellarium");
-    private static int FreePort() { var l = new TcpListener(IPAddress.Loopback, 0); l.Start(); var p = ((IPEndPoint)l.LocalEndpoint).Port; l.Stop(); return p; }
+    private static int FreePort() => ELink.Testing.TestPorts.Next();
 
     private static Process Launch(string profile) =>
         Process.Start(new ProcessStartInfo("stellarium") { ArgumentList = { "--user-dir", profile }, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, Environment = { ["QT_QPA_PLATFORM"] = "offscreen" } })!;

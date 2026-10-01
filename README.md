@@ -20,6 +20,8 @@ C# / .NET 8, Avalonia UI.
 | `ELink.Indi` | INDI XML protocol client with a live property model (no EVent inside) |
 | `ELink.IndiBridge` | the INDI <-> EVent translation: generic mirror of every property + typed adapters per device kind |
 | `ELink.Compose` | smart scopes, mount pointers, camera shooters, composition host with JSON persistence |
+| `ELink.Atlas` | sky atlas service: KStars star catalogue, OpenNGC deep-sky objects, constellation figures, GSC faint stars, search |
+| `ELink.Stellarium` | Stellarium bridge: ELink as a Stellarium telescope for any pointer, plus Remote Control (show target, read selection) |
 | `ELink.Imaging` | FITS reader, screen auto-stretch, star detection and HFR |
 | `ELink.Automation` | autofocus, sequencer (weather guard, pause/resume), mosaic scanner and frame storage services, driven only by EVent IDs |
 | `ELink.UI` / `ELink.App` | Avalonia UI (library) and its stand-alone executable `elink-ui` |
@@ -39,6 +41,12 @@ dotnet run --project src/ELink.App     -- --host 127.0.0.1 --port 5698
 ```
 
 **Mosaic (painting a virtual FOV):** give a virtual field of view, the frames the scope shoots (each with its own size, angle and offset, so heterogeneous OTAs work), a stepover and a target exposure per spot. The scope then slowly *paints* the area with exposure time. A coverage map accumulates the seconds each spot has received, summed over all frames' rotated footprints. The planner sweeps serpentine raster passes whose hop is set so one pass deposits a uniform slice of the target (a deep target means several light passes at small stepovers, with shifted lattices; a rotator can turn the scope between passes), then tops up what the passes left short. Every move is one single shot. A producer plans visits into a bounded queue, an executor turns the rotator and has the smart scope slew and shoot, and a recorder builds the real coverage map. `SetTarget` and `SetStepover` change a running scan. Stacking is out of scope: frames are saved with their pointing.
+
+**Focusers:** every INDI focuser is driven through the standard INDI focuser interface, the same properties Ekos uses (absolute, relative and timed moves, abort, sync, reverse, backlash, max travel, speed, temperature), so a ZWO EAF on `indi_asi_focuser`, a Moonlite, or anything else INDI supports works without vendor code. What a focuser can do is detected from the properties its driver defines.
+
+**Sky atlas:** an interactive chart (drag, wheel, click) built from the sky data KStars installs (`/usr/share/kstars`: about 43k stars to magnitude 8, 14k OpenNGC objects, constellation figures) plus faint stars from the GSC for small fields. Search (`M42`, `NGC 7000`, `Vega`, `andromeda`), see mounts where they point, send a pointer or scope to the selection, or make it the mosaic centre.
+
+**Stellarium:** ELink is a Stellarium telescope. In Stellarium: Telescope Control → add → "External software or a remote computer", host `localhost`, port 10001 (`--stellarium-port`), equinox J2000. Stellarium then shows the bound pointer and its "slew to selection" (Ctrl+1) moves it. With Stellarium's Remote Control plugin enabled (port 8090, `--stellarium-remote`) the atlas can also show targets in Stellarium and take its selection. This was verified against a real (headless) Stellarium: `ELINK_LIVE_STELLARIUM=1 ./dev.sh test --filter StellariumLive`.
 
 In the UI: open equipment from the left, compose pointers/shooters/scopes on the **Compose** tab, run **Observe**
 (point, wait until settled, take N exposures) on a scope's tab, or browse and edit any raw INDI property on the **INDI** tab.

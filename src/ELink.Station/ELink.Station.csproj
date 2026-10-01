@@ -12,5 +12,7 @@
     <ProjectReference Include="..\ELink.IndiBridge\ELink.IndiBridge.csproj" />
     <ProjectReference Include="..\ELink.Compose\ELink.Compose.csproj" />
     <ProjectReference Include="..\ELink.Automation\ELink.Automation.csproj" />
+    <ProjectReference Include="..\ELink.Atlas\ELink.Atlas.csproj" />
+    <ProjectReference Include="..\ELink.Stellarium\ELink.Stellarium.csproj" />
   </ItemGroup>
 </Project>

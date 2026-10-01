@@ -77,6 +77,12 @@ ID scheme: `ELink.<Kind>.<DeviceName>.<Thing>` e.g. `ELink.Camera.CCD_Simulator.
 - [x] Sequencer (plans of blocks, autofocus, pause/resume, weather interlock); [ ] scheduler/priorities, dome interlock
 - [x] Frame storage (FITS headers stamped, night folders, JSON-lines session log)
 
+### Phase 4b — Sky
+- [x] Focusers through the full standard INDI focuser interface (Ekos parity; EAF-capable INDI drivers work as is)
+- [x] Sky atlas service (KStars stars, OpenNGC, constellations, GSC faint stars, search) and interactive chart
+- [x] Stellarium bridge: telescope server for any pointer (verified live), Remote Control show/selection
+- [ ] Atlas: horizon/altitude overlay and observability (needs site location), planets/moon
+
 ### Phase 5 — Avalonia UI
 - [x] ViewModel base classes bound to EVent (state hook -> property, command -> function call), no backend refs
 - [x] App shell, mesh connection/discovery panel, device browser (from directory + descriptions)

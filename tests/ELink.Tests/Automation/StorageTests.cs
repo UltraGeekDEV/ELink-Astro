@@ -18,7 +18,7 @@ namespace ELink.Tests.Automation;
 
 public class StorageTests : IAsyncLifetime
 {
-    private static int FreePort() { var l = new TcpListener(IPAddress.Loopback, 0); l.Start(); var p = ((IPEndPoint)l.LocalEndpoint).Port; l.Stop(); return p; }
+    private static int FreePort() => ELink.Testing.TestPorts.Next();
     private TypeSafeEVentNode _node = null!;
     private string _dir = "";
 

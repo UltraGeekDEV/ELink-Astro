@@ -43,7 +43,7 @@ public class TelescopeProtocolTests
 
 public class StellariumTelescopeServerTests : IAsyncLifetime
 {
-    private static int FreePort() { var l = new TcpListener(IPAddress.Loopback, 0); l.Start(); var p = ((IPEndPoint)l.LocalEndpoint).Port; l.Stop(); return p; }
+    private static int FreePort() => ELink.Testing.TestPorts.Next();
     private TypeSafeEVentNode _node = null!;
     private FakePointer _pointer = null!;
 
@@ -134,7 +134,7 @@ internal sealed class FakeRemoteControl : HttpMessageHandler
 
 public class StellariumRemoteTests
 {
-    private static int FreePort() { var l = new TcpListener(IPAddress.Loopback, 0); l.Start(); var p = ((IPEndPoint)l.LocalEndpoint).Port; l.Stop(); return p; }
+    private static int FreePort() => ELink.Testing.TestPorts.Next();
 
     [Fact]
     public async Task ShowsAPositionAsAJ2000DirectionAndReadsTheSelection()

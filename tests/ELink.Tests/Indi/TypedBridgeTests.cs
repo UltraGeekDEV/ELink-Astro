@@ -13,7 +13,7 @@ namespace ELink.Tests.Indi;
 [Collection("indiserver")]
 public class TypedBridgeTests(IndiServerFixture server) : IAsyncLifetime
 {
-    private static int FreePort() { var l = new TcpListener(IPAddress.Loopback, 0); l.Start(); var p = ((IPEndPoint)l.LocalEndpoint).Port; l.Stop(); return p; }
+    private static int FreePort() => ELink.Testing.TestPorts.Next();
     private TypeSafeEVentNode _bridge = null!, _consumer = null!;
     private IndiServerLink _link = null!;
 

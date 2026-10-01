@@ -1,0 +1,326 @@
+using System.Collections.ObjectModel;
+using System.Globalization;
+using Avalonia.Media;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using ELink.Contracts.Atlas;
+using ELink.Contracts.Composition;
+using ELink.Contracts.Equipment;
+using ELink.Core;
+using ELink.Core.Astro;
+using ELink.UI.Controls;
+using ELink.UI.Infrastructure;
+using Event.Connections.Models.BaseBinaryConvertibles;
+using EVent.Connections.Models.BaseBinaryConvertibles;
+
+namespace ELink.UI.ViewModels;
+
+public sealed record AtlasHitItem(string Label, string Kind, string Detail, double RaHours, double DecDegrees, float Magnitude, float MajorArcmin)
+{
+    public string Line => $"{Label}   {Kind}" + (float.IsNaN(Magnitude) ? "" : $"   mag {Magnitude:0.#}") + (Detail != "" ? $"   {Detail}" : "");
+}
+
+/// <summary>The sky atlas: an interactive chart of the atlas service's stars, deep-sky objects and constellations, with the mounts
+/// and smart scopes drawn where they point, the mosaic area outlined, search, and point-and-go. Stellarium can be driven from here
+/// too. Knows the backend only by EVent IDs.</summary>
+public sealed partial class AtlasViewModel : ObservableObject, IDisposable
+{
+    private readonly MeshSession _mesh;
+    private readonly CatalogViewModel _catalog;
+    private readonly MosaicViewModel? _mosaic;
+    private readonly Dictionary<string, IDisposable> _followers = new();
+    private readonly Dictionary<string, ChartMarker> _mounts = new();
+    private Follower<StellariumState>? _stellarium;
+    private Action<AtlasHit>? _stellariumSelected;
+    private CancellationTokenSource? _pending;
+    private int _queries;
+
+    public AtlasViewModel(MeshSession mesh, CatalogViewModel catalog, MosaicViewModel? mosaic = null)
+    {
+        _mesh = mesh; _catalog = catalog; _mosaic = mosaic;
+        catalog.Devices.CollectionChanged += (_, _) => UiThread.Post(() => _ = FollowEquipmentAsync());
+        catalog.CompositionChanged += () => UiThread.Post(() => { RebuildPointers(); _ = FollowEquipmentAsync(); });
+        if (mosaic is not null) mosaic.PropertyChanged += (_, e) => { if (e.PropertyName is nameof(MosaicViewModel.CenterRa) or nameof(MosaicViewModel.CenterDec) or nameof(MosaicViewModel.FovWidth) or nameof(MosaicViewModel.FovHeight) or nameof(MosaicViewModel.PositionAngle)) UpdateOverlays(); };
+        RebuildPointers();
+    }
+
+    // view
+    [ObservableProperty] private double _centerRa = 5.6;
+    [ObservableProperty] private double _centerDec = 0;
+    [ObservableProperty] private double _fov = 60;
+    [ObservableProperty] private double _starLimit = 6.5;
+    [ObservableProperty] private bool _showGrid = true;
+    [ObservableProperty] private bool _showConstellations = true;
+    // what the chart draws
+    [ObservableProperty] private IReadOnlyList<ChartStar> _stars = Array.Empty<ChartStar>();
+    [ObservableProperty] private IReadOnlyList<ChartDso> _dsos = Array.Empty<ChartDso>();
+    [ObservableProperty] private IReadOnlyList<ChartSegment> _lines = Array.Empty<ChartSegment>();
+    [ObservableProperty] private IReadOnlyList<ChartLabel> _labels = Array.Empty<ChartLabel>();
+    [ObservableProperty] private IReadOnlyList<ChartMarker> _markers = Array.Empty<ChartMarker>();
+    [ObservableProperty] private IReadOnlyList<ChartPolygon> _polygons = Array.Empty<ChartPolygon>();
+    // search and selection
+    [ObservableProperty] private string _searchText = "";
+    public ObservableCollection<AtlasHitItem> Results { get; } = new();
+    [ObservableProperty] private AtlasHitItem? _selectedResult;
+    [ObservableProperty] private AtlasHitItem? _selection;
+    [ObservableProperty] private string _selectionText = "Click the chart or search to select an object.";
+    // acting on the selection
+    public ObservableCollection<string> Pointers { get; } = new();
+    [ObservableProperty] private string? _selectedPointer;
+    [ObservableProperty] private string _message = "";
+    [ObservableProperty] private string _status = "";
+    [ObservableProperty] private string _stellariumText = "Stellarium: not connected";
+    [ObservableProperty] private string _stellariumOffer = "";
+
+    public int QueriesMade => _queries;
+
+    public async Task StartAsync()
+    {
+        try
+        {
+            var sets = await _mesh.Node.CallFunctionAsync<NOTESVoid, ConstellationSet>(AtlasIds.Constellations, NOTESVoid.Void);
+            var set = sets?.FirstOrDefault();
+            if (set is not null)
+            {
+                var lines = set.Lines.Select(l => new ChartSegment(l.Ra1Hours.value, l.Dec1Degrees.value, l.Ra2Hours.value, l.Dec2Degrees.value)).ToList();
+                var labels = set.Labels.Select(l => new ChartLabel(l.Label.Text, l.RaHours.value, l.DecDegrees.value)).ToList();
+                UiThread.Post(() => { Lines = lines; Labels = labels; });
+            }
+            else UiThread.Post(() => Status = "no atlas service on the mesh");
+        }
+        catch (Exception ex) { UiThread.Post(() => Status = "atlas: " + ex.Message); }
+
+        _stellarium = new Follower<StellariumState>(_mesh.Node, StellariumIds.State, StellariumIds.GetState, s =>
+        {
+            StellariumText = $"Stellarium: telescope port {s.TelescopePort.Value} ({s.TelescopeClients.Value} connected" +
+                             (s.PointerId.Text != "" ? $", showing {s.PointerId.Text}" : "") + ") · remote control " + (s.RemoteReachable.Value ? "reachable" : "not reachable") +
+                             (s.Message.Text != "" ? " · " + s.Message.Text : "");
+        });
+        await _stellarium.StartAsync();
+        _stellariumSelected = hit => UiThread.Post(() => StellariumOffer = hit.Label.Text != "" ? $"Stellarium selected {hit.Label.Text}" : "");
+        await _mesh.Node.HookEventAsync(StellariumIds.Selected, _stellariumSelected, "atlas: Stellarium selection");
+
+        await FollowEquipmentAsync();
+        UpdateOverlays();
+        await RefreshAsync();
+    }
+
+    partial void OnCenterRaChanged(double value) => ScheduleRefresh();
+    partial void OnCenterDecChanged(double value) => ScheduleRefresh();
+    partial void OnFovChanged(double value) => ScheduleRefresh();
+
+    /// <summary>Faintest stars to show for a field of view (about magnitude 5.5 for the whole sky, 13 for half a degree).</summary>
+    public static double StarLimitFor(double fov) => Math.Clamp(5.0 + 3.3 * Math.Log10(120 / Math.Max(fov, 0.05)), 5.5, 14);
+
+    private void ScheduleRefresh()
+    {
+        _pending?.Cancel();
+        var cts = _pending = new CancellationTokenSource();
+        _ = Task.Run(async () =>
+        {
+            try { await Task.Delay(120, cts.Token); await RefreshAsync(cts.Token); }
+            catch (OperationCanceledException) { }
+        });
+    }
+
+    /// <summary>Fetch what the current view needs from the atlas.</summary>
+    public async Task RefreshAsync(CancellationToken ct = default)
+    {
+        double ra = CenterRa, dec = CenterDec, fov = Fov, limit = StarLimitFor(fov);
+        var q = new AtlasQuery
+        {
+            RaHours = ra, DecDegrees = dec, RadiusDegrees = Math.Min(180, fov * 0.8), StarMagnitudeLimit = limit,
+            DsoMagnitudeLimit = Math.Clamp(limit + 2.5, 8, 16), MaxStars = 25000, MaxDsos = 3000,
+        };
+        Interlocked.Increment(ref _queries);
+        try
+        {
+            var chunks = await _mesh.Node.CallFunctionAsync<AtlasQuery, AtlasChunk>(AtlasIds.Query, q, cancellationToken: ct);
+            var chunk = chunks?.FirstOrDefault();
+            if (chunk is null || ct.IsCancellationRequested) return;
+            var stars = chunk.Stars.Select(s => new ChartStar(s.RaHours.value, s.DecDegrees.value, s.Magnitude.value, s.ColorIndex.value, s.Label.Text)).ToList();
+            var dsos = chunk.Dsos.Select(d => new ChartDso(d.Id.Text, d.Kind.Text, d.CommonName.Text, d.RaHours.value, d.DecDegrees.value, d.Magnitude.value, d.MajorArcmin.value, d.MinorArcmin.value, d.PositionAngle.value)).ToList();
+            UiThread.Post(() =>
+            {
+                if (ct.IsCancellationRequested) return;
+                Stars = stars; Dsos = dsos; StarLimit = limit;
+                Status = $"{stars.Count} stars to mag {limit:0.#}, {dsos.Count} deep-sky objects" + (chunk.Truncated.Value ? " (brightest only)" : "");
+            });
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { UiThread.Post(() => Status = "atlas: " + ex.Message); }
+    }
+
+    // ---- equipment on the chart ----------------------------------------------------------------------------------
+
+    private void RebuildPointers()
+    {
+        var c = _catalog.Composition;
+        var ids = c.MountPointers.Select(p => p.Id.Text).Concat(c.Scopes.Select(s => s.Id.Text)).ToList();
+        if (!Pointers.SequenceEqual(ids)) { Pointers.Clear(); foreach (var i in ids) Pointers.Add(i); }
+        SelectedPointer ??= Pointers.FirstOrDefault();
+    }
+
+    private static readonly Color[] MountColors = { Color.FromRgb(255, 90, 90), Color.FromRgb(255, 170, 60), Color.FromRgb(200, 110, 255), Color.FromRgb(90, 230, 230) };
+
+    /// <summary>Draw every mount where it points (J2000).</summary>
+    private async Task FollowEquipmentAsync()
+    {
+        foreach (var m in _catalog.OfKind(DeviceKinds.Mount).ToList())
+        {
+            string key = "Mount/" + m.Id;
+            if (_followers.ContainsKey(key)) continue;
+            var color = MountColors[_followers.Count % MountColors.Length];
+            var f = new Follower<MountState>(_mesh.Node, EquipmentIds.State(DeviceKinds.Mount, m.Id), EquipmentIds.GetState(DeviceKinds.Mount, m.Id), s =>
+            {
+                if (!s.Connected.Value) { _mounts.Remove(key); UpdateOverlays(); return; }
+                double ra = s.RaHours.Value, dec = s.DecDegrees.Value;
+                if (s.Epoch.Text == "JNow") (ra, dec) = Precession.DateToJ2000(ra, dec, DateTime.UtcNow);
+                _mounts[key] = new ChartMarker(ra, dec, $"{m.DisplayName} ({s.Phase.Text})", color);
+                UpdateOverlays();
+            });
+            _followers[key] = f;
+            await f.StartAsync();
+        }
+    }
+
+    private void UpdateOverlays()
+    {
+        var markers = _mounts.Values.ToList();
+        if (Selection is { } sel) markers.Add(new ChartMarker(sel.RaHours, sel.DecDegrees, "", Color.FromRgb(120, 255, 140), IsSelection: true));
+        Markers = markers;
+        var polys = new List<ChartPolygon>();
+        if (_mosaic is not null && Sexagesimal.TryParse(_mosaic.CenterRa, out var mra) && Sexagesimal.TryParse(_mosaic.CenterDec, out var mdec))
+        {
+            double w = _mosaic.FovWidth / 2, h = _mosaic.FovHeight / 2, pa = _mosaic.PositionAngle * Math.PI / 180;
+            var corners = new[] { (-w, h), (w, h), (w, -h), (-w, -h) }.Select(c =>
+            {
+                double east = c.Item1 * Math.Cos(pa) + c.Item2 * Math.Sin(pa), north = -c.Item1 * Math.Sin(pa) + c.Item2 * Math.Cos(pa);
+                return Gnomonic.ToSky(mra, mdec, east, north);
+            }).ToList();
+            polys.Add(new ChartPolygon(corners, Color.FromRgb(255, 213, 79), $"mosaic {_mosaic.Label}"));
+        }
+        Polygons = polys;
+    }
+
+    // ---- picking and search ----------------------------------------------------------------------------------------
+
+    /// <summary>From the chart: the nearest star or deep-sky object within a few pixels of the click, or just that position.</summary>
+    [RelayCommand]
+    private void Pick((double RaHours, double DecDegrees, double PixelsPerDegree) at)
+    {
+        double tolerance = 10 / Math.Max(at.PixelsPerDegree, 1e-9);
+        AtlasHitItem? best = null; double bestSep = double.MaxValue;
+        foreach (var d in Dsos)
+        {
+            double sep = Sky.SeparationDegrees(at.RaHours, at.DecDegrees, d.RaHours, d.DecDegrees);
+            double reach = Math.Max(tolerance, d.MajorArcmin / 120);
+            if (sep <= reach && sep < bestSep) { bestSep = sep; best = new AtlasHitItem(d.Id, d.Kind, d.CommonName, d.RaHours, d.DecDegrees, d.Magnitude, d.MajorArcmin); }
+        }
+        foreach (var s in Stars)
+        {
+            double sep = Sky.SeparationDegrees(at.RaHours, at.DecDegrees, s.RaHours, s.DecDegrees);
+            if (sep <= tolerance && sep < bestSep * 0.7) { bestSep = sep; best = new AtlasHitItem(s.Label != "" ? s.Label : "Star", "Star", "", s.RaHours, s.DecDegrees, s.Magnitude, 0); }
+        }
+        Select(best ?? new AtlasHitItem("Position", "Position", "", at.RaHours, at.DecDegrees, float.NaN, 0));
+    }
+
+    public void Select(AtlasHitItem item)
+    {
+        Selection = item;
+        SelectionText = $"{item.Label}  ·  {item.Kind}" + (float.IsNaN(item.Magnitude) ? "" : $"  ·  mag {item.Magnitude:0.##}") +
+                        $"\nRA {Sexagesimal.Format(item.RaHours)}   Dec {Sexagesimal.Format(item.DecDegrees, 0)}  (J2000)" +
+                        (item.MajorArcmin > 0 ? $"   size {item.MajorArcmin:0.#}'" : "") + (item.Detail != "" ? $"\n{item.Detail}" : "");
+        UpdateOverlays();
+    }
+
+    [RelayCommand]
+    private async Task SearchAsync()
+    {
+        Results.Clear();
+        if (SearchText.Trim() == "") return;
+        var answers = await _mesh.Node.CallFunctionAsync<BinaryConvertibleString, AtlasHits>(AtlasIds.Search, (BinaryConvertibleString)SearchText.Trim());
+        foreach (var h in answers?.FirstOrDefault()?.Hits ?? new())
+            Results.Add(new AtlasHitItem(h.Label.Text, h.Kind.Text, h.Detail.Text, h.RaHours.Value, h.DecDegrees.Value, h.Magnitude.value, h.MajorArcmin.value));
+        Message = Results.Count == 0 ? $"nothing called '{SearchText}'" : "";
+        if (Results.Count > 0) SelectedResult = Results[0];
+    }
+
+    partial void OnSelectedResultChanged(AtlasHitItem? value) { if (value is not null) CenterOn(value); }
+
+    /// <summary>Centre the chart on an object at a sensible zoom, and select it.</summary>
+    public void CenterOn(AtlasHitItem item)
+    {
+        CenterRa = item.RaHours; CenterDec = item.DecDegrees;
+        Fov = item.MajorArcmin > 0 ? Math.Clamp(item.MajorArcmin / 60 * 4, 0.5, 30) : Math.Min(Fov, 15);
+        Select(item);
+    }
+
+    // ---- acting on the selection -----------------------------------------------------------------------------------
+
+    private SkyTarget? Target() => Selection is { } s ? new SkyTarget { RaHours = s.RaHours, DecDegrees = s.DecDegrees, Epoch = "J2000" } : null;
+
+    [RelayCommand]
+    private async Task GotoAsync()
+    {
+        if (Target() is not { } t) { Message = "select something first"; return; }
+        if (SelectedPointer is null) { Message = "compose a pointer or scope first (Compose tab)"; return; }
+        var r = await Commands.CallAsync(_mesh.Node, PointerIds.Goto(SelectedPointer), t);
+        Message = r.Ok.Value ? $"{SelectedPointer}: going to {Selection!.Label}" : r.Error.Text;
+    }
+
+    [RelayCommand]
+    private void UseAsMosaicCentre()
+    {
+        if (Selection is not { } s || _mosaic is null) { Message = "select something first"; return; }
+        _mosaic.CenterRa = Sexagesimal.Format(s.RaHours, 0); _mosaic.CenterDec = Sexagesimal.Format(s.DecDegrees, 0);
+        if (s.Label != "Position" && s.Label != "Star") _mosaic.Label = s.Label.Replace(" ", "");
+        Message = $"mosaic centred on {s.Label}";
+        UpdateOverlays();
+    }
+
+    [RelayCommand]
+    private void CenterOnMount()
+    {
+        var m = _mounts.Values.FirstOrDefault();
+        if (m is null) { Message = "no connected mount"; return; }
+        CenterRa = m.RaHours; CenterDec = m.DecDegrees;
+    }
+
+    [RelayCommand]
+    private async Task ShowInStellariumAsync()
+    {
+        if (Target() is not { } t) { Message = "select something first"; return; }
+        var r = await Commands.CallAsync(_mesh.Node, StellariumIds.Show, t);
+        Message = r.Ok.Value ? "shown in Stellarium" : r.Error.Text;
+    }
+
+    [RelayCommand]
+    private async Task TakeStellariumSelectionAsync()
+    {
+        var answers = await _mesh.Node.CallFunctionAsync<NOTESVoid, AtlasHit>(StellariumIds.GetSelection, NOTESVoid.Void);
+        var h = answers?.FirstOrDefault();
+        if (h is null || h.Label.Text == "") { Message = "nothing is selected in Stellarium (or it is not reachable)"; return; }
+        CenterOn(new AtlasHitItem(h.Label.Text, h.Kind.Text, "from Stellarium", h.RaHours.Value, h.DecDegrees.Value, h.Magnitude.value, 0));
+        Message = "";
+    }
+
+    [RelayCommand]
+    private async Task StellariumFollowsPointerAsync()
+    {
+        if (SelectedPointer is null) { Message = "compose a pointer or scope first"; return; }
+        var r = await Commands.CallAsync(_mesh.Node, StellariumIds.BindPointer, (BinaryConvertibleString)SelectedPointer);
+        Message = r.Ok.Value ? $"Stellarium now shows and slews {SelectedPointer}" : r.Error.Text;
+    }
+
+    [RelayCommand] private void ZoomIn() => Fov = Math.Max(0.1, Fov / 1.6);
+    [RelayCommand] private void ZoomOut() => Fov = Math.Min(180, Fov * 1.6);
+
+    public void Dispose()
+    {
+        _pending?.Cancel();
+        foreach (var f in _followers.Values) f.Dispose();
+        _stellarium?.Dispose();
+        if (_stellariumSelected is not null) { try { _mesh.Node.UnhookEvent(StellariumIds.Selected, _stellariumSelected); } catch (ObjectDisposedException) { } }
+    }
+}

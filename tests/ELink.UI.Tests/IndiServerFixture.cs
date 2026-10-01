@@ -29,7 +29,7 @@ public sealed class IndiServerProcess : IDisposable
         _process.BeginErrorReadLine(); _process.BeginOutputReadLine();
     }
 
-    public static int FreePort() { var l = new TcpListener(IPAddress.Loopback, 0); l.Start(); var p = ((IPEndPoint)l.LocalEndpoint).Port; l.Stop(); return p; }
+    public static int FreePort() => ELink.Testing.TestPorts.Next();
 
     public async Task<bool> WaitListeningAsync(int ms = 10000)
     {

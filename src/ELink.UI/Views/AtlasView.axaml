@@ -1,0 +1,57 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:ELink.UI.Controls"
+             x:Class="ELink.UI.Views.AtlasView">
+  <Grid ColumnDefinitions="*,320" RowDefinitions="Auto,*">
+    <StackPanel Grid.ColumnSpan="2" Classes="row" Margin="0,0,0,8">
+      <TextBox Text="{Binding SearchText}" Watermark="Search: M42, NGC 7000, Vega, andromeda..." Width="300"/>
+      <Button Content="Find" Classes="primary" Command="{Binding SearchCommand}" IsDefault="True"/>
+      <Button Content="−" Command="{Binding ZoomOutCommand}"/>
+      <Button Content="+" Command="{Binding ZoomInCommand}"/>
+      <CheckBox IsChecked="{Binding ShowConstellations}" Content="Constellations"/>
+      <CheckBox IsChecked="{Binding ShowGrid}" Content="Grid"/>
+      <Button Content="Centre on mount" Command="{Binding CenterOnMountCommand}"/>
+      <TextBlock Classes="label" Text="{Binding Status}" VerticalAlignment="Center"/>
+    </StackPanel>
+
+    <Border Grid.Row="1" CornerRadius="8" ClipToBounds="True" MinHeight="560">
+      <c:SkyChart CenterRa="{Binding CenterRa}" CenterDec="{Binding CenterDec}" Fov="{Binding Fov}" StarLimit="{Binding StarLimit}"
+                  Stars="{Binding Stars}" Dsos="{Binding Dsos}" Lines="{Binding Lines}" Labels="{Binding Labels}"
+                  Markers="{Binding Markers}" Polygons="{Binding Polygons}" PickCommand="{Binding PickCommand}"
+                  ShowGrid="{Binding ShowGrid}" ShowConstellations="{Binding ShowConstellations}"/>
+    </Border>
+
+    <ScrollViewer Grid.Row="1" Grid.Column="1" Margin="12,0,0,0">
+      <StackPanel Spacing="0">
+        <Border Classes="card">
+          <StackPanel Spacing="8">
+            <TextBlock Classes="section" Text="SELECTION"/>
+            <TextBlock Text="{Binding SelectionText}" TextWrapping="Wrap"/>
+            <StackPanel><TextBlock Classes="label" Text="Pointer or scope"/><ComboBox ItemsSource="{Binding Pointers}" SelectedItem="{Binding SelectedPointer}" HorizontalAlignment="Stretch"/></StackPanel>
+            <Button Content="Go to selection" Classes="primary" Command="{Binding GotoCommand}" HorizontalAlignment="Stretch"/>
+            <Button Content="Use as mosaic centre" Command="{Binding UseAsMosaicCentreCommand}" HorizontalAlignment="Stretch"/>
+            <TextBlock Classes="error" Text="{Binding Message}" IsVisible="{Binding Message.Length}"/>
+          </StackPanel>
+        </Border>
+        <Border Classes="card">
+          <StackPanel Spacing="8">
+            <TextBlock Classes="section" Text="SEARCH RESULTS"/>
+            <ListBox ItemsSource="{Binding Results}" SelectedItem="{Binding SelectedResult}" MaxHeight="220">
+              <ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Line}" TextTrimming="CharacterEllipsis" FontSize="12"/></DataTemplate></ListBox.ItemTemplate>
+            </ListBox>
+          </StackPanel>
+        </Border>
+        <Border Classes="card">
+          <StackPanel Spacing="8">
+            <TextBlock Classes="section" Text="STELLARIUM"/>
+            <TextBlock Classes="label" Text="{Binding StellariumText}" TextWrapping="Wrap"/>
+            <TextBlock Text="{Binding StellariumOffer}" IsVisible="{Binding StellariumOffer.Length}" TextWrapping="Wrap"/>
+            <Button Content="Show selection in Stellarium" Command="{Binding ShowInStellariumCommand}" HorizontalAlignment="Stretch"/>
+            <Button Content="Take Stellarium's selection" Command="{Binding TakeStellariumSelectionCommand}" HorizontalAlignment="Stretch"/>
+            <Button Content="Stellarium follows this pointer" Command="{Binding StellariumFollowsPointerCommand}" HorizontalAlignment="Stretch"/>
+            <TextBlock Classes="label" TextWrapping="Wrap" Text="In Stellarium: Telescope Control → add telescope → External software or a remote computer, host localhost, the port above, equinox J2000. Enable the Remote Control plugin for the other buttons."/>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

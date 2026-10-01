@@ -3,6 +3,7 @@ using System.Net.Sockets;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
+using ELink.Atlas;
 using ELink.Automation;
 using ELink.Compose;
 using ELink.Contracts.Composition;
@@ -24,7 +25,7 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
     private readonly IndiServerFixture _server;
     public FullUiTests(IndiServerFixture server) { _server = server; }
 
-    private static int FreePort() { var l = new TcpListener(IPAddress.Loopback, 0); l.Start(); var p = ((IPEndPoint)l.LocalEndpoint).Port; l.Stop(); return p; }
+    private static int FreePort() => ELink.Testing.TestPorts.Next();
 
     private static async Task<bool> Eventually(Func<bool> cond, int ms = 30000)
     {
@@ -63,6 +64,9 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         await using var autofocus = new AutofocusService(hostNode); await autofocus.StartAsync();
         await using var sequencer = new SequencerService(hostNode); await sequencer.StartAsync();
         await using var mosaicSvc = new MosaicService(hostNode); await mosaicSvc.StartAsync();
+        var skyCatalog = File.Exists("/usr/share/kstars/namedstars.dat") ? await Task.Run(() => AtlasCatalog.LoadKStars())
+            : AtlasCatalog.From(new List<CatalogStar> { new(5.92, 7.41, 0.45f, 1.85f, 39801, "Betelgeuse") }, new List<CatalogDso> { new("M 42", "Nebula", "Orion Nebula, NGC 1976", 5.588, -5.39, 4f, 90, 60, 0) });
+        await using var atlasSvc = new AtlasService(hostNode, skyCatalog); await atlasSvc.StartAsync();
         string saveDir = Path.Combine(Path.GetTempPath(), "elink-ui-save-" + Guid.NewGuid().ToString("N"));
         await using var storage = new StorageService(hostNode, saveDir); await storage.StartAsync();
 
@@ -178,6 +182,34 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         Assert.Contains("shots", mosaic.Progress);
         vm.SelectedTab = vm.Tabs.First(t => t.Content is MosaicViewModel);
         Shot(window, "07d-mosaic");
+
+        // sky atlas: search, select, send the mount there from the chart, see its reticle; hand the target to the mosaic
+        var atlas = vm.Atlas;
+        vm.SelectedTab = vm.Tabs.First(t => t.Content is AtlasViewModel);
+        await atlas.RefreshAsync();
+        Assert.True(await Eventually(() => atlas.Stars.Count > 0), atlas.Status);
+        atlas.SearchText = "M42";
+        await atlas.SearchCommand.ExecuteAsync(null);
+        Assert.Equal("M 42", atlas.Results.First().Label);
+        Assert.True(await Eventually(() => atlas.Selection?.Label == "M 42"));
+        Assert.Equal(5.588, atlas.CenterRa, 2);
+        Assert.True(await Eventually(() => atlas.Dsos.Any(d => d.Id == "M 42")), "the zoomed view fetched its deep-sky objects");
+        Assert.True(await Eventually(() => atlas.Pointers.Contains("eq")));
+        atlas.SelectedPointer = "eq";
+        await atlas.GotoCommand.ExecuteAsync(null);
+        Assert.Contains("going to M 42", atlas.Message);
+        Assert.True(await Eventually(() => atlas.Markers.Any(m => !m.IsSelection && Math.Abs(m.RaHours - 5.588) < 0.05 && Math.Abs(m.DecDegrees + 5.39) < 0.3), 120000),
+            "the mount's reticle should arrive on M 42");
+        atlas.UseAsMosaicCentreCommand.Execute(null);
+        Assert.Equal("M42", vm.Mosaic.Label);
+        Assert.Contains(atlas.Polygons, p => p.Label.StartsWith("mosaic"));
+        // a click right on Betelgeuse picks it
+        atlas.CenterRa = 5.92; atlas.CenterDec = 7.4; atlas.Fov = 20;
+        await atlas.RefreshAsync();
+        Assert.True(await Eventually(() => atlas.Stars.Any(s => s.Label == "Betelgeuse")));
+        atlas.PickCommand.Execute((5.9195, 7.4071, 40.0));
+        Assert.Equal("Betelgeuse", atlas.Selection!.Label);
+        Shot(window, "07e-atlas");
 
         // generic INDI browser
         vm.SelectedTab = vm.Tabs.First(t => t.Content is IndiBrowserViewModel);

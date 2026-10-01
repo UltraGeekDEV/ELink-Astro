@@ -8,7 +8,7 @@ namespace ELink.UI.Tests;
 /// contracts and the EVent helpers, never a backend assembly (and vice versa).</summary>
 public class ArchitectureTests
 {
-    private static readonly string[] BackendAssemblies = { "ELink.Indi", "ELink.IndiBridge", "ELink.Compose", "ELink.Automation", "ELink.Bridge" };
+    private static readonly string[] BackendAssemblies = { "ELink.Indi", "ELink.IndiBridge", "ELink.Compose", "ELink.Automation", "ELink.Atlas", "ELink.Stellarium", "ELink.Bridge" };
 
     [Fact]
     public void UiAssemblyReferencesNoBackend()
@@ -21,7 +21,7 @@ public class ArchitectureTests
     [Fact]
     public void BackendAssembliesReferenceNoUi()
     {
-        foreach (var t in new[] { typeof(ELink.IndiBridge.IndiServerLink), typeof(ELink.Compose.SmartScope), typeof(ELink.Automation.SequencerService) })
+        foreach (var t in new[] { typeof(ELink.IndiBridge.IndiServerLink), typeof(ELink.Compose.SmartScope), typeof(ELink.Automation.SequencerService), typeof(ELink.Atlas.AtlasService), typeof(ELink.Stellarium.StellariumService) })
         {
             var refs = t.Assembly.GetReferencedAssemblies().Select(a => a.Name).ToHashSet();
             Assert.DoesNotContain("ELink.UI", refs);
