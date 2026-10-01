@@ -31,6 +31,7 @@
     <ProjectReference Include="..\..\src\ELink.Compose\ELink.Compose.csproj" />
     <ProjectReference Include="..\..\src\ELink.Core\ELink.Core.csproj" />
     <ProjectReference Include="..\..\src\ELink.Contracts\ELink.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\ELink.Automation\ELink.Automation.csproj" />
   </ItemGroup>
 
 </Project>

@@ -90,3 +90,47 @@ public sealed class FakeShooter : IAsyncDisposable
 
     public ValueTask DisposeAsync() { _cmds.Dispose(); _pub.Dispose(); return ValueTask.CompletedTask; }
 }
+
+/// <summary>A weather station that is only EVent endpoints; tests flip its verdict.</summary>
+public sealed class FakeWeather : IAsyncDisposable
+{
+    private readonly StatePublisher<WeatherState> _pub;
+    private string _safety = "Safe";
+    public FakeWeather(TypeSafeEVentNode node, string id)
+    {
+        _pub = new(node, EquipmentIds.State(DeviceKinds.Weather, id), EquipmentIds.GetState(DeviceKinds.Weather, id),
+            () => new WeatherState { Connected = true, Safety = _safety, Safe = _safety == "Safe" });
+    }
+    public Task StartAsync() => _pub.StartAsync();
+    public Task SetAsync(string safety) { _safety = safety; return _pub.PublishAsync(); }
+    public ValueTask DisposeAsync() { _pub.Dispose(); return ValueTask.CompletedTask; }
+}
+
+/// <summary>Stands in for the autofocus service: Run takes a moment, then reports Done (or Error).</summary>
+public sealed class FakeAutofocus : IAsyncDisposable
+{
+    private readonly CommandSet _cmds;
+    private readonly StatePublisher<ELink.Contracts.Automation.AutofocusState> _pub;
+    private string _phase = "Idle";
+    public int Runs;
+    public bool Fail;
+    public FakeAutofocus(TypeSafeEVentNode node)
+    {
+        _cmds = new CommandSet(node);
+        _pub = new(node, ELink.Contracts.Automation.AutofocusIds.State, ELink.Contracts.Automation.AutofocusIds.GetState,
+            () => new ELink.Contracts.Automation.AutofocusState { Phase = _phase, Message = _phase == "Error" ? "no stars" : "" });
+    }
+    public async Task StartAsync()
+    {
+        await _cmds.AddAsync<ELink.Contracts.Automation.AutofocusRequest, CommandResult>(ELink.Contracts.Automation.AutofocusIds.Run, async req =>
+        {
+            Interlocked.Increment(ref Runs);
+            _phase = "Moving"; await _pub.PublishAsync();
+            _ = Task.Run(async () => { await Task.Delay(150); _phase = Fail ? "Error" : "Done"; await _pub.PublishAsync(); });
+            return CommandResult.Success();
+        }, "fake autofocus");
+        await _cmds.AddAsync<NOTESVoid, CommandResult>(ELink.Contracts.Automation.AutofocusIds.Abort, _ => Task.FromResult(CommandResult.Success()), "fake abort");
+        await _pub.StartAsync();
+    }
+    public ValueTask DisposeAsync() { _cmds.Dispose(); _pub.Dispose(); return ValueTask.CompletedTask; }
+}

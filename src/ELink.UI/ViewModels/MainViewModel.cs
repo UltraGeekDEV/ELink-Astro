@@ -21,6 +21,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public CatalogViewModel Catalog { get; }
     public ComposerViewModel Composer { get; }
     public IndiBrowserViewModel IndiBrowser { get; }
+    public AutofocusViewModel Autofocus { get; }
+    public SequencerViewModel Sequencer { get; }
 
     public ObservableCollection<WorkspaceTab> Tabs { get; } = new();
     [ObservableProperty] private WorkspaceTab? _selectedTab;
@@ -37,7 +39,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Catalog = new CatalogViewModel(mesh);
         Composer = new ComposerViewModel(mesh, Catalog);
         IndiBrowser = new IndiBrowserViewModel(mesh);
+        Autofocus = new AutofocusViewModel(mesh, Catalog);
+        Sequencer = new SequencerViewModel(mesh, Catalog);
         Tabs.Add(new WorkspaceTab("Compose", Composer, false));
+        Tabs.Add(new WorkspaceTab("Sequence", Sequencer, false));
+        Tabs.Add(new WorkspaceTab("Autofocus", Autofocus, false));
         Tabs.Add(new WorkspaceTab("INDI", IndiBrowser, false));
         SelectedTab = Tabs[0];
         Mesh.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(MeshSession.Status)) OnPropertyChanged(nameof(ConnectionStatus)); };
@@ -46,6 +52,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public async Task StartAsync()
     {
         await Catalog.StartAsync();
+        await Autofocus.StartAsync();
+        await Sequencer.StartAsync();
         await IndiBrowser.RefreshServersAsync();
     }
 
@@ -108,6 +116,6 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public void Dispose()
     {
         foreach (var t in Tabs) (t.Content as IDisposable)?.Dispose();
-        Catalog.Dispose(); IndiBrowser.Dispose(); Mesh.Dispose();
+        Catalog.Dispose(); IndiBrowser.Dispose(); Autofocus.Dispose(); Sequencer.Dispose(); Mesh.Dispose();
     }
 }

@@ -167,20 +167,29 @@ public sealed class SmartScope : IAsyncDisposable
         });
     }
 
-    private Task<CommandResult> ObserveAsync(ObserveRequest r)
+    private async Task<CommandResult> ObserveAsync(ObserveRequest r)
     {
-        if (r.Count.Value < 1) return Task.FromResult(CommandResult.Fail("Count must be at least 1"));
-        if (_pointers.Count == 0) return Task.FromResult(CommandResult.Fail($"scope {_id} has no pointer"));
-        if (_shooters.Count == 0) return Task.FromResult(CommandResult.Fail($"scope {_id} has no shooter"));
+        var rejected = StartObserve(r);
+        if (rejected is not null) return rejected;
+        // Publish "observing" before answering: whoever waits for the run to end must not see the previous run's state.
+        await _scopePub.PublishAsync();
+        return CommandResult.Success();   // accepted; progress arrives as scope state events
+    }
+
+    private CommandResult? StartObserve(ObserveRequest r)
+    {
+        if (r.Count.Value < 1) return CommandResult.Fail("Count must be at least 1");
+        if (_pointers.Count == 0) return CommandResult.Fail($"scope {_id} has no pointer");
+        if (_shooters.Count == 0) return CommandResult.Fail($"scope {_id} has no shooter");
         lock (_scopeGate)
         {
-            if (_observe is not null) return Task.FromResult(CommandResult.Fail("already observing"));
+            if (_observe is not null) return CommandResult.Fail("already observing");
             _observe = new CancellationTokenSource();
             _scope = new ScopeState { Phase = "Pointing", Observing = true, ShotsPlanned = r.Count.Value, ShotsDone = 0 };
         }
         var cts = _observe;
         _observeTask = Task.Run(() => RunObserveAsync(r, cts!));
-        return Task.FromResult(CommandResult.Success()); // accepted; progress arrives as scope state events
+        return null;
     }
 
     private async Task RunObserveAsync(ObserveRequest r, CancellationTokenSource cts)

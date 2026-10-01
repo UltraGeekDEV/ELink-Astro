@@ -11,5 +11,6 @@
     <ProjectReference Include="..\ELink.UI\ELink.UI.csproj" />
     <ProjectReference Include="..\ELink.IndiBridge\ELink.IndiBridge.csproj" />
     <ProjectReference Include="..\ELink.Compose\ELink.Compose.csproj" />
+    <ProjectReference Include="..\ELink.Automation\ELink.Automation.csproj" />
   </ItemGroup>
 </Project>

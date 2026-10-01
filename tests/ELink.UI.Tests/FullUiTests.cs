@@ -3,6 +3,7 @@ using System.Net.Sockets;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
+using ELink.Automation;
 using ELink.Compose;
 using ELink.Contracts.Composition;
 using ELink.Contracts.Equipment;
@@ -59,6 +60,8 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         await ElinkNode.JoinAsync(hostNode, "127.0.0.1", bridgePort);
         await using var host = new CompositionHost(hostNode);
         await host.StartAsync();
+        await using var autofocus = new AutofocusService(hostNode); await autofocus.StartAsync();
+        await using var sequencer = new SequencerService(hostNode); await sequencer.StartAsync();
 
         // frontend: a separate node that joins the mesh
         var session = await MeshSession.CreateAsync(null, "UI-Test");
@@ -123,6 +126,21 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         Assert.True(await Eventually(() => scope.Preview.Image is not null));
         Assert.True(await Eventually(() => scope.Shots.Count == 2), $"shots: {scope.Shots.Count}");
         Shot(window, "07-scope-done");
+
+        // sequencer through the UI: one block, one frame
+        var seq = vm.Sequencer;
+        Assert.True(await Eventually(() => seq.Scopes.Contains("main")));
+        seq.SelectedScope = "main";
+        seq.Blocks[0].Ra = "04:00:00"; seq.Blocks[0].Dec = "25:00:00"; seq.Blocks[0].Seconds = 1; seq.Blocks[0].Count = 1; seq.Blocks[0].Label = "UI block";
+        await seq.StartPlanCommand.ExecuteAsync(null);
+        Assert.Equal("", seq.Message);
+        Assert.True(await Eventually(() => seq.Phase == "Done", 120000), $"{seq.Phase} {seq.StateMessage}");
+        Assert.Contains("1 total", seq.Progress);
+        vm.SelectedTab = vm.Tabs.First(t => t.Content is SequencerViewModel);
+        Shot(window, "07b-sequencer");
+        vm.SelectedTab = vm.Tabs.First(t => t.Content is AutofocusViewModel);
+        Assert.True(await Eventually(() => vm.Autofocus.Shooters.Contains("cam") && vm.Autofocus.Focusers.Contains("Focuser_Simulator")));
+        Shot(window, "07c-autofocus");
 
         // generic INDI browser
         vm.SelectedTab = vm.Tabs.First(t => t.Content is IndiBrowserViewModel);

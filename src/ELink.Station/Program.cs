@@ -1,6 +1,7 @@
 using System.Net;
 using Avalonia;
 using Avalonia.Fonts.Inter;
+using ELink.Automation;
 using ELink.Compose;
 using ELink.Core;
 using ELink.IndiBridge;
@@ -46,6 +47,10 @@ var directory = new DeviceDirectory(node);
 await directory.StartAsync();
 await using var host = new CompositionHost(node, compose);
 await host.StartAsync();
+await using var autofocus = new AutofocusService(node);
+await autofocus.StartAsync();
+await using var sequencer = new SequencerService(node);
+await sequencer.StartAsync();
 var links = new List<IndiServerLink>();
 foreach (var (name, h, p) in indi)
 {

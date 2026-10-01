@@ -39,20 +39,22 @@ public sealed class AutofocusService : IAsyncDisposable
         await _publisher.StartAsync();
     }
 
-    private Task<CommandResult> StartRun(AutofocusRequest r)
+    private async Task<CommandResult> StartRun(AutofocusRequest r)
     {
-        if (r.ShooterId.Text == "" || r.FocuserId.Text == "") return Task.FromResult(CommandResult.Fail("ShooterId and FocuserId are required"));
-        if (r.StepSize.Value < 1) return Task.FromResult(CommandResult.Fail("StepSize must be positive"));
-        if (!(r.ExposureSeconds.Value > 0)) return Task.FromResult(CommandResult.Fail("ExposureSeconds must be positive"));
+        if (r.ShooterId.Text == "" || r.FocuserId.Text == "") return CommandResult.Fail("ShooterId and FocuserId are required");
+        if (r.StepSize.Value < 1) return CommandResult.Fail("StepSize must be positive");
+        if (!(r.ExposureSeconds.Value > 0)) return CommandResult.Fail("ExposureSeconds must be positive");
+        CancellationTokenSource cts;
         lock (_gate)
         {
-            if (_cts is not null) return Task.FromResult(CommandResult.Fail("autofocus is already running"));
-            _cts = new CancellationTokenSource();
+            if (_cts is not null) return CommandResult.Fail("autofocus is already running");
+            cts = _cts = new CancellationTokenSource();
             _state = new AutofocusState { Phase = "Moving" };
         }
-        var cts = _cts;
-        _run = Task.Run(() => RunAsync(r, cts!));
-        return Task.FromResult(CommandResult.Success());
+        // Publish the new run before answering: a caller that then waits for "Done" must not see the previous run's result.
+        await _publisher.PublishAsync();
+        _run = Task.Run(() => RunAsync(r, cts));
+        return CommandResult.Success();
     }
 
     private Task<CommandResult> Abort()
