@@ -51,9 +51,9 @@ ID scheme: `ELink.<Kind>.<DeviceName>.<Thing>` e.g. `ELink.Camera.CCD_Simulator.
       CCD_EXPOSURE, CCD_FRAME/BINNING/TEMPERATURE/COOLER, CCD1 BLOB, ABS_FOCUS_POSITION / REL_FOCUS,
       FILTER_SLOT, ABS_ROTATOR_ANGLE, DOME_*, WEATHER_*, GEOGRAPHIC_COORD, TIME_UTC, ...) to ELink.Contracts types
 - [x] Capability detection: device interface bitmask (DRIVER_INFO) -> which EVent endpoints to publish
-- [ ] Reconnect/lifecycle: indiserver drops, device add/remove, property re-sync, backpressure
-- [ ] Bridge executable: config for multiple indiservers, namespace per server
-- [ ] Integration tests against INDI simulators (telescope, ccd, focuser, wheel, rotator, dome, weather, gps, guide)
+- [x] Reconnect/lifecycle: indiserver drops, device add/remove, property re-sync, backpressure
+- [x] Bridge executable (`dotnet run --project src/ELink.Bridge -- --indi localhost=sim`): config for multiple indiservers, namespace per server
+- [x] Integration tests against INDI simulators: telescope, ccd, focuser, wheel, rotator (dome/weather/gps/guide pending with their adapters)
 - [ ] Reverse direction (stretch): expose EVent-described devices as an INDI server
 
 ### Phase 2 — Contracts and device model

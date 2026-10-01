@@ -4,6 +4,7 @@
     <ProjectReference Include="..\ELink.Indi\ELink.Indi.csproj" />
     <ProjectReference Include="..\ELink.Core\ELink.Core.csproj" />
     <ProjectReference Include="..\ELink.Contracts\ELink.Contracts.csproj" />
+    <ProjectReference Include="..\ELink.IndiBridge\ELink.IndiBridge.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
