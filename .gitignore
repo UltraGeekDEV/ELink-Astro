@@ -1,0 +1,10 @@
+bin/
+obj/
+*.user
+.vs/
+.idea/
+*.fits
+*.bin
+/artifacts/
+nuget/*.nupkg
+package/
