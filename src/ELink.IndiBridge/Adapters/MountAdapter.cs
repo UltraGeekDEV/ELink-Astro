@@ -56,6 +56,8 @@ public sealed class MountAdapter(AdapterContext ctx) : IndiDeviceAdapter<MountSt
         var c = Coordinates;
         if (c is null) return CommandResult.Fail($"{Device} has no equatorial coordinates property");
         if (Need("ON_COORD_SET", mode) is { } missing) return missing;
+        if (P("TELESCOPE_PARK") is { } park && park.Switch("PARK") && park.State == IndiState.Ok)
+            return CommandResult.Fail("the mount is parked: unpark it first");
         double ra = target.RaHours.Value, dec = target.DecDegrees.Value;
         if (double.IsNaN(ra) || double.IsNaN(dec) || dec < -90 || dec > 90) return CommandResult.Fail("invalid coordinates");
         string from = target.Epoch.Text, to = c.Value.Epoch;

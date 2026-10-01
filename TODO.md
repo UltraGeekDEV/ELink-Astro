@@ -57,17 +57,17 @@ ID scheme: `ELink.<Kind>.<DeviceName>.<Thing>` e.g. `ELink.Camera.CCD_Simulator.
 - [ ] Reverse direction (stretch): expose EVent-described devices as an INDI server
 
 ### Phase 2 — Contracts and device model
-- [ ] Finalise capability contracts (what a Camera/Focuser/... is in EVent terms), versioning rule (new ID per type change)
+- [~] Finalise capability contracts (first versions in place) (what a Camera/Focuser/... is in EVent terms), versioning rule (new ID per type change)
 - [ ] Device registry built from the network directory (what exists, what capabilities, liveness)
 - [ ] Native (non-INDI) device sample, to prove the model is not INDI shaped
 
 ### Phase 3 — Composition
-- [ ] `IPointer` capability: GoTo(coord), Sync, Abort, Park, Tracking, state events (mount, alt-az, dome-slaved, etc.)
-- [ ] `IShooter` capability: Expose, ROI/binning/gain, frame events (image + metadata)
-- [ ] SmartScope = point-to + shoot-at wrapper: any pointer + any N shooters/focusers/wheels/rotators; own EVent identity
-- [ ] SmartScope-of-SmartScopes (arrays, multi-OTA per mount, multi-mount per target, wide + narrow, etc.)
-- [ ] Declarative composition config (JSON), runtime re-composition
-- [ ] Per-scope offsets/pointing model hooks (OTA offset on shared mount)
+- [x] Pointer capability (contract + MountPointer glue; dome-slaved/others pending): GoTo(coord), Sync, Abort, Park, Tracking, state events (mount, alt-az, dome-slaved, etc.)
+- [x] Shooter capability (contract + CameraShooter glue with filter wheel): Expose, ROI/binning/gain, frame events (image + metadata)
+- [x] SmartScope = point-to + shoot-at wrapper: any pointer + any N shooters/focusers/wheels/rotators; own EVent identity
+- [x] SmartScope-of-SmartScopes (arrays, multi-OTA per mount, multi-mount per target, wide + narrow, etc.)
+- [x] Composition at run time over EVent (Define/Remove/Snapshot) + JSON persistence
+- [x] Per-shooter offsets (primary shooter is centred on target); pointing model hooks still open
 
 ### Phase 4 — Automation
 - [ ] Plate solve service (astrometry.net / ASTAP via EVent function), center-on-target

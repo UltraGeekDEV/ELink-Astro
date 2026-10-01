@@ -20,6 +20,8 @@ public sealed class IndiServerProcess : IDisposable
         Directory.CreateDirectory(_home);
         var psi = new ProcessStartInfo("indiserver") { RedirectStandardError = true, RedirectStandardOutput = true, UseShellExecute = false };
         psi.ArgumentList.Add("-p"); psi.ArgumentList.Add(port.ToString());
+        // indiserver also binds a local socket with a fixed default name: without a unique one, a second server dies
+        psi.ArgumentList.Add("-u"); psi.ArgumentList.Add(Path.Combine(_home, "sock"));
         foreach (var d in drivers) psi.ArgumentList.Add(d);
         psi.Environment["HOME"] = _home;
         _process = Process.Start(psi)!;

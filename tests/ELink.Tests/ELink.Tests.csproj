@@ -27,6 +27,8 @@
     <ProjectReference Include="..\..\src\ELink.Core\ELink.Core.csproj" />
     <ProjectReference Include="..\..\src\ELink.Contracts\ELink.Contracts.csproj" />
     <ProjectReference Include="..\..\src\ELink.IndiBridge\ELink.IndiBridge.csproj" />
+    <ProjectReference Include="..\..\src\ELink.Compose\ELink.Compose.csproj" />
+    <ProjectReference Include="..\..\src\ELink.Imaging\ELink.Imaging.csproj" />
   </ItemGroup>
 
 </Project>
