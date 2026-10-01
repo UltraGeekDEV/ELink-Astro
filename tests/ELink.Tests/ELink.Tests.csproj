@@ -30,6 +30,8 @@
     <ProjectReference Include="..\..\src\ELink.Compose\ELink.Compose.csproj" />
     <ProjectReference Include="..\..\src\ELink.Imaging\ELink.Imaging.csproj" />
     <ProjectReference Include="..\..\src\ELink.Automation\ELink.Automation.csproj" />
+    <ProjectReference Include="..\..\src\ELink.Atlas\ELink.Atlas.csproj" />
+    <ProjectReference Include="..\..\src\ELink.Stellarium\ELink.Stellarium.csproj" />
   </ItemGroup>
 
 </Project>

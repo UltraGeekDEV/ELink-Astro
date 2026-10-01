@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.10" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\ELink.Contracts\ELink.Contracts.csproj" />
+    <ProjectReference Include="..\ELink.Core\ELink.Core.csproj" />
+  </ItemGroup>
+</Project>
