@@ -110,6 +110,20 @@ public sealed partial class ComposerViewModel : ObservableObject
 
     [ObservableProperty] private string? _selectedExisting;
     [ObservableProperty] private string _message = "";
+    // which step the message belongs to (it is shown under that step's button) and whether it is an error
+    [ObservableProperty] private string _messageStep = "";
+    [ObservableProperty] private bool _messageFailed;
+    public bool PointerMessage => MessageStep == "pointer" && Message != "";
+    public bool TrainMessage => MessageStep == "train" && Message != "";
+    public bool ScopeMessage => MessageStep == "scope" && Message != "";
+    public bool OtherMessage => MessageStep == "" && Message != "";
+    partial void OnMessageChanged(string value) => NotifySteps();
+    partial void OnMessageStepChanged(string value) => NotifySteps();
+    private void NotifySteps()
+    {
+        foreach (var n in new[] { nameof(PointerMessage), nameof(TrainMessage), nameof(ScopeMessage), nameof(OtherMessage) }) OnPropertyChanged(n);
+    }
+    private Task Fail(string step, string message) { MessageStep = step; MessageFailed = true; Message = message; return Task.CompletedTask; }
 
     public bool Guided => SelectedGuideWith != NoGuiding;
     public bool PulseOutput => SelectedGuideOutput != "Correction";
@@ -172,9 +186,10 @@ public sealed partial class ComposerViewModel : ObservableObject
         }
     }
 
-    private async Task Run(Task<CommandResult> call, string success)
+    private async Task Run(Task<CommandResult> call, string success, string step = "")
     {
         var r = await call;
+        MessageStep = step; MessageFailed = !r.Ok.Value;
         Message = r.Ok.Value ? success : r.Error.Text;
         if (r.Ok.Value) await _catalog.RefreshAsync();
     }
@@ -182,8 +197,8 @@ public sealed partial class ComposerViewModel : ObservableObject
     [RelayCommand]
     private Task DefinePointerAsync()
     {
-        if (SelectedMount is null) { Message = "pick a mount first"; return Task.CompletedTask; }
-        return Run(Commands.CallAsync(_mesh.Node, ScopeIds.DefineMountPointer, new MountPointerDefinition { Id = NewPointerId.Trim(), MountId = SelectedMount }), $"pointer '{NewPointerId}' defined");
+        if (SelectedMount is null) return Fail("pointer", "pick a mount first");
+        return Run(Commands.CallAsync(_mesh.Node, ScopeIds.DefineMountPointer, new MountPointerDefinition { Id = NewPointerId.Trim(), MountId = SelectedMount }), $"pointer '{NewPointerId}' defined", "pointer");
     }
 
     [RelayCommand]
@@ -204,11 +219,11 @@ public sealed partial class ComposerViewModel : ObservableObject
         foreach (var part in FocusOffsets.Split(',', ';').Select(p => p.Trim()).Where(p => p != ""))
         {
             var kv = part.Split('=', 2);
-            if (kv.Length != 2 || !int.TryParse(kv[1].Trim(), out int steps)) { Message = $"focus offsets are like L=0, R=30, Ha=120 (not '{part}')"; return Task.CompletedTask; }
+            if (kv.Length != 2 || !int.TryParse(kv[1].Trim(), out int steps)) return Fail("train", $"focus offsets are like L=0, R=30, Ha=120 (not '{part}')");
             t.FocusOffsets.Add(new FilterFocusOffset { Filter = kv[0].Trim(), Steps = steps });
         }
-        if (t.Cameras.Count == 0) { Message = "give at least one camera a role (Imaging, or Guiding for an off-axis guider)"; return Task.CompletedTask; }
-        return Run(Commands.CallAsync(_mesh.Node, ScopeIds.DefineTrain, t), $"train '{NewTrainId}' defined");
+        if (t.Cameras.Count == 0) return Fail("train", "give at least one camera a role (Imaging, or Guiding for an off-axis guider)");
+        return Run(Commands.CallAsync(_mesh.Node, ScopeIds.DefineTrain, t), $"train '{NewTrainId}' defined", "train");
     }
 
     [RelayCommand]
@@ -225,8 +240,8 @@ public sealed partial class ComposerViewModel : ObservableObject
         foreach (var p in PointerChoices.Where(c => c.IsSelected)) def.Pointers.Add(p.Id);
         foreach (var s in ShooterChoices.Where(c => c.IsSelected))
             def.Shooters.Add(new ScopeShooterRef { Id = s.Id, OffsetEastArcmin = s.EastArcmin, OffsetNorthArcmin = s.NorthArcmin });
-        if (def.Pointers.Count == 0 && def.Shooters.Count == 0) { Message = "select at least one pointer or train"; return Task.CompletedTask; }
-        return Run(Commands.CallAsync(_mesh.Node, ScopeIds.Define, def), $"scope '{ScopeId}' defined");
+        if (def.Pointers.Count == 0 && def.Shooters.Count == 0) return Fail("scope", "tick at least one pointer or train");
+        return Run(Commands.CallAsync(_mesh.Node, ScopeIds.Define, def), $"scope '{ScopeId}' defined", "scope");
     }
 
     [RelayCommand]

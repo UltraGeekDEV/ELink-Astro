@@ -39,7 +39,14 @@ public class TrainCompositionTests
                 Assert.False((await Commands.CallAsync(node, ScopeIds.DefineTrain, Train("bad", 400, ("c1", "Viewing")))).Ok.Value);              // no such role
                 Assert.False((await Commands.CallAsync(node, ScopeIds.DefineTrain, Train("bad", 400, ("c1", "Imaging"), ("c1", "Guiding")))).Ok.Value);
                 // two OTAs and a guide scope on one mount; the main OTA also has an off-axis guider
-                Assert.True((await Commands.CallAsync(node, ScopeIds.DefineTrain, Train("main", 800, ("cam1", "Imaging"), ("oag", "Guiding")))).Ok.Value);
+                var mainTrain = Train("main", 800, ("cam1", "Imaging"), ("oag", "Guiding"));
+                mainTrain.Cameras[0].Gain = 100; mainTrain.Cameras[0].CoolTo = -10; mainTrain.Cameras[0].CoolDegreesPerMinute = 2;
+                mainTrain.FocusOffsets.Add(new FilterFocusOffset { Filter = "Ha", Steps = 120 });
+                Assert.True((await Commands.CallAsync(node, ScopeIds.DefineTrain, mainTrain)).Ok.Value);
+                // a camera belongs to one train
+                var shared = await Commands.CallAsync(node, ScopeIds.DefineTrain, Train("again", 400, ("cam1", "Imaging")));
+                Assert.False(shared.Ok.Value); Assert.Contains("already in train 'main'", shared.Error.Text);
+                Assert.Contains("give the scope an id", (await Commands.CallAsync(node, ScopeIds.Define, new ScopeDefinition())).Error.Text);
                 Assert.True((await Commands.CallAsync(node, ScopeIds.DefineTrain, Train("wide", 250, ("cam2", "Imaging")))).Ok.Value);
                 Assert.True((await Commands.CallAsync(node, ScopeIds.DefineTrain, Train("guidescope", 200, ("cam3", "Imaging")))).Ok.Value);
                 Assert.True((await Commands.CallAsync(node, ScopeIds.DefineMountPointer, new MountPointerDefinition { Id = "eq", MountId = "Mount1" })).Ok.Value);
@@ -68,6 +75,11 @@ public class TrainCompositionTests
             var main = snap.Trains.First(t => t.Id.Text == "main");
             Assert.Equal(800, main.FocalLengthMm.Value);
             Assert.Equal("Guiding", main.Cameras.First(c => c.CameraId.Text == "oag").Role.Text);
+            var cam1 = main.Cameras.First(c => c.CameraId.Text == "cam1");
+            Assert.Equal((100.0, -10.0, 2.0), (cam1.Gain.Value, cam1.CoolTo.Value, cam1.CoolDegreesPerMinute.Value));
+            Assert.True(double.IsNaN(cam1.Offset.Value));                                          // not set stays not set
+            Assert.True(double.IsNaN(main.Cameras.First(c => c.CameraId.Text == "oag").CoolTo.Value));
+            Assert.Equal(120, Assert.Single(main.FocusOffsets).Steps.Value);
             var rig = snap.Scopes.Single();
             Assert.Equal("main-guide", rig.GuideShooterId.Text);
             Assert.Equal(3, rig.DitherEvery.Value);

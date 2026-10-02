@@ -17,6 +17,7 @@
           <StackPanel><TextBlock Classes="label" Text="Mount"/><ComboBox ItemsSource="{Binding Mounts}" SelectedItem="{Binding SelectedMount}" Width="240"/></StackPanel>
           <Button Content="Define pointer" Command="{Binding DefinePointerCommand}" VerticalAlignment="Bottom"/>
         </StackPanel>
+        <TextBlock Text="{Binding Message}" TextWrapping="Wrap" IsVisible="{Binding PointerMessage}" Classes.error="{Binding MessageFailed}" Classes.ok="{Binding !MessageFailed}"/>
       </StackPanel>
     </Border>
 
@@ -55,6 +56,7 @@
           <StackPanel><TextBlock Classes="label" Text="Focus offsets (steps per filter)"/><TextBox Text="{Binding FocusOffsets}" Width="220" Watermark="L=0, R=30, Ha=120"/></StackPanel>
           <Button Content="Define train" Command="{Binding DefineTrainCommand}" VerticalAlignment="Bottom"/>
         </StackPanel>
+        <TextBlock Text="{Binding Message}" TextWrapping="Wrap" IsVisible="{Binding TrainMessage}" Classes.error="{Binding MessageFailed}" Classes.ok="{Binding !MessageFailed}"/>
       </StackPanel>
     </Border>
 
@@ -120,6 +122,7 @@
           <StackPanel><TextBlock Classes="label" Text="Flip this many minutes past the meridian"/><NumericUpDown Value="{Binding FlipAfterMinutes}" Minimum="0" Maximum="60" Increment="1" FormatString="0.#" Width="150"/></StackPanel>
         </StackPanel>
         <Button Content="Define scope" Classes="primary" Command="{Binding DefineScopeCommand}" HorizontalAlignment="Left"/>
+        <TextBlock Text="{Binding Message}" TextWrapping="Wrap" IsVisible="{Binding ScopeMessage}" Classes.error="{Binding MessageFailed}" Classes.ok="{Binding !MessageFailed}"/>
       </StackPanel>
     </Border>
 
@@ -132,6 +135,6 @@
         </StackPanel>
       </StackPanel>
     </Border>
-    <TextBlock Text="{Binding Message}" TextWrapping="Wrap" IsVisible="{Binding Message.Length}"/>
+    <TextBlock Text="{Binding Message}" TextWrapping="Wrap" IsVisible="{Binding OtherMessage}" Classes.error="{Binding MessageFailed}" Classes.ok="{Binding !MessageFailed}"/>
   </StackPanel>
 </UserControl>

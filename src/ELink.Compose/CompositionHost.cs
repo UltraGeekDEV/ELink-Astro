@@ -67,11 +67,13 @@ public sealed class CompositionHost : IAsyncDisposable
     }
 
     private static bool BadId(string id) => id == "" || id.Any(c => !(char.IsLetterOrDigit(c) || c is '_' or '-'));
+    private static string IdError(string what, string id) => id == "" ? $"give the {what} an id" : $"the {what} id '{id}' may only contain letters, digits, '_' and '-' (no spaces)";
 
     public async Task<CommandResult> DefineMountPointerAsync(MountPointerDefinition d)
     {
         string id = d.Id.Text;
-        if (BadId(id) || BadId(d.MountId.Text)) return CommandResult.Fail("ids may only contain letters, digits, '_' and '-'");
+        if (BadId(id)) return CommandResult.Fail(IdError("pointer", id));
+        if (BadId(d.MountId.Text)) return CommandResult.Fail("pick a mount");
         if (_pointers.Remove(id, out var old)) await old.Item.DisposeAsync();
         var item = new MountPointer(_node, id, d.MountId.Text);
         await item.StartAsync();
@@ -94,7 +96,7 @@ public sealed class CompositionHost : IAsyncDisposable
     public async Task<CommandResult> DefineTrainAsync(ImagingTrainDefinition d)
     {
         string id = d.Id.Text;
-        if (BadId(id)) return CommandResult.Fail("ids may only contain letters, digits, '_' and '-'");
+        if (BadId(id)) return CommandResult.Fail(IdError("train", id));
         if (d.Cameras.Count == 0) return CommandResult.Fail("a train needs at least one camera");
         if (d.Cameras.Any(c => BadId(c.CameraId.Text))) return CommandResult.Fail("bad camera id");
         if (d.Cameras.Any(c => c.Role.Text is not ("Imaging" or "Guiding"))) return CommandResult.Fail("a camera's role is Imaging or Guiding");
@@ -103,6 +105,14 @@ public sealed class CompositionHost : IAsyncDisposable
             if (other != "" && BadId(other)) return CommandResult.Fail($"bad device id {other}");
         if (d.FocalLengthMm.Value < 0 || double.IsNaN(d.FocalLengthMm.Value)) return CommandResult.Fail("focal length must be positive (or 0 if unknown)");
         if (_shooters.ContainsKey(id) || _scopes.ContainsKey(id)) return CommandResult.Fail($"'{id}' is already a shooter or a scope");
+        // one camera, one train: two trains would both drive it and both claim its frames
+        foreach (var c in d.Cameras)
+        {
+            if (_trains.Values.FirstOrDefault(t => t.Def.Id.Text != id && t.Def.Cameras.Any(x => x.CameraId.Text == c.CameraId.Text)) is { Def: { } t })
+                return CommandResult.Fail($"camera {c.CameraId.Text} is already in train '{t.Id.Text}' (a guide scope needs its own camera, e.g. Guide_Simulator)");
+            if (_shooters.Values.FirstOrDefault(x => x.Def.CameraId.Text == c.CameraId.Text) is { Def: { } sh })
+                return CommandResult.Fail($"camera {c.CameraId.Text} is already the shooter '{sh.Id.Text}'");
+        }
         if (_trains.Remove(id, out var old)) await old.Item.DisposeAsync();
         var item = new ImagingTrain(_node, d);
         await item.StartAsync();
@@ -141,7 +151,7 @@ public sealed class CompositionHost : IAsyncDisposable
     public async Task<CommandResult> DefineScopeAsync(ScopeDefinition d)
     {
         string id = d.Id.Text;
-        if (BadId(id)) return CommandResult.Fail("ids may only contain letters, digits, '_' and '-'");
+        if (BadId(id)) return CommandResult.Fail(IdError("scope", id));
         if (d.Pointers.Any(p => p.Text == id) || d.Shooters.Any(s => s.Id.Text == id)) return CommandResult.Fail("a scope cannot contain itself");
         // the scope's own guider, from its inline guide settings
         GuiderDefinition? own = null;
@@ -153,7 +163,7 @@ public sealed class CompositionHost : IAsyncDisposable
             if (!Outputs.Contains(d.GuideOutput.Text)) return CommandResult.Fail("GuideOutput is Pulse or Correction");
             string mount = d.Pointers.Count > 0 && _pointers.TryGetValue(d.Pointers[0].Text, out var mp) ? mp.Def.MountId.Text : "";
             string port = d.GuidePortId.Text != "" ? d.GuidePortId.Text : mount;
-            if (d.GuideOutput.Text == "Pulse" && port == "") return CommandResult.Fail("guiding with pulses needs a guide port (or a mount pointer, whose mount's port is used)");
+            if (d.GuideOutput.Text == "Pulse" && port == "") return CommandResult.Fail("guiding with pulses needs a mount: tick a pointer (define one from your mount in step 1), or pick a guide port");
             if (d.GuideOutput.Text == "Correction" && BadId(d.GuideTargetId.Text)) return CommandResult.Fail("guiding by corrections needs a GuideTargetId");
             own = new GuiderDefinition
             {
@@ -205,7 +215,10 @@ public sealed class CompositionHost : IAsyncDisposable
     private sealed record Saved(List<(string Id, string Mount)> MountPointers, List<(string Id, string Camera, string Wheel)> CameraShooters,
         List<ScopeSaved> Scopes, List<GuiderSaved>? Guiders = null, List<TrainSaved>? Trains = null);
     private sealed record TrainSaved(string Id, string Label, double FocalLength, double Aperture, List<(string Camera, string Role)> Cameras, string Wheel, string Focuser, string Rotator,
-        List<(string Camera, double PixelSize, int Width, int Height)>? Sensors = null);
+        List<(string Camera, double PixelSize, int Width, int Height)>? Sensors = null, List<CameraSettingsSaved>? Settings = null, List<(string Filter, int Steps)>? FocusOffsets = null);
+    /// <summary>A train camera's presets and cooling; null = not set (JSON has no NaN).</summary>
+    private sealed record CameraSettingsSaved(string Camera, double? Gain, double? Offset, double? CoolTo, double CoolRate, double WarmTo);
+    private static double? Opt(double v) => double.IsNaN(v) ? null : v;
     private sealed record ScopeSaved(string Id, string Name, List<string> Pointers, List<ShooterSaved> Shooters,
         string? GuiderId = null, string? GuideShooterId = null, string? GuideOutput = null, string? GuidePortId = null, string? GuideTargetId = null, double GuideExposure = 2, bool CenterAfterSlew = false, string? CenterShooterId = null, double CenterTolerance = 1, double CenterExposure = 3, int CenterTries = 4, bool GradeFrames = true, bool FocusOnStart = false, double RefocusEvery = 0, double RefocusTemp = 0, bool RefocusFilter = false, double RefocusHfr = 0,
         double FocusExposure = 3, int FocusStep = 3000, int FocusSamples = 7, bool MeridianFlip = true, double FlipAfterHours = 0.1, string? SiteId = null, int DitherEvery = 0, double DitherPixels = 5, double SettlePixels = 1.5, double SettleSeconds = 10, double SettleTimeoutSeconds = 120);
@@ -232,10 +245,17 @@ public sealed class CompositionHost : IAsyncDisposable
                 g.RaAggressiveness.Value, g.DecAggressiveness.Value, g.MinMovePixels.Value, g.MaxPulseMs.Value, g.CalibrationStepMs.Value, g.CalibrationPixels.Value, g.DecMode.Text)).ToList(),
             _trains.Values.Select(x => x.Def).Select(t => new TrainSaved(t.Id.Text, t.Label.Text, t.FocalLengthMm.Value, t.ApertureMm.Value,
                 t.Cameras.Select(c => (c.CameraId.Text, c.Role.Text)).ToList(), t.FilterWheelId.Text, t.FocuserId.Text, t.RotatorId.Text,
-                t.Cameras.Select(c => (c.CameraId.Text, c.PixelSizeUm.Value, c.SensorWidth.Value, c.SensorHeight.Value)).ToList())).ToList());
+                t.Cameras.Select(c => (c.CameraId.Text, c.PixelSizeUm.Value, c.SensorWidth.Value, c.SensorHeight.Value)).ToList(),
+                t.Cameras.Select(c => new CameraSettingsSaved(c.CameraId.Text, Opt(c.Gain.Value), Opt(c.Offset.Value), Opt(c.CoolTo.Value), c.CoolDegreesPerMinute.Value, c.WarmTo.Value)).ToList(),
+                t.FocusOffsets.Select(o => (o.Filter.Text, o.Steps.Value)).ToList())).ToList());
         var tmp = _file + ".tmp";
         File.WriteAllText(tmp, JsonSerializer.Serialize(saved, Json));
         File.Move(tmp, _file, true);
+    }
+
+    private static void Report(string what, CommandResult r)
+    {
+        if (!r.Ok.Value) Console.Error.WriteLine($"[compose] {what} not restored: {r.Error.Text}");
     }
 
     private async Task LoadAsync()
@@ -256,9 +276,16 @@ public sealed class CompositionHost : IAsyncDisposable
                 foreach (var (cam, role) in t.Cameras)
                 {
                     var sensor = t.Sensors?.FirstOrDefault(x => x.Camera == cam);
-                    d.Cameras.Add(new TrainCamera { CameraId = cam, Role = role, PixelSizeUm = sensor?.PixelSize ?? 0, SensorWidth = sensor?.Width ?? 0, SensorHeight = sensor?.Height ?? 0 });
+                    var set = t.Settings?.FirstOrDefault(x => x.Camera == cam);
+                    d.Cameras.Add(new TrainCamera
+                    {
+                        CameraId = cam, Role = role, PixelSizeUm = sensor?.PixelSize ?? 0, SensorWidth = sensor?.Width ?? 0, SensorHeight = sensor?.Height ?? 0,
+                        Gain = set?.Gain ?? double.NaN, Offset = set?.Offset ?? double.NaN, CoolTo = set?.CoolTo ?? double.NaN,
+                        CoolDegreesPerMinute = set?.CoolRate ?? 3, WarmTo = set?.WarmTo ?? 10,
+                    });
                 }
-                await DefineTrainAsync(d);
+                foreach (var (filter, steps) in t.FocusOffsets ?? []) d.FocusOffsets.Add(new FilterFocusOffset { Filter = filter, Steps = steps });
+                Report($"train {t.Id}", await DefineTrainAsync(d));
             }
             foreach (var g in saved.Guiders ?? [])
                 await DefineGuiderAsync(new GuiderDefinition
@@ -283,7 +310,7 @@ public sealed class CompositionHost : IAsyncDisposable
                 };
                 foreach (var p in sc.Pointers) d.Pointers.Add(p);
                 foreach (var s in sc.Shooters) d.Shooters.Add(new ScopeShooterRef { Id = s.Id, OffsetEastArcmin = s.East, OffsetNorthArcmin = s.North });
-                await DefineScopeAsync(d);
+                Report($"scope {sc.Id}", await DefineScopeAsync(d));
             }
         }
         finally { _lock.Release(); }

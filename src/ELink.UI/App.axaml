@@ -42,6 +42,7 @@
     <Style Selector="TextBlock.section"><Setter Property="FontSize" Value="12"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Opacity" Value="0.55"/><Setter Property="Margin" Value="0,0,0,8"/></Style>
     <Style Selector="TextBlock.label"><Setter Property="FontSize" Value="11"/><Setter Property="Opacity" Value="0.55"/></Style>
     <Style Selector="TextBlock.value"><Setter Property="FontSize" Value="22"/><Setter Property="FontWeight" Value="Medium"/><Setter Property="FontFamily" Value="Cascadia Mono,Consolas,DejaVu Sans Mono,monospace"/></Style>
+    <Style Selector="TextBlock.ok"><Setter Property="Foreground" Value="#7FD99A"/><Setter Property="TextWrapping" Value="Wrap"/></Style>
     <Style Selector="TextBlock.error"><Setter Property="Foreground" Value="#FF8A80"/><Setter Property="TextWrapping" Value="Wrap"/></Style>
     <Style Selector="Button.primary"><Setter Property="Background" Value="#2F6FED"/><Setter Property="Foreground" Value="White"/></Style>
     <Style Selector="Button.danger"><Setter Property="Background" Value="#B3372F"/><Setter Property="Foreground" Value="White"/></Style>
