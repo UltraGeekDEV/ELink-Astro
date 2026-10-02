@@ -59,13 +59,25 @@ public sealed class PlateSolveService : IAsyncDisposable
             if (order.Count == 0) throw new InvalidOperationException($"no solver {r.Solver.Text} (installed: {string.Join(", ", _solvers.Select(x => x.Name))})");
             SolveOutcome o = null!;
             var failures = new List<string>();
-            foreach (var solver in order)
+            double lo = r.ScaleLowArcsecPerPixel.Value, hi = r.ScaleHighArcsecPerPixel.Value;
+            bool scaled = lo > 0 && hi > lo;
+            // a wrong scale hint (a pixel size typed in for a camera that knows better) must not stop solving: without it next
+            foreach (bool withScale in scaled ? [true, false] : new[] { false })
             {
-                o = await solver.SolveAsync(image, r.HintRaHours.Value, r.HintDecDegrees.Value, r.HintRadiusDegrees.Value,
-                    r.ScaleLowArcsecPerPixel.Value, r.ScaleHighArcsecPerPixel.Value, TimeSpan.FromSeconds(Math.Clamp(r.TimeoutSeconds.Value, 5, 600)));
-                result.Solver = solver.Name;
-                if (o.Solved) break;
-                failures.Add($"{solver.Name}: {o.Message}");
+                foreach (var solver in order)
+                {
+                    o = await solver.SolveAsync(image, r.HintRaHours.Value, r.HintDecDegrees.Value, r.HintRadiusDegrees.Value,
+                        withScale ? lo : 0, withScale ? hi : 0, TimeSpan.FromSeconds(Math.Clamp(r.TimeoutSeconds.Value, 5, 600)));
+                    result.Solver = solver.Name;
+                    if (o.Solved) break;
+                    failures.Add($"{solver.Name}{(scaled && !withScale ? " (no scale hint)" : "")}: {o.Message}");
+                }
+                if (o.Solved)
+                {
+                    if (!withScale)
+                        Console.Error.WriteLine(FormattableString.Invariant($"[solve] solved at {o.PixelScale:0.###}\"/px only without the scale hint {lo:0.###}-{hi:0.###}\"/px: check the train's focal length and pixel size"));
+                    break;
+                }
             }
             if (!o.Solved && failures.Count > 1) o = o with { Message = string.Join("; ", failures) };
             result.Solved = o.Solved; result.RaHours = o.RaHours; result.DecDegrees = o.DecDegrees; result.PositionAngle = o.PositionAngle;

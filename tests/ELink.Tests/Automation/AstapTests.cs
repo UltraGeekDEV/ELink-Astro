@@ -101,6 +101,33 @@ public class AstapTests : IDisposable
             Assert.Equal(pa, AstapSolver.FromWcs(TanWcs.Centered(10, 20, pa, 1.5, 800, 600), 800, 600, 0).PositionAngle, 6);
     }
 
+    /// <summary>Solves only without a scale hint (the hint is wrong).</summary>
+    private sealed class OnlyUnscaled : IPlateSolver
+    {
+        public string Name => "astrometry.net";
+        public List<double> ScalesAsked { get; } = new();
+        public Task<SolveOutcome> SolveAsync(byte[] fits, double ra, double dec, double radius, double lo, double hi, TimeSpan timeout, CancellationToken ct = default)
+        {
+            lock (ScalesAsked) ScalesAsked.Add(lo);
+            return Task.FromResult(lo == 0 ? AstapSolver.FromWcs(Truth, W, H, 0.1) : new SolveOutcome(false, double.NaN, double.NaN, double.NaN, double.NaN, double.NaN, double.NaN, 0.1, "no solution"));
+        }
+    }
+
+    [Fact]
+    public async Task AWrongScaleHintDoesNotStopSolving()
+    {
+        using var node = ElinkNode.Create("AW-" + Guid.NewGuid().ToString("N")[..6], ELink.Testing.TestPorts.Next());
+        var solver = new OnlyUnscaled();
+        await using var svc = new PlateSolveService(node, solver); await svc.StartAsync();
+        var r = Assert.Single((await node.CallFunctionAsync<SolveRequest, SolveResult>(SolveIds.Solve, new SolveRequest
+        {
+            Image = new ELink.Contracts.RawBytes(Frame()), HintRaHours = 5.6, HintDecDegrees = -5, ScaleLowArcsecPerPixel = 1.4, ScaleHighArcsecPerPixel = 2.3,
+        }, TimeSpan.FromSeconds(20)))!);
+        Assert.True(r.Solved.Value, r.Message.Text);
+        Assert.Equal(2.68, r.PixelScale.Value, 2);
+        Assert.Equal([1.4, 0.0], solver.ScalesAsked);
+    }
+
     /// <summary>A solver that answers as told and counts its calls.</summary>
     private sealed class Scripted(string name, bool solves) : IPlateSolver
     {
