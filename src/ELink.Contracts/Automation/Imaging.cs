@@ -27,6 +27,7 @@ public class ImagingRequest : IBinaryConvertible
     public BinaryConvertibleDouble OutputPixelScaleArcsec { get; set; } = 0.0;
     public BinaryConvertibleDouble SlewTimeoutSeconds { get; set; } = 300.0;
     public BinaryConvertibleDouble SkyWaitSeconds { get; set; } = 120.0;
+    public BinaryConvertibleBool Resume { get; set; } = true;
 
     public override string Name => "ImagingRequest";
     private static readonly NOTESDescriptor d = new();
@@ -48,6 +49,7 @@ public class ImagingRequest : IBinaryConvertible
         d.RegisterField("LiveStack", (ImagingRequest x) => x.LiveStack).Description("build the image as it is taken (live stack of all the scopes' frames)");
         d.RegisterField("OutputPixelScaleArcsec", (ImagingRequest x) => x.OutputPixelScaleArcsec).Description("the image's pixel scale; 0 = the finest train's");
         d.RegisterField("SlewTimeoutSeconds", (ImagingRequest x) => x.SlewTimeoutSeconds);
+        d.RegisterField("Resume", (ImagingRequest x) => x.Resume).Description("an image of this name was started before (another night): carry on with its coverage and stack; false = start it afresh");
         d.RegisterField("SkyWaitSeconds", (ImagingRequest x) => x.SkyWaitSeconds).Description("after 3 rejected shots in a row, a scope waits this long before the next (clouds passing)");
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
@@ -154,8 +156,50 @@ public class ImagingState : IBinaryConvertible
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();
 }
 
+/// <summary>An image that was started and kept: it can be carried on.</summary>
+public class SavedImage : IBinaryConvertible
+{
+    public BinaryConvertibleString Label { get; set; } = "";
+    public ImagingRequest Request { get; set; } = new();
+    public BinaryConvertibleDouble MinSeconds { get; set; } = 0.0;
+    public BinaryConvertibleDouble MeanSeconds { get; set; } = 0.0;
+    public BinaryConvertibleInt32 Visits { get; set; } = 0;
+    public BinaryConvertibleString UpdatedUtc { get; set; } = "";
+
+    public override string Name => "SavedImage";
+    private static readonly NOTESDescriptor d = new();
+    public override NOTESDescriptor Descriptor => d;
+    static SavedImage()
+    {
+        d.RegisterField("Label", (SavedImage x) => x.Label);
+        d.RegisterField("Request", (SavedImage x) => x.Request).Description("as it was last started");
+        d.RegisterField("MinSeconds", (SavedImage x) => x.MinSeconds).Description("least exposed spot so far");
+        d.RegisterField("MeanSeconds", (SavedImage x) => x.MeanSeconds);
+        d.RegisterField("Visits", (SavedImage x) => x.Visits).Description("good shots so far, all nights");
+        d.RegisterField("UpdatedUtc", (SavedImage x) => x.UpdatedUtc);
+    }
+    public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
+    public override byte[] ToBytes() => d.ToBytes(this).ToArray();
+}
+
+public class SavedImages : IBinaryConvertible
+{
+    public BinaryConvertibleCollection<SavedImage> Images { get; set; } = new();
+
+    public override string Name => "SavedImages";
+    private static readonly NOTESDescriptor d = new();
+    public override NOTESDescriptor Descriptor => d;
+    static SavedImages() { d.RegisterField("Images", (SavedImages x) => x.Images, maxCount: 200); }
+    public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
+    public override byte[] ToBytes() => d.ToBytes(this).ToArray();
+}
+
 public static class ImagingIds
 {
+    /// <summary>Void in, SavedImages out: the images that can be carried on.</summary>
+    public const string ListSaved = Root + ".ListSaved";
+    /// <summary>BinaryConvertibleString (label) in: forget a kept image (its coverage; the stack is kept separately).</summary>
+    public const string DeleteSaved = Root + ".DeleteSaved";
     public const string Root = "ELink.Automation.Imaging";
     /// <summary>ImagingRequest in, CommandResult out (accepted; progress in the state).</summary>
     public const string Start = Root + ".Start";

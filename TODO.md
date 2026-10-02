@@ -102,6 +102,7 @@ focus triggers/offsets -> live-stack rejection/calibration -> the rest.
 - [x] Live stack: running outlier rejection, flux matching between frames/cameras, one stack per filter, background and colour balance
 - [ ] Live stack: darks and flats (with the calibration library)
 - [x] Image request (replaces the mosaic and single-target special cases): an area to a depth, any number of scopes pulling work from one shared coverage plan with their own train fields, dither on every shot, failed scopes fail alone, live stack of all frames
+- [x] Images kept across nights: coverage and live stacks saved under the image's name and carried on; list/forget kept images
 - [ ] Image request: learn each train's camera angle from solves (planning assumes 0 without a rotator); per-scope filters; rotator passes again
 - [x] Guiding inside the scope: multi-star guider, PHD2-style calibration over INDI pulse guiding, dithering and settling driven by the scope itself; "goto guiding" output (GuideCorrection: you are here, should be here) for ELink-native devices
 - [x] Frame grading inside the scope (stars, HFR, elongation, sky vs the camera's recent good frames): rejected frames do not count toward depth, are not stacked, are filed apart; clouds make the scope wait

@@ -16,6 +16,13 @@ using EVent.Connections.Models.BaseBinaryConvertibles;
 
 namespace ELink.UI.ViewModels;
 
+public sealed record SavedImageItem(SavedImage Image)
+{
+    public string Line => $"{Image.Label.Text}   ·   {Image.Visits.Value} shots   ·   " +
+        (Image.Request.TargetSeconds.Value > 0 ? $"{Math.Min(100, 100 * Image.MinSeconds.Value / Image.Request.TargetSeconds.Value):0}% deep" : $"{Image.MeanSeconds.Value / 60:0.#} min per spot") +
+        $"   ·   last {(DateTime.TryParse(Image.UpdatedUtc.Text, out var t) ? t.ToLocalTime().ToString("ddd d MMM HH:mm") : "?")}";
+}
+
 /// <summary>A frame outline on the coverage map.</summary>
 public sealed record OutlineShape(List<Point> Points);
 
@@ -42,6 +49,9 @@ public sealed partial class ImageViewModel : ObservableObject, IDisposable
     public ObservableCollection<OutlineShape> Outlines { get; } = new();
     public ObservableCollection<string> Workers { get; } = new();
     public FrameDisplay Stack { get; } = new();
+    public ObservableCollection<SavedImageItem> Saved { get; } = new();
+    [ObservableProperty] private SavedImageItem? _selectedSaved;
+    [ObservableProperty] private bool _startAfresh;
 
     [ObservableProperty] private string _label = "M42";
     [ObservableProperty] private string _centerRa = "05:35:17";
@@ -87,6 +97,42 @@ public sealed partial class ImageViewModel : ObservableObject, IDisposable
     {
         _follower = new Follower<ImagingState>(_mesh.Node, ImagingIds.State, ImagingIds.GetState, Show);
         await _follower.StartAsync();
+        await RefreshSavedAsync();
+    }
+
+    /// <summary>Images started before (other nights): carry one on by loading it and pressing Start.</summary>
+    [RelayCommand]
+    private async Task RefreshSavedAsync()
+    {
+        try
+        {
+            var answers = await _mesh.Node.CallFunctionAsync<NOTESVoid, SavedImages>(ImagingIds.ListSaved, NOTESVoid.Void, TimeSpan.FromSeconds(10));
+            var items = (answers?.FirstOrDefault()?.Images ?? new()).Select(i => new SavedImageItem(i)).ToList();
+            UiThread.Post(() => { Saved.Clear(); foreach (var i in items) Saved.Add(i); });
+        }
+        catch (Exception) { }
+    }
+
+    [RelayCommand]
+    private void LoadSaved()
+    {
+        if (SelectedSaved?.Image.Request is not { } r) return;
+        Label = r.Label.Text; CenterRa = Sexagesimal.Format(r.Center.RaHours.Value, 0); CenterDec = Sexagesimal.Format(r.Center.DecDegrees.Value, 0);
+        Width = r.WidthDegrees.Value; Height = r.HeightDegrees.Value; PositionAngle = r.PositionAngleDegrees.Value;
+        ExposureSeconds = r.Exposure.Seconds.Value; Filter = r.Exposure.Filter.Text; Iso = r.Exposure.Iso.Text; TargetMinutes = r.TargetSeconds.Value / 60;
+        Stepover = r.StepoverDegrees.Value; DitherArcsec = r.DitherArcsec.Value; OutputScale = r.OutputPixelScaleArcsec.Value; LiveStack = r.LiveStack.Value;
+        foreach (var s in Scopes) s.Selected = r.ScopeIds.Any(x => x.Text == s.Id);
+        StartAfresh = false;
+        Message = $"{r.Label.Text}: Start carries it on";
+    }
+
+    [RelayCommand]
+    private async Task DeleteSavedAsync()
+    {
+        if (SelectedSaved is null) return;
+        var r = await Commands.CallAsync(_mesh.Node, ImagingIds.DeleteSaved, (BinaryConvertibleString)SelectedSaved.Image.Label.Text);
+        Message = r.Ok.Value ? "" : r.Error.Text;
+        await RefreshSavedAsync();
     }
 
     private bool TryRequest(out ImagingRequest req)
@@ -100,7 +146,7 @@ public sealed partial class ImageViewModel : ObservableObject, IDisposable
             WidthDegrees = Width, HeightDegrees = Height, PositionAngleDegrees = PositionAngle,
             Exposure = new ShooterExposure { Seconds = ExposureSeconds, Filter = Filter.Trim(), FrameType = "Light", Iso = Iso.Trim() },
             TargetSeconds = TargetMinutes * 60, StepoverDegrees = Stepover, DitherArcsec = DitherArcsec, MaxVisits = MaxVisits,
-            WeatherId = SelectedWeather ?? "", LiveStack = LiveStack, OutputPixelScaleArcsec = OutputScale,
+            WeatherId = SelectedWeather ?? "", LiveStack = LiveStack, OutputPixelScaleArcsec = OutputScale, Resume = !StartAfresh,
         };
         foreach (var s in Scopes.Where(s => s.Selected)) req.ScopeIds.Add(s.Id);
         if (req.ScopeIds.Count == 0) { Message = "tick at least one scope"; return false; }
@@ -195,6 +241,7 @@ public sealed partial class ImageViewModel : ObservableObject, IDisposable
         _shownVisits = -1;
         var r = await Commands.CallAsync(_mesh.Node, ImagingIds.Start, req, TimeSpan.FromSeconds(60));
         if (!r.Ok.Value) Message = r.Error.Text;
+        await RefreshSavedAsync();
     }
 
     private async Task Void(string id) { var r = await Commands.CallAsync(_mesh.Node, id, NOTESVoid.Void); Message = r.Ok.Value ? "" : r.Error.Text; }

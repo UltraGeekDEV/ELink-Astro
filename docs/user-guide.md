@@ -206,6 +206,11 @@ The one place to say what you want: **this image of this part of the sky**. Ther
 4. **Preview** shows the resolved area and each scope's frames; **Start**, **Pause**, **Resume**, **Abort**;
    *Apply depth now* changes the depth while running.
 
+**Over several nights**: an image is kept under its name (coverage after every shot, the stack every few minutes and
+when it stops). Start it again with the same name (or *Load* it from **Kept images**) and it carries on where it
+was: only what is still missing is shot, into the same stack. A different area under the same name is refused;
+tick *Start afresh* to replace it.
+
 The coverage map fills from blue to yellow (deep enough), with white outlines where each scope is shooting, one line
 per scope says what it is doing, and **The image** shows the stack of all their frames as it grows.
 

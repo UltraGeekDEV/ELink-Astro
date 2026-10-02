@@ -24,6 +24,8 @@ public class LiveStackRequest : IBinaryConvertible
     public BinaryConvertibleDouble MaxMegapixels { get; set; } = 40.0;
     public BinaryConvertibleString Debayer { get; set; } = "Interpolated";
     public BinaryConvertibleBool SeparateFilters { get; set; } = true;
+    public BinaryConvertibleString SessionKey { get; set; } = "";
+    public BinaryConvertibleBool Resume { get; set; } = true;
     public BinaryConvertibleBool MatchFlux { get; set; } = true;
     public BinaryConvertibleDouble RejectSigma { get; set; } = 3.0;
     public BinaryConvertibleString BayerPattern { get; set; } = "";
@@ -47,6 +49,8 @@ public class LiveStackRequest : IBinaryConvertible
         d.RegisterField("NormalizeBackground", (LiveStackRequest x) => x.NormalizeBackground).Description("match every frame's sky level to the first one before adding it");
         d.RegisterField("SolveTimeoutSeconds", (LiveStackRequest x) => x.SolveTimeoutSeconds);
         d.RegisterField("MaxMegapixels", (LiveStackRequest x) => x.MaxMegapixels).Description("refuse fields larger than this at the requested scale (8 bytes of memory per pixel, 16 in colour)");
+        d.RegisterField("SessionKey", (LiveStackRequest x) => x.SessionKey).Description("keep this stack (saved every few minutes and when stopped) under this name; empty = not kept");
+        d.RegisterField("Resume", (LiveStackRequest x) => x.Resume).Description("carry on a kept stack of this name (it must cover the same field); false = start it afresh");
         d.RegisterField("SeparateFilters", (LiveStackRequest x) => x.SeparateFilters).Description("one stack per filter (frames say which); false = all into one");
         d.RegisterField("MatchFlux", (LiveStackRequest x) => x.MatchFlux).Description("scale every frame so its stars match the stack (other cameras and scopes, thin cloud)");
         d.RegisterField("RejectSigma", (LiveStackRequest x) => x.RejectSigma).Description("leave out samples this many standard deviations from a pixel's mean (satellites, planes); 0 = keep all");
@@ -187,6 +191,8 @@ public static class LiveStackIds
     public const string Add = Root + ".Add";
     /// <summary>LiveStackImageRequest in, LiveStackImage out.</summary>
     public const string GetImage = Root + ".GetImage";
+    /// <summary>Void in: save a kept stack now (it also saves every few minutes and when stopped).</summary>
+    public const string Save = Root + ".Save";
     public const string State = Root + ".State";
     public const string GetState = Root + ".GetState";
 }

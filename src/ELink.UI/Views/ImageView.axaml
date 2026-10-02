@@ -52,9 +52,24 @@
           <Button Content="Resume" Command="{Binding ResumeCommand}"/>
           <Button Content="Abort" Classes="danger" Command="{Binding AbortCommand}"/>
           <Button Content="Apply depth now" Command="{Binding ApplyTargetCommand}"/>
+          <CheckBox IsChecked="{Binding StartAfresh}" Content="Start afresh (forget what this name has)" VerticalAlignment="Center"/>
         </StackPanel>
         <TextBlock Classes="label" Text="{Binding Summary}" TextWrapping="Wrap"/>
         <TextBlock Classes="error" Text="{Binding Message}" IsVisible="{Binding Message.Length}" TextWrapping="Wrap"/>
+      </StackPanel>
+    </Border>
+
+    <Border Classes="card">
+      <StackPanel Spacing="6">
+        <TextBlock Classes="section" Text="KEPT IMAGES (carry one on another night: load it, Start)"/>
+        <ListBox ItemsSource="{Binding Saved}" SelectedItem="{Binding SelectedSaved}" MaxHeight="160">
+          <ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Line}"/></DataTemplate></ListBox.ItemTemplate>
+        </ListBox>
+        <StackPanel Classes="row">
+          <Button Content="Load" Command="{Binding LoadSavedCommand}"/>
+          <Button Content="Forget" Classes="danger" Command="{Binding DeleteSavedCommand}"/>
+          <Button Content="↻" Command="{Binding RefreshSavedCommand}"/>
+        </StackPanel>
       </StackPanel>
     </Border>
 

@@ -16,17 +16,18 @@ public class LiveStackTests : IAsyncLifetime
     private const double RA = 83.8, DEC = -5.4;
     private TypeSafeEVentNode _node = null!;
     private LiveStackService _svc = null!;
+    private readonly string _data = Path.Combine(Path.GetTempPath(), "elink-stacks-" + Guid.NewGuid().ToString("N"));
     private LiveStackState? _last;
     private int _shots;
 
     public async Task InitializeAsync()
     {
         _node = ElinkNode.Create("LS-" + Guid.NewGuid().ToString("N")[..6], ELink.Testing.TestPorts.Next());
-        _svc = new LiveStackService(_node); await _svc.StartAsync();
+        _svc = new LiveStackService(_node, _data); await _svc.StartAsync();
         await _node.HookEventAsync(LiveStackIds.State, (LiveStackState s) => _last = s);
     }
 
-    public async Task DisposeAsync() { await _svc.DisposeAsync(); _node.Dispose(); }
+    public async Task DisposeAsync() { await _svc.DisposeAsync(); _node.Dispose(); try { Directory.Delete(_data, true); } catch { } }
 
     private static async Task<bool> Eventually(Func<bool> cond, int ms = 20000)
     {
@@ -323,6 +324,34 @@ public class LiveStackTests : IAsyncLifetime
         double r = fits.Data[i], g = fits.Data[plane + i], b = fits.Data[2 * plane + i];
         Assert.InRange(g / r, 0.9, 1.1); Assert.InRange(b / r, 0.9, 1.1);
         Assert.Equal((double)fits.Data[10 * fits.Width + 10], fits.Data[2 * plane + 10 * fits.Width + 10], 0);
+    }
+
+    [Fact]
+    public async Task AKeptStackCarriesOnAfterAStop()
+    {
+        var req = Request(8); req.SessionKey = "M42 night";
+        Assert.True((await Commands.CallAsync(_node, LiveStackIds.Start, req)).Ok.Value);
+        var at = TanWcs.Centered(RA, DEC, 0, 4, 200, 150);
+        await Shoot("cam", Frame(at, 200, 150)); await Shoot("cam", Frame(at, 200, 150, skyOffset: 50));
+        Assert.True(await Eventually(() => _last is { FramesStacked.Value: 2, FramesPending.Value: 0 }), _last?.Message.Text);
+        Assert.True((await Commands.CallAsync(_node, LiveStackIds.Stop, NOTESVoid.Void)).Ok.Value);   // saves
+        Assert.True(File.Exists(Path.Combine(_data, "stacks", "M42_night", "session.json")));
+
+        // started again (another night, or after a restart): the two frames are still there
+        Assert.True((await Commands.CallAsync(_node, LiveStackIds.Start, req)).Ok.Value);
+        Assert.True(await Eventually(() => _last is { FramesStacked.Value: 2 }), _last?.Message.Text);
+        Assert.Contains("carrying on", _last!.Message.Text);
+        await Shoot("cam", Frame(at, 200, 150));
+        Assert.True(await Eventually(() => _last is { FramesStacked.Value: 3 }), _last?.Message.Text);
+        var (img, wcs) = await Image();
+        Assert.Equal(3, int.Parse(img.Get("NCOMBINE")!));
+
+        var moved = Request(8); moved.SessionKey = "M42 night"; moved.Center.DecDegrees = DEC + 1;
+        var r = await Commands.CallAsync(_node, LiveStackIds.Start, moved);
+        Assert.False(r.Ok.Value); Assert.Contains("another field", r.Error.Text);
+        moved.Resume = false;
+        Assert.True((await Commands.CallAsync(_node, LiveStackIds.Start, moved)).Ok.Value);
+        Assert.Equal(0, _last!.FramesStacked.Value);
     }
 
     [Fact]

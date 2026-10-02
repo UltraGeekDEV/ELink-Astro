@@ -247,6 +247,51 @@ public sealed class LiveStacker
         }
     }
 
+    // ---- saving and loading: a stack can carry on another night ------------------------------------------------
+
+    private const string Magic = "ELSTACK1";
+
+    /// <summary>Writes everything needed to carry on: grid, frames so far, sums, weights.</summary>
+    public void WriteTo(Stream stream)
+    {
+        lock (_gate)
+        {
+            using var w = new BinaryWriter(stream, System.Text.Encoding.ASCII, leaveOpen: true);
+            w.Write(Magic);
+            w.Write(Width); w.Write(Height); w.Write(Channels); w.Write(Frames);
+            foreach (var v in new[] { Wcs.CrVal1, Wcs.CrVal2, Wcs.CrPix1, Wcs.CrPix2, Wcs.Cd11, Wcs.Cd12, Wcs.Cd21, Wcs.Cd22 }) w.Write(v);
+            w.Write(_sumSq is not null);
+            foreach (var plane in _sum) WriteFloats(w, plane);
+            WriteFloats(w, _weight);
+            if (_sumSq is not null) WriteFloats(w, _sumSq);
+        }
+    }
+
+    public static LiveStacker ReadFrom(Stream stream)
+    {
+        using var r = new BinaryReader(stream, System.Text.Encoding.ASCII, leaveOpen: true);
+        if (r.ReadString() != Magic) throw new FormatException("not a saved ELink stack");
+        int width = r.ReadInt32(), height = r.ReadInt32(), channels = r.ReadInt32(), frames = r.ReadInt32();
+        var wcs = new TanWcs(r.ReadDouble(), r.ReadDouble(), r.ReadDouble(), r.ReadDouble(), r.ReadDouble(), r.ReadDouble(), r.ReadDouble(), r.ReadDouble());
+        bool hasSq = r.ReadBoolean();
+        var stack = new LiveStacker(wcs, width, height) { Channels = channels, Frames = frames };
+        stack._sum = Enumerable.Range(0, channels).Select(_ => ReadFloats(r, (long)width * height)).ToArray();
+        ReadFloats(r, (long)width * height).CopyTo(stack._weight, 0);
+        if (hasSq) stack._sumSq = ReadFloats(r, (long)width * height);
+        return stack;
+    }
+
+    private static void WriteFloats(BinaryWriter w, float[] a) => w.Write(System.Runtime.InteropServices.MemoryMarshal.AsBytes(a.AsSpan()));
+
+    private static float[] ReadFloats(BinaryReader r, long n)
+    {
+        var a = new float[n];
+        var bytes = System.Runtime.InteropServices.MemoryMarshal.AsBytes(a.AsSpan());
+        int read = 0;
+        while (read < bytes.Length) { int got = r.Read(bytes[read..]); if (got <= 0) throw new EndOfStreamException("saved stack is truncated"); read += got; }
+        return a;
+    }
+
     /// <summary>Median of a sample of the pixels: the sky background level.</summary>
     public static float Background(float[] data)
     {

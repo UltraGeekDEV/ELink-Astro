@@ -224,4 +224,21 @@ public class LiveStackerTests
         var (ra, dec) = stack.Wcs.PixelToSky(100, 75);
         Assert.InRange(m[75 * fw + 100], Sky(ra, dec) - 100 - 10, Sky(ra, dec) - 100 + 10);   // within a few ADU of the first camera's level
     }
+
+    [Fact]
+    public void AStackSurvivesSavingAndLoading()
+    {
+        int fw = 120, fh = 90;
+        var a = TanWcs.Centered(RA, DEC, 0, 4, fw, fh);
+        var stack = new LiveStacker(TanWcs.Centered(RA, DEC, 10, 5, 100, 80), 100, 80) { RejectSigma = 3 };
+        stack.Add(Scene(a, fw, fh, 1, 500, false), fw, fh, 1, a, [500f]);
+        stack.Add(Scene(a, fw, fh, 1, 600, false), fw, fh, 1, a, [600f]);
+        using var ms = new MemoryStream();
+        stack.WriteTo(ms);
+        ms.Position = 0;
+        var back = LiveStacker.ReadFrom(ms);
+        Assert.Equal(2, back.Frames); Assert.Equal(stack.Width, back.Width); Assert.Equal(stack.Wcs, back.Wcs);
+        Assert.Equal(stack.Mean(), back.Mean());
+        Assert.Throws<FormatException>(() => LiveStacker.ReadFrom(new MemoryStream(new byte[] { 3, 65, 66, 67 })));
+    }
 }

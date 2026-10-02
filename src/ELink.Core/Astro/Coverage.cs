@@ -39,6 +39,23 @@ public sealed class CoverageMap
         Seconds = (float[])other.Seconds.Clone();
     }
 
+    /// <summary>A map restored from saved numbers (the grid exactly as it was).</summary>
+    public static CoverageMap Restore(double fovWidth, double fovHeight, int cols, int rows, float[] seconds)
+    {
+        if (seconds.Length != cols * rows) throw new ArgumentException("seconds do not fit the grid");
+        var m = new CoverageMap(fovWidth, fovHeight, fovWidth / cols);
+        if (m.Cols != cols || m.Rows != rows) m = new CoverageMap(new CoverageMap(fovWidth, fovHeight, fovWidth / cols), cols, rows);
+        Array.Copy(seconds, m.Seconds, seconds.Length);
+        return m;
+    }
+
+    private CoverageMap(CoverageMap shape, int cols, int rows)
+    {
+        FovWidth = shape.FovWidth; FovHeight = shape.FovHeight; Cols = cols; Rows = rows;
+        CellWidth = FovWidth / cols; CellHeight = FovHeight / rows;
+        Seconds = new float[cols * rows];
+    }
+
     /// <summary>An exact copy: same grid (cells need not be square), same seconds.</summary>
     public CoverageMap Clone() => new(this);
 

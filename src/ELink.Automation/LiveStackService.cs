@@ -4,6 +4,7 @@ using ELink.Contracts.Automation;
 using ELink.Contracts.Composition;
 using ELink.Contracts.Equipment;
 using ELink.Core;
+using ELink.Core.Astro;
 using ELink.Imaging;
 using Event.CoreFunctionality;
 using Event.Connections.Models.BaseBinaryConvertibles;
@@ -44,8 +45,18 @@ public sealed class LiveStackService : IAsyncDisposable
 
     private sealed record Item(byte[] Fits, string Source, double RaHours, double DecDegrees, double Seconds, int Generation, string Filter);
 
-    public LiveStackService(TypeSafeEVentNode node)
+    private readonly string? _dataDir;
+    private string? _sessionDir;
+    private int _framesSaved;
+    private Timer? _saveTimer;
+    private readonly SemaphoreSlim _saving = new(1, 1);
+    /// <summary>How often a kept stack is saved while frames come in.</summary>
+    public TimeSpan SaveEvery { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <param name="dataDir">where kept stacks live (a folder per session key); null = stacks are never kept</param>
+    public LiveStackService(TypeSafeEVentNode node, string? dataDir = null)
     {
+        _dataDir = dataDir;
         _node = node;
         _commands = new CommandSet(node);
         _publisher = new(node, LiveStackIds.State, LiveStackIds.GetState, BuildState);
@@ -57,6 +68,7 @@ public sealed class LiveStackService : IAsyncDisposable
         await _commands.AddAsync<NOTESVoid, CommandResult>(LiveStackIds.Stop, async _ => { await UnhookAllAsync("Stopped", "stopped; the stack is kept"); return CommandResult.Success(); }, "stop taking frames");
         await _commands.AddAsync<NOTESVoid, CommandResult>(LiveStackIds.Reset, ResetAsync, "empty the stack");
         await _commands.AddAsync<LiveStackFrame, CommandResult>(LiveStackIds.Add, AddFrameAsync, "add a FITS frame to the stack");
+        await _commands.AddAsync<NOTESVoid, CommandResult>(LiveStackIds.Save, async _ => await SaveAsync(), "save a kept stack now");
         await _commands.AddAsync<LiveStackImageRequest, LiveStackImage>(LiveStackIds.GetImage, r => Task.FromResult(GetImage(r)), "the stacked image as FITS");
         await _publisher.StartAsync();
     }
@@ -96,16 +108,37 @@ public sealed class LiveStackService : IAsyncDisposable
         if (r.PixelScaleArcsec.Value > 0 && Size(r, r.PixelScaleArcsec.Value) is { Error: { } err }) return CommandResult.Fail(err);
 
         await UnhookAllAsync("Idle", "");
+        // a kept stack of this name: carry on with it (same field only), or start it afresh
+        string? dir = r.SessionKey.Text.Trim() != "" && _dataDir is not null ? Path.Combine(_dataDir, "stacks", Safe(r.SessionKey.Text)) : null;
+        Dictionary<string, FilterStack>? restored = null; double restoredScale = double.NaN; double restoredExposure = 0;
+        if (dir is not null && Directory.Exists(dir))
+        {
+            if (r.Resume.Value)
+            {
+                try { (restored, restoredScale, restoredExposure) = LoadSession(dir, r); }
+                catch (Exception ex) { return CommandResult.Fail($"the kept stack '{r.SessionKey.Text}' cannot be continued: {ex.Message} (start it afresh, or use another name)"); }
+            }
+            else Directory.Delete(dir, true);
+        }
         lock (_gate)
         {
             _request = r; _stacks.Clear(); _scale = r.PixelScaleArcsec.Value > 0 ? r.PixelScaleArcsec.Value : double.NaN;
             _rejected = 0; _pending = 0; _exposure = 0; _lastScale = double.NaN; _last = ""; _seen.Clear();
+            _sessionDir = dir; _framesSaved = 0;
+            if (restored is not null)
+            {
+                foreach (var (k, v) in restored) _stacks[k] = v;
+                _scale = restoredScale; _exposure = restoredExposure; _framesSaved = restored.Values.Sum(x => x.Stack.Frames);
+            }
             _generation++;
-            _phase = "Stacking"; _message = double.IsNaN(_scale) ? "waiting for the first frame to set the scale" : "waiting for frames";
+            _phase = "Stacking";
+            _message = restored is not null ? $"carrying on: {restored.Values.Sum(x => x.Stack.Frames)} frames kept from before"
+                     : double.IsNaN(_scale) ? "waiting for the first frame to set the scale" : "waiting for frames";
             _queue = Channel.CreateBounded<Item>(new BoundedChannelOptions(16) { FullMode = BoundedChannelFullMode.Wait });
             _run = new CancellationTokenSource();
             var queue = _queue; var ct = _run.Token;
             _worker = Task.Run(() => WorkAsync(queue, ct));
+            if (dir is not null) _saveTimer = new Timer(_ => _ = SaveAsync(), null, SaveEvery, SaveEvery);
         }
         foreach (var id in r.ShooterIds.Select(s => s.Text).Where(s => s != "").Distinct())
         {
@@ -411,10 +444,71 @@ public sealed class LiveStackService : IAsyncDisposable
             if (_request is not null) { _phase = phase; _message = message; }
             _pending = 0;
         }
+        _saveTimer?.Dispose(); _saveTimer = null;
+        await SaveAsync();
         foreach (var (id, hook) in hooks)
             try { _node.UnhookEvent(ShooterIds.Shot(id), hook); } catch (ObjectDisposedException) { }
         try { await worker.WaitAsync(TimeSpan.FromSeconds(5)); } catch { }
         await Publish();
+    }
+
+    // ---- keeping a stack ---------------------------------------------------------------------------------------
+
+    private static string Safe(string key) => new(key.Trim().Select(c => char.IsLetterOrDigit(c) || c is '-' or '_' ? c : '_').ToArray());
+
+    private sealed record SavedFilter(string Filter, string File, float[]? Pedestal, double Exposure);
+    private sealed record SavedSession(double CenterRaHours, double CenterDecDegrees, double Width, double Height, double PositionAngle, double Scale, double Exposure, List<SavedFilter> Filters);
+
+    private static (Dictionary<string, FilterStack>, double Scale, double Exposure) LoadSession(string dir, LiveStackRequest r)
+    {
+        var meta = System.Text.Json.JsonSerializer.Deserialize<SavedSession>(File.ReadAllText(Path.Combine(dir, "session.json"))) ?? throw new FormatException("empty");
+        // the same field: centre, size and angle, and the scale if one is asked for
+        if (Sky.SeparationDegrees(meta.CenterRaHours, meta.CenterDecDegrees, r.Center.RaHours.Value, r.Center.DecDegrees.Value) * 3600 > 1
+            || Math.Abs(meta.Width - r.FovWidthDegrees.Value) > 1e-6 || Math.Abs(meta.Height - r.FovHeightDegrees.Value) > 1e-6 || Math.Abs(meta.PositionAngle - r.PositionAngleDegrees.Value) > 1e-6)
+            throw new InvalidOperationException("it covers another field");
+        if (r.PixelScaleArcsec.Value > 0 && Math.Abs(meta.Scale - r.PixelScaleArcsec.Value) > 1e-9) throw new InvalidOperationException(FormattableString.Invariant($"it was made at {meta.Scale:0.###}\"/px"));
+        var stacks = new Dictionary<string, FilterStack>();
+        foreach (var f in meta.Filters)
+        {
+            using var fs = File.OpenRead(Path.Combine(dir, f.File));
+            var stack = LiveStacker.ReadFrom(fs);
+            stack.Interpolation = Enum.Parse<Interpolation>(r.Interpolation.Text); stack.MatchFlux = r.MatchFlux.Value; stack.RejectSigma = Math.Max(0, r.RejectSigma.Value);
+            stacks[f.Filter] = new FilterStack { Stack = stack, Filter = f.Filter, Pedestal = f.Pedestal, Exposure = f.Exposure };
+        }
+        return (stacks, meta.Scale, meta.Exposure);
+    }
+
+    /// <summary>Writes a kept stack (only when it has new frames). Files are written aside and moved in place.</summary>
+    private async Task<CommandResult> SaveAsync()
+    {
+        string? dir; LiveStackRequest? r; List<FilterStack> stacks; double scale, exposure; int frames, saved;
+        lock (_gate)
+        {
+            dir = _sessionDir; r = _request; stacks = _stacks.Values.ToList(); scale = _scale; exposure = _exposure;
+            frames = stacks.Sum(x => x.Stack.Frames); saved = _framesSaved;
+        }
+        if (dir is null || r is null) return CommandResult.Fail("this stack is not kept (no session name)");
+        if (frames == saved) return CommandResult.Success();
+        await _saving.WaitAsync();
+        try
+        {
+            Directory.CreateDirectory(dir);
+            var files = new List<SavedFilter>();
+            foreach (var x in stacks)
+            {
+                string file = "filter-" + (x.Filter == "" ? "all" : Safe(x.Filter)) + ".stack", path = Path.Combine(dir, file);
+                await Task.Run(() => { using (var fs = File.Create(path + ".part")) x.Stack.WriteTo(fs); File.Move(path + ".part", path, true); });
+                files.Add(new SavedFilter(x.Filter, file, x.Pedestal, x.Exposure));
+            }
+            var meta = new SavedSession(r.Center.RaHours.Value, r.Center.DecDegrees.Value, r.FovWidthDegrees.Value, r.FovHeightDegrees.Value, r.PositionAngleDegrees.Value, scale, exposure, files);
+            string metaPath = Path.Combine(dir, "session.json");
+            await File.WriteAllTextAsync(metaPath + ".part", System.Text.Json.JsonSerializer.Serialize(meta));
+            File.Move(metaPath + ".part", metaPath, true);
+            lock (_gate) _framesSaved = frames;
+            return CommandResult.Success();
+        }
+        catch (Exception ex) { lock (_gate) _message = "could not keep the stack: " + ex.Message; return CommandResult.Fail(ex.Message); }
+        finally { _saving.Release(); }
     }
 
     public async ValueTask DisposeAsync()

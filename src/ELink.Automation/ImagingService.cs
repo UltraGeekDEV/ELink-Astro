@@ -35,9 +35,13 @@ public sealed class ImagingService : IAsyncDisposable
     private CancellationTokenSource? _cts;
     private Task? _run;
 
-    public ImagingService(TypeSafeEVentNode node)
+    private readonly string? _dataDir;
+    private string? _runDir;
+
+    /// <param name="dataDir">where started images are kept, to be carried on another night; null = not kept</param>
+    public ImagingService(TypeSafeEVentNode node, string? dataDir = null)
     {
-        _node = node;
+        _node = node; _dataDir = dataDir;
         _commands = new CommandSet(node);
         _publisher = new(node, ImagingIds.State, ImagingIds.GetState, BuildState);
     }
@@ -58,6 +62,8 @@ public sealed class ImagingService : IAsyncDisposable
         await _commands.AddAsync<NOTESVoid, CommandResult>(ImagingIds.Resume, _ => SetPaused(false), "carry on");
         await _commands.AddAsync<NOTESVoid, CommandResult>(ImagingIds.Abort, _ => AbortAsync(), "stop now");
         await _commands.AddAsync<BinaryConvertibleDouble, CommandResult>(ImagingIds.SetTarget, SetTargetAsync, "change the depth while running");
+        await _commands.AddAsync<NOTESVoid, SavedImages>(ImagingIds.ListSaved, _ => Task.FromResult(ListSaved()), "images that were started and can be carried on");
+        await _commands.AddAsync<BinaryConvertibleString, CommandResult>(ImagingIds.DeleteSaved, l => Task.FromResult(DeleteSaved(l.Text)), "forget a kept image");
         await _publisher.StartAsync();
     }
 
@@ -131,7 +137,7 @@ public sealed class ImagingService : IAsyncDisposable
         return null;
     }
 
-    private async Task<(Plan? Plan, string? Error)> ResolveAsync(ImagingRequest r)
+    private async Task<(Plan? Plan, string? Error)> ResolveAsync(ImagingRequest r, Kept? kept = null)
     {
         if (Validate(r) is { } bad) return (null, bad);
         var snap = await SnapshotAsync();
@@ -154,6 +160,12 @@ public sealed class ImagingService : IAsyncDisposable
         double stepover = r.StepoverDegrees.Value > 0 ? r.StepoverDegrees.Value : 0.1 * minFrame;
         double cell = Math.Max(minFrame / 12, Math.Sqrt(w * h / 40000.0));
         var map = new CoverageMap(w, h, cell);
+        if (kept is not null)
+        {
+            // carrying on: the same area, and the coverage it already has, on the grid it was kept on
+            if (Math.Abs(kept.Width - w) > 1e-9 || Math.Abs(kept.Height - h) > 1e-9) return (null, $"the kept image '{r.Label.Text}' covers another area ({kept.Width:0.###}° x {kept.Height:0.###}°): start it afresh or use another name");
+            map = CoverageMap.Restore(w, h, kept.Cols, kept.Rows, kept.Seconds);
+        }
         double scale = r.OutputPixelScaleArcsec.Value > 0 ? r.OutputPixelScaleArcsec.Value : scopes.Where(s => !double.IsNaN(s.FinestScale)).Select(s => s.FinestScale).DefaultIfEmpty(0).Min();
         return (new Plan(map, map.Clone(), scopes, w, h, stepover, scale), null);
     }
@@ -182,7 +194,21 @@ public sealed class ImagingService : IAsyncDisposable
     private async Task<CommandResult> StartRunAsync(ImagingRequest r)
     {
         lock (_gate) if (_cts is not null) return CommandResult.Fail("an image is already being taken: abort it first");
-        var (plan, error) = await ResolveAsync(r);
+        // an image of this name started before: carry on with it (same field only), or start it afresh
+        string? runDir = _dataDir is null ? null : Path.Combine(_dataDir, "images", Safe(r.Label.Text));
+        Kept? kept = null;
+        if (runDir is not null && Directory.Exists(runDir))
+        {
+            if (!r.Resume.Value) Directory.Delete(runDir, true);
+            else
+            {
+                kept = LoadKept(runDir);
+                if (kept is not null && Sky.SeparationDegrees(kept.Request.Center.RaHours.Value, kept.Request.Center.DecDegrees.Value, r.Center.RaHours.Value, r.Center.DecDegrees.Value) * 3600 > 1
+                    || kept is not null && Math.Abs(kept.Request.PositionAngleDegrees.Value - r.PositionAngleDegrees.Value) > 1e-6)
+                    return CommandResult.Fail($"the kept image '{r.Label.Text}' is of another part of the sky: start it afresh or use another name");
+            }
+        }
+        var (plan, error) = await ResolveAsync(r, kept);
         if (plan is null) return CommandResult.Fail(error!);
         CancellationTokenSource cts;
         lock (_gate)
@@ -192,7 +218,9 @@ public sealed class ImagingService : IAsyncDisposable
             _plan = plan; _target = r.TargetSeconds.Value; _paused = false; _visitsStarted = 0;
             _workers.Clear();
             foreach (var sc in plan.Scopes) _workers[sc.ScopeId] = Worker(sc);
-            _state = new ImagingState { Phase = "Running", Label = r.Label.Text, WidthDegrees = plan.Width, HeightDegrees = plan.Height };
+            _state = new ImagingState { Phase = "Running", Label = r.Label.Text, WidthDegrees = plan.Width, HeightDegrees = plan.Height, Visits = kept?.Visits ?? 0 };
+            if (kept is not null) _state.Message = $"carrying on: {kept.Visits} shots kept from before";
+            _runDir = runDir;
         }
         if (r.LiveStack.Value)
         {
@@ -202,6 +230,7 @@ public sealed class ImagingService : IAsyncDisposable
                 FovWidthDegrees = plan.Width, FovHeightDegrees = plan.Height, PositionAngleDegrees = r.PositionAngleDegrees.Value, PixelScaleArcsec = plan.Scale,
                 // with one kind of frame, its scale lets frames be placed by their pointing when they cannot be solved
                 FramePixelScaleArcsec = plan.Scopes.Select(s => s.FinestScale).Distinct().Count() == 1 && plan.Scopes[0].FinestScale > 0 ? plan.Scopes[0].FinestScale : 0,
+                SessionKey = runDir is null ? "" : r.Label.Text, Resume = r.Resume.Value,
             };
             foreach (var sc in plan.Scopes) stack.ShooterIds.Add(sc.ScopeId);
             var started = await Commands.CallAsync(_node, LiveStackIds.Start, stack);
@@ -209,6 +238,7 @@ public sealed class ImagingService : IAsyncDisposable
         }
         await _publisher.PublishAsync();
         var copy = Copy(r);
+        Keep(copy, plan);
         _run = Task.Run(() => RunAsync(copy, plan, cts));
         return CommandResult.Success();
     }
@@ -317,6 +347,7 @@ public sealed class ImagingService : IAsyncDisposable
             }
             await SetWorker(id, w => w.Visits = w.Visits.Value + 1);
             await Set(s => s.Visits = s.Visits.Value + 1);
+            Keep(r, plan);
         }
         if (!ct.IsCancellationRequested) await SetWorker(id, w => { w.Phase = "Done"; w.Message = ""; });
     }
@@ -350,6 +381,70 @@ public sealed class ImagingService : IAsyncDisposable
         List<ShotEvent> got; lock (frames) got = frames.ToList();
         if (got.Count > 0 && got.All(f => f.Quality.Text == "Rejected")) return RejectedMark + got[0].QualityNote.Text;
         return "";
+    }
+
+    // ---- keeping images for another night ------------------------------------------------------------------------
+
+    private sealed record Kept(ImagingRequest Request, double Width, double Height, int Cols, int Rows, float[] Seconds, int Visits, string UpdatedUtc);
+    private sealed record KeptMeta(double Width, double Height, int Cols, int Rows, int Visits, string UpdatedUtc);
+
+    private static string Safe(string label) => new(label.Trim().Select(c => char.IsLetterOrDigit(c) || c is '-' or '_' ? c : '_').ToArray());
+
+    /// <summary>After every good shot: the request, the real coverage and the count, written aside and moved in place.</summary>
+    private void Keep(ImagingRequest r, Plan plan)
+    {
+        string? dir; int visits; float[] seconds;
+        lock (_gate) { dir = _runDir; visits = _state.Visits.Value; seconds = (float[])plan.Actual.Seconds.Clone(); }
+        if (dir is null) return;
+        try
+        {
+            Directory.CreateDirectory(dir);
+            void Write(string name, byte[] bytes) { string p = Path.Combine(dir, name); File.WriteAllBytes(p + ".part", bytes); File.Move(p + ".part", p, true); }
+            Write("request.bin", r.ToBytes());
+            Write("coverage.bin", System.Runtime.InteropServices.MemoryMarshal.AsBytes(seconds.AsSpan()).ToArray());
+            Write("image.json", System.Text.Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(
+                new KeptMeta(plan.Width, plan.Height, plan.Actual.Cols, plan.Actual.Rows, visits, DateTime.UtcNow.ToString("o")))));
+        }
+        catch (Exception ex) { lock (_gate) _state.Message = "could not keep the image: " + ex.Message; }
+    }
+
+    private static Kept? LoadKept(string dir)
+    {
+        try
+        {
+            var meta = System.Text.Json.JsonSerializer.Deserialize<KeptMeta>(File.ReadAllText(Path.Combine(dir, "image.json")))!;
+            Span<byte> req = File.ReadAllBytes(Path.Combine(dir, "request.bin"));
+            var r = new ImagingRequest(); r.FromBytes(ref req);
+            var bytes = File.ReadAllBytes(Path.Combine(dir, "coverage.bin"));
+            var seconds = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, float>(bytes).ToArray();
+            if (seconds.Length != meta.Cols * meta.Rows) return null;
+            return new Kept(r, meta.Width, meta.Height, meta.Cols, meta.Rows, seconds, meta.Visits, meta.UpdatedUtc);
+        }
+        catch (Exception) { return null; }
+    }
+
+    private SavedImages ListSaved()
+    {
+        var list = new SavedImages();
+        if (_dataDir is null || !Directory.Exists(Path.Combine(_dataDir, "images"))) return list;
+        foreach (var dir in Directory.GetDirectories(Path.Combine(_dataDir, "images")).Order())
+            if (LoadKept(dir) is { } k)
+                list.Images.Add(new SavedImage
+                {
+                    Label = k.Request.Label.Text, Request = k.Request, Visits = k.Visits, UpdatedUtc = k.UpdatedUtc,
+                    MinSeconds = k.Seconds.Length > 0 ? k.Seconds.Min() : 0, MeanSeconds = k.Seconds.Length > 0 ? k.Seconds.Average() : 0,
+                });
+        return list;
+    }
+
+    private CommandResult DeleteSaved(string label)
+    {
+        if (_dataDir is null) return CommandResult.Fail("images are not kept here");
+        string dir = Path.Combine(_dataDir, "images", Safe(label));
+        lock (_gate) if (_runDir == dir && _cts is not null) return CommandResult.Fail("that image is being taken now");
+        if (!Directory.Exists(dir)) return CommandResult.Fail($"no kept image '{label}'");
+        Directory.Delete(dir, true);
+        return CommandResult.Success();
     }
 
     /// <summary>The area's own axes (x along its width, y along its height) to sky east/north offsets.</summary>

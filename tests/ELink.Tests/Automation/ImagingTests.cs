@@ -22,6 +22,7 @@ public class ImagingTests : IAsyncLifetime
     private readonly CompositionSnapshot _snap = new();
     private CommandSet _fakes = null!;
     private ImagingService _svc = null!;
+    private readonly string _data = Path.Combine(Path.GetTempPath(), "elink-images-" + Guid.NewGuid().ToString("N"));
     private ImagingState? _last;
 
     public async Task InitializeAsync()
@@ -29,7 +30,7 @@ public class ImagingTests : IAsyncLifetime
         _node = ElinkNode.Create("IM-" + Guid.NewGuid().ToString("N")[..6], ELink.Testing.TestPorts.Next());
         _fakes = new CommandSet(_node);
         await _fakes.AddAsync<NOTESVoid, CompositionSnapshot>(ScopeIds.Snapshot, _ => Task.FromResult(_snap), "fake composition");
-        _svc = new ImagingService(_node); await _svc.StartAsync();
+        _svc = new ImagingService(_node, _data); await _svc.StartAsync();
         await _node.HookEventAsync(ImagingIds.State, (ImagingState s) => _last = s);
     }
 
@@ -38,6 +39,7 @@ public class ImagingTests : IAsyncLifetime
         await _svc.DisposeAsync();
         foreach (var o in Enumerable.Reverse(_owned)) await o.DisposeAsync();
         _fakes.Dispose(); _node.Dispose();
+        try { Directory.Delete(_data, true); } catch { }
     }
 
     /// <summary>A scope of one mount and one train whose imaging camera covers w x h degrees.</summary>
@@ -156,6 +158,39 @@ public class ImagingTests : IAsyncLifetime
         Assert.Equal(8, _shooters["solo"].Exposures);            // the three bad ones were taken again
         Assert.Contains("WaitingForSky", states);                // three bad in a row: it waited for the clouds to pass
         Assert.True(_last.MinSeconds.Value >= 0.25 - 1e-6);
+    }
+
+    [Fact]
+    public async Task AnImageCarriesOnWhereItStoppedAnotherNight()
+    {
+        await AddScopeAsync("solo", 0.5, 0.35);
+        var night1 = Request(0, 0, 0.25, "solo"); night1.Label = "M31"; night1.MaxVisits = 2;   // dawn after two shots
+        Assert.True((await Commands.CallAsync(_node, ImagingIds.Start, night1, TimeSpan.FromSeconds(60))).Ok.Value);
+        Assert.True(await Eventually(() => _last is { Phase.Text: "Done" }), _last?.Phase.Text);
+        Assert.Equal(2, _last!.Visits.Value);
+        var saved = Assert.Single(Assert.Single((await _node.CallFunctionAsync<NOTESVoid, SavedImages>(ImagingIds.ListSaved, NOTESVoid.Void))!).Images);
+        Assert.Equal("M31", saved.Label.Text); Assert.Equal(2, saved.Visits.Value);
+        Assert.Equal(0.10, saved.MinSeconds.Value, 3);
+
+        // the next night: the same image carries on from 0.1 s per spot to 0.25 s: three more shots, not five
+        var night2 = Request(0, 0, 0.25, "solo"); night2.Label = "M31";
+        int before = _shooters["solo"].Exposures;
+        _last = null;
+        Assert.True((await Commands.CallAsync(_node, ImagingIds.Start, night2, TimeSpan.FromSeconds(60))).Ok.Value);
+        Assert.True(await Eventually(() => _last is { Phase.Text: "Done" }), _last?.Phase.Text);
+        Assert.Equal(3, _shooters["solo"].Exposures - before);
+        Assert.Equal(5, _last!.Visits.Value);
+        Assert.True(_last.MinSeconds.Value >= 0.25 - 1e-6);
+
+        // another part of the sky under the same name: refused unless started afresh
+        var elsewhere = Request(0, 0, 0.25, "solo"); elsewhere.Label = "M31"; elsewhere.Center.RaHours = 0.7;
+        var r = await Commands.CallAsync(_node, ImagingIds.Start, elsewhere, TimeSpan.FromSeconds(60));
+        Assert.False(r.Ok.Value); Assert.Contains("another part of the sky", r.Error.Text);
+        elsewhere.Resume = false; elsewhere.MaxVisits = 1;
+        Assert.True((await Commands.CallAsync(_node, ImagingIds.Start, elsewhere, TimeSpan.FromSeconds(60))).Ok.Value);
+        Assert.True(await Eventually(() => _last is { Phase.Text: "Done", Visits.Value: 1 }), _last?.Phase.Text);
+        Assert.True((await Commands.CallAsync(_node, ImagingIds.DeleteSaved, (EVent.Connections.Models.BaseBinaryConvertibles.BinaryConvertibleString)"M31")).Ok.Value);
+        Assert.Empty(Assert.Single((await _node.CallFunctionAsync<NOTESVoid, SavedImages>(ImagingIds.ListSaved, NOTESVoid.Void))!).Images);
     }
 
     [Fact]
