@@ -2,7 +2,7 @@ namespace ELink.Imaging;
 
 public enum Interpolation { Nearest, Bilinear, Bicubic }
 
-public readonly record struct StackAddResult(bool Added, int PixelsTouched, int BinFactor, int Subsamples, string Message);
+public readonly record struct StackAddResult(bool Added, int PixelsTouched, int BinFactor, int Subsamples, string Message, double FluxScale = 1, int RejectedPixels = 0);
 
 /// <summary>Accumulates frames into a fixed sky grid (the stack's own TAN WCS and pixel scale). Every frame is resampled
 /// through the exact homography between its WCS and the grid. Finer output than input: the frame is interpolated
@@ -20,7 +20,15 @@ public sealed class LiveStacker
     public int Channels { get; private set; } = 1;
 
     private float[][] _sum;
+    private float[]? _sumSq;                // luminance squares, for rejection
     private readonly float[] _weight;
+
+    /// <summary>Scale every frame after the first so its stars match the stack (different cameras, thin cloud).</summary>
+    public bool MatchFlux { get; set; }
+    /// <summary>Leave out samples further than this many standard deviations from the pixel's mean so far; 0 = keep all.</summary>
+    public double RejectSigma { get; set; }
+    /// <summary>A pixel needs this many frames' worth of data before anything is rejected from it.</summary>
+    public int MinFramesToReject { get; set; } = 4;
     private readonly object _gate = new();
 
     public LiveStacker(TanWcs wcs, int width, int height)
@@ -33,7 +41,7 @@ public sealed class LiveStacker
 
     public void Reset()
     {
-        lock (_gate) { foreach (var s in _sum) Array.Clear(s); Array.Clear(_weight); Frames = 0; }
+        lock (_gate) { foreach (var s in _sum) Array.Clear(s); Array.Clear(_weight); if (_sumSq is not null) Array.Clear(_sumSq); Frames = 0; }
     }
 
     /// <summary>Adds one mono frame (row-major in file order, as <see cref="FitsImage.Data"/>) whose sky position is
@@ -41,7 +49,12 @@ public sealed class LiveStacker
     public StackAddResult Add(float[] data, int width, int height, TanWcs frameWcs, float background = 0, float weight = 1) =>
         Add(data, width, height, 1, frameWcs, [background], weight);
 
-    /// <summary>Adds a frame of 1 or 3 planar channels; <paramref name="backgrounds"/> has one level per channel.</summary>
+    /// <summary>Adds a frame of 1 or 3 planar channels; <paramref name="backgrounds"/> has one level per channel.
+    /// <para>Three passes: the frame is resampled onto the grid into a scratch buffer; with <see cref="MatchFlux"/> it is
+    /// scaled so its bright pixels (stars) match the stack where they overlap (frames from other cameras, scopes or
+    /// through thinner cloud blend in evenly); then it is added, leaving out samples further than <see cref="RejectSigma"/>
+    /// standard deviations from what that pixel has had so far (satellite and plane trails, cosmic rays), once a pixel
+    /// has <see cref="MinFramesToReject"/> frames.</para></summary>
     public StackAddResult Add(float[] data, int width, int height, int channels, TanWcs frameWcs, float[] backgrounds, float weight = 1)
     {
         if (channels is not (1 or 3)) throw new ArgumentException("1 or 3 channels", nameof(channels));
@@ -69,10 +82,43 @@ public sealed class LiveStacker
         var h = Wcs.HomographyTo(frameWcs);
         var interp = k > 1 ? Interpolation.Bilinear : Interpolation;
         float invK2 = 1f / (k * k);
-        int touched = 0;
         var src = data; int sw = width, sh = height, fc = channels;
         long plane = (long)sw * sh;
         var bg = backgrounds;
+
+        // 1. resample into a scratch buffer over the frame's footprint
+        int bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+        var vals = new float[fc][];
+        for (int c = 0; c < fc; c++) vals[c] = new float[bw * bh];
+        var frac = new float[bw * bh];
+        Parallel.For(0, bh, j =>
+        {
+            Span<float> acc = stackalloc float[3];
+            int y = y0 + j;
+            for (int x = x0; x <= x1; x++)
+            {
+                acc.Clear(); int n = 0;
+                for (int v = 0; v < k; v++)
+                {
+                    double py = y + (v + 0.5) / k - 0.5;
+                    for (int u = 0; u < k; u++)
+                    {
+                        double px = x + (u + 0.5) / k - 0.5;
+                        double w = h[6] * px + h[7] * py + h[8];
+                        if (w <= 0) continue;
+                        double sx = (h[0] * px + h[1] * py + h[2]) / w, sy = (h[3] * px + h[4] * py + h[5]) / w;
+                        if (sx < -0.5 || sy < -0.5 || sx > sw - 0.5 || sy > sh - 0.5) continue;
+                        for (int c = 0; c < fc; c++) acc[c] += Sample(src, c * plane, sw, sh, sx, sy, interp) - bg[c];
+                        n++;
+                    }
+                }
+                if (n == 0) continue;
+                int i = j * bw + (x - x0);
+                for (int c = 0; c < fc; c++) vals[c][i] = acc[c] / n;
+                frac[i] = n * invK2;
+            }
+        });
+
         lock (_gate)
         {
             if (Frames == 0 && Channels != channels)
@@ -80,41 +126,72 @@ public sealed class LiveStacker
                 Channels = channels;
                 _sum = Enumerable.Range(0, channels).Select(_ => new float[_weight.Length]).ToArray();
             }
+            if (RejectSigma > 0 && _sumSq is null) _sumSq = new float[_weight.Length];
             var sums = _sum; int sc = Channels;
-            Parallel.For(y0, y1 + 1, () => 0, (y, _, count) =>
+
+            // 2. flux: the frame's bright pixels against the stack's at the same places
+            double scale = 1;
+            if (MatchFlux && Frames > 0)
             {
-                Span<float> acc = stackalloc float[3];
-                long row = (long)y * Width;
-                for (int x = x0; x <= x1; x++)
-                {
-                    acc.Clear(); int n = 0;
-                    for (int v = 0; v < k; v++)
+                var pairs = new List<(float Frame, float Stack)>();
+                for (int j = 0; j < bh; j++)
+                    for (int i = 0; i < bw; i++)
                     {
-                        double py = y + (v + 0.5) / k - 0.5;
-                        for (int u = 0; u < k; u++)
-                        {
-                            double px = x + (u + 0.5) / k - 0.5;
-                            double w = h[6] * px + h[7] * py + h[8];
-                            if (w <= 0) continue;
-                            double sx = (h[0] * px + h[1] * py + h[2]) / w, sy = (h[3] * px + h[4] * py + h[5]) / w;
-                            if (sx < -0.5 || sy < -0.5 || sx > sw - 0.5 || sy > sh - 0.5) continue;
-                            for (int c = 0; c < fc; c++) acc[c] += Sample(src, c * plane, sw, sh, sx, sy, interp) - bg[c];
-                            n++;
-                        }
+                        int bi = j * bw + i;
+                        long gi = (long)(y0 + j) * Width + x0 + i;
+                        if (frac[bi] < 0.99f || _weight[gi] < 0.5f) continue;
+                        float fv = 0; for (int c = 0; c < fc; c++) fv += vals[c][bi]; fv /= fc;
+                        float sv = 0; for (int c = 0; c < sc; c++) sv += sums[c][gi]; sv /= sc * _weight[gi];
+                        pairs.Add((fv, sv));
                     }
-                    if (n == 0) continue;
-                    float f = weight * invK2;
-                    if (sc == fc) for (int c = 0; c < sc; c++) sums[c][row + x] += f * acc[c];
-                    else if (sc == 3) for (int c = 0; c < 3; c++) sums[c][row + x] += f * acc[0];      // mono into colour: grey
-                    else sums[0][row + x] += f * (acc[0] + acc[1] + acc[2]) / 3;                       // colour into mono: luminance
-                    _weight[row + x] += weight * n * invK2;
-                    count++;
+                if (pairs.Count > 200)
+                {
+                    // the brightest 1 % of the frame where both have signal: stars, not sky
+                    var bright = pairs.OrderByDescending(p => p.Frame).Take(Math.Max(20, pairs.Count / 100)).Where(p => p.Frame > 0 && p.Stack > 0).ToList();
+                    if (bright.Count >= 10)
+                    {
+                        var r = bright.Select(p => (double)p.Stack / p.Frame).Order().ToList();
+                        scale = Math.Clamp(r[r.Count / 2], 0.2, 5);
+                    }
                 }
-                return count;
-            }, c => Interlocked.Add(ref touched, c));
+            }
+
+            // 3. add, with rejection of outliers against what each pixel has had so far
+            int touched = 0, rejected = 0;
+            var sq = _sumSq; double kSigma = RejectSigma; float minW = MinFramesToReject;
+            float fs = (float)scale;
+            Parallel.For(0, bh, () => (0, 0), (j, _, cnt) =>
+            {
+                Span<float> v = stackalloc float[3];
+                for (int i = 0; i < bw; i++)
+                {
+                    int bi = j * bw + i;
+                    if (frac[bi] <= 0) continue;
+                    long gi = (long)(y0 + j) * Width + x0 + i;
+                    for (int c = 0; c < fc; c++) v[c] = vals[c][bi] * fs;
+                    float lum = fc == 3 ? (v[0] + v[1] + v[2]) / 3 : v[0];
+                    if (sq is not null && kSigma > 0 && _weight[gi] >= minW)
+                    {
+                        float w = _weight[gi];
+                        float mean = 0; for (int c = 0; c < sc; c++) mean += sums[c][gi]; mean /= sc * w;
+                        float var = Math.Max(0, sq[gi] / w - mean * mean);
+                        // never tighter than a little of the signal itself: a few frames make a poor variance estimate
+                        float sigma = MathF.Max(MathF.Sqrt(var), 0.05f * MathF.Abs(mean) + 1e-3f);
+                        if (MathF.Abs(lum - mean) > kSigma * sigma) { cnt.Item2++; continue; }
+                    }
+                    float f = weight * frac[bi];
+                    if (sc == fc) for (int c = 0; c < sc; c++) sums[c][gi] += f * v[c];
+                    else if (sc == 3) for (int c = 0; c < 3; c++) sums[c][gi] += f * v[0];      // mono into colour: grey
+                    else sums[0][gi] += f * lum;                                                 // colour into mono: luminance
+                    if (sq is not null) sq[gi] += f * lum * lum;
+                    _weight[gi] += f;
+                    cnt.Item1++;
+                }
+                return cnt;
+            }, c => { Interlocked.Add(ref touched, c.Item1); Interlocked.Add(ref rejected, c.Item2); });
             if (touched > 0) Frames++;
+            return touched > 0 ? new(true, touched, bin, k, "", scale, rejected) : new(false, 0, bin, k, "the frame does not overlap the stack's field", scale, rejected);
         }
-        return touched > 0 ? new(true, touched, bin, k, "") : new(false, 0, bin, k, "the frame does not overlap the stack's field");
     }
 
     /// <summary>The stack: weighted mean per pixel, planar (<see cref="Channels"/> planes), NaN where nothing has landed.</summary>

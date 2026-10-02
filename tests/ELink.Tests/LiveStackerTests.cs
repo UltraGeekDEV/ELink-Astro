@@ -180,4 +180,48 @@ public class LiveStackerTests
         Assert.Equal(50, reduced.Width); Assert.Equal(25, reduced.Height);
         Assert.Equal(16, reduced.Wcs.PixelScaleArcsec, 6);
     }
+
+    private static float[] Scene(TanWcs w, int width, int height, double gain, double sky, bool streak)
+    {
+        var d = Render(w, width, height, (ra, dec) => sky + gain * (Sky(ra, dec) - 100));
+        if (streak) for (int x = 0; x < width; x++) for (int dy = -1; dy <= 1; dy++) d[(height / 2 + dy) * width + x] += 30000;   // a satellite
+        return d;
+    }
+
+    [Fact]
+    public void ASatelliteTrailInOneFrameIsRejected()
+    {
+        int fw = 200, fh = 150;
+        var fwcs = TanWcs.Centered(RA, DEC, 0, 4, fw, fh);
+        foreach (bool reject in new[] { false, true })
+        {
+            var stack = new LiveStacker(TanWcs.Centered(RA, DEC, 0, 4, fw, fh), fw, fh) { RejectSigma = reject ? 3 : 0 };
+            for (int n = 0; n < 11; n++)
+            {
+                var r = stack.Add(Scene(fwcs, fw, fh, 1, 500, streak: n == 6), fw, fh, 1, fwcs, [500f]);
+                if (reject && n == 6) Assert.True(r.RejectedPixels >= fw * 3 * 0.9, $"{r.RejectedPixels} pixels left out");
+            }
+            var m = stack.Mean();
+            var (ra, dec) = stack.Wcs.PixelToSky(100, 75);
+            double truth = Sky(ra, dec) - 100;
+            if (reject) Assert.Equal(truth, m[75 * fw + 100], 0);                     // the trail is gone
+            else Assert.True(m[75 * fw + 100] > truth + 2000, "without rejection the trail shows (one frame in eleven)");
+        }
+    }
+
+    [Fact]
+    public void FramesFromAnotherCameraAreScaledToMatchTheStack()
+    {
+        int fw = 200, fh = 150;
+        var a = TanWcs.Centered(RA, DEC, 0, 4, fw, fh);
+        var b = TanWcs.Centered(RA + 0.02, DEC, 20, 4, fw, fh);
+        var stack = new LiveStacker(TanWcs.Centered(RA, DEC, 0, 4, fw, fh), fw, fh) { MatchFlux = true };
+        Assert.Equal(1.0, stack.Add(Scene(a, fw, fh, 1, 500, false), fw, fh, 1, a, [500f]).FluxScale);
+        // the second camera records half the signal on a different sky level
+        var r = stack.Add(Scene(b, fw, fh, 0.5, 1200, false), fw, fh, 1, b, [1200f]);
+        Assert.Equal(2.0, r.FluxScale, 1);
+        var m = stack.Mean();
+        var (ra, dec) = stack.Wcs.PixelToSky(100, 75);
+        Assert.InRange(m[75 * fw + 100], Sky(ra, dec) - 100 - 10, Sky(ra, dec) - 100 + 10);   // within a few ADU of the first camera's level
+    }
 }

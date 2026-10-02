@@ -7,6 +7,7 @@ using ELink.Core;
 using ELink.Imaging;
 using Event.CoreFunctionality;
 using Event.Connections.Models.BaseBinaryConvertibles;
+using EVent.Connections.Models.BaseBinaryConvertibles;
 
 namespace ELink.Automation;
 
@@ -26,13 +27,22 @@ public sealed class LiveStackService : IAsyncDisposable
     private Task _worker = Task.CompletedTask;
 
     private LiveStackRequest? _request;
-    private LiveStacker? _stack;
+    /// <summary>One stack per filter (or one in all, when filters are not kept apart).</summary>
+    private sealed class FilterStack
+    {
+        public required LiveStacker Stack;
+        public required string Filter;
+        public float[]? Pedestal;          // sky level per channel of its first frame, added back on output
+        public double Exposure;
+    }
+    private readonly Dictionary<string, FilterStack> _stacks = new();
+    private double _scale = double.NaN;     // all stacks share one grid once the scale is known
+    private FilterStack? Primary => _stacks.Values.OrderByDescending(s => s.Stack.Frames).FirstOrDefault();
     private string _phase = "Idle", _message = "", _last = "";
     private int _rejected, _pending, _generation;
     private double _exposure, _lastScale = double.NaN;
-    private float[]? _pedestal;   // sky level per channel of the first frame
 
-    private sealed record Item(byte[] Fits, string Source, double RaHours, double DecDegrees, double Seconds, int Generation);
+    private sealed record Item(byte[] Fits, string Source, double RaHours, double DecDegrees, double Seconds, int Generation, string Filter);
 
     public LiveStackService(TypeSafeEVentNode node)
     {
@@ -57,11 +67,12 @@ public sealed class LiveStackService : IAsyncDisposable
         {
             var s = new LiveStackState
             {
-                Phase = _phase, Label = _request?.Label.Text ?? "", Message = _message, FramesStacked = _stack?.Frames ?? 0,
-                FramesRejected = _rejected, FramesPending = _pending, Width = _stack?.Width ?? 0, Height = _stack?.Height ?? 0,
-                PixelScaleArcsec = _stack?.Wcs.PixelScaleArcsec ?? 0, Channels = _stack?.Channels ?? 0, CoveragePercent = _stack is null ? 0 : Math.Round(_stack.Coverage() * 100, 2),
+                Phase = _phase, Label = _request?.Label.Text ?? "", Message = _message, FramesStacked = _stacks.Values.Sum(x => x.Stack.Frames),
+                FramesRejected = _rejected, FramesPending = _pending, Width = Primary?.Stack.Width ?? 0, Height = Primary?.Stack.Height ?? 0,
+                PixelScaleArcsec = Primary?.Stack.Wcs.PixelScaleArcsec ?? 0, Channels = Primary?.Stack.Channels ?? 0, CoveragePercent = Primary is { } p ? Math.Round(p.Stack.Coverage() * 100, 2) : 0,
                 TotalExposureSeconds = _exposure, LastFrame = _last,
             };
+            foreach (var x in _stacks.Values.OrderBy(x => x.Filter)) s.Filters.Add($"{(x.Filter == "" ? "(none)" : x.Filter)}: {x.Stack.Frames}");
             return s;
         }
     }
@@ -87,10 +98,10 @@ public sealed class LiveStackService : IAsyncDisposable
         await UnhookAllAsync("Idle", "");
         lock (_gate)
         {
-            _request = r; _stack = r.PixelScaleArcsec.Value > 0 ? Create(r, r.PixelScaleArcsec.Value) : null;
-            _rejected = 0; _pending = 0; _exposure = 0; _pedestal = null; _lastScale = double.NaN; _last = ""; _seen.Clear();
+            _request = r; _stacks.Clear(); _scale = r.PixelScaleArcsec.Value > 0 ? r.PixelScaleArcsec.Value : double.NaN;
+            _rejected = 0; _pending = 0; _exposure = 0; _lastScale = double.NaN; _last = ""; _seen.Clear();
             _generation++;
-            _phase = "Stacking"; _message = _stack is null ? "waiting for the first frame to set the scale" : "waiting for frames";
+            _phase = "Stacking"; _message = double.IsNaN(_scale) ? "waiting for the first frame to set the scale" : "waiting for frames";
             _queue = Channel.CreateBounded<Item>(new BoundedChannelOptions(16) { FullMode = BoundedChannelFullMode.Wait });
             _run = new CancellationTokenSource();
             var queue = _queue; var ct = _run.Token;
@@ -118,7 +129,10 @@ public sealed class LiveStackService : IAsyncDisposable
     {
         var (w, h, _) = Size(r, scale);
         var wcs = TanWcs.Centered(r.Center.RaHours.Value * 15, r.Center.DecDegrees.Value, r.PositionAngleDegrees.Value, scale, w, h);
-        return new LiveStacker(wcs, w, h) { Interpolation = Enum.Parse<Interpolation>(r.Interpolation.Text) };
+        return new LiveStacker(wcs, w, h)
+        {
+            Interpolation = Enum.Parse<Interpolation>(r.Interpolation.Text), MatchFlux = r.MatchFlux.Value, RejectSigma = Math.Max(0, r.RejectSigma.Value),
+        };
     }
 
     private void OnShot(ShotEvent shot)
@@ -134,7 +148,7 @@ public sealed class LiveStackService : IAsyncDisposable
             if (!_seen.Add((shot.Shooter.Text, shot.Timestamp.Text, Fingerprint(shot.Data.Data)))) return;
             queue = _queue; gen = _generation; _pending++;
         }
-        var item = new Item(shot.Data.Data, shot.Shooter.Text, shot.PointingRaHours.Value, shot.PointingDecDegrees.Value, shot.ExposureSeconds.Value, gen);
+        var item = new Item(shot.Data.Data, shot.Shooter.Text, shot.PointingRaHours.Value, shot.PointingDecDegrees.Value, shot.ExposureSeconds.Value, gen, shot.Filter.Text);
         if (!queue.Writer.TryWrite(item)) { lock (_gate) _pending--; Reject($"{shot.Shooter.Text}: queue full, frame skipped"); }
         else _ = Publish();
     }
@@ -157,7 +171,7 @@ public sealed class LiveStackService : IAsyncDisposable
             queue = _queue; gen = _generation; _pending++;
         }
         if (f.Image.Data.Length == 0) { lock (_gate) _pending--; return CommandResult.Fail("no image"); }
-        await queue.Writer.WriteAsync(new Item(f.Image.Data, f.Source.Text == "" ? "added" : f.Source.Text, f.PointingRaHours.Value, f.PointingDecDegrees.Value, double.NaN, gen));
+        await queue.Writer.WriteAsync(new Item(f.Image.Data, f.Source.Text == "" ? "added" : f.Source.Text, f.PointingRaHours.Value, f.PointingDecDegrees.Value, double.NaN, gen, f.Filter.Text));
         await Publish();
         return CommandResult.Success();
     }
@@ -204,30 +218,40 @@ public sealed class LiveStackService : IAsyncDisposable
         if (rawWcs is null) return "!" + how;
         var wcs = bin > 1 ? LiveStacker.Binned(rawWcs, bin) : rawWcs;
 
-        LiveStacker stack;
+        LiveStacker stack; FilterStack fs;
         var background = new float[channels];
+        // which stack: one per filter (the frame's, or its FITS header's), unless filters are stacked together
+        string filter = item.Filter != "" ? item.Filter : (img.Get("FILTER") ?? "");
+        string key = r.SeparateFilters.Value ? filter.Trim() : "";
         lock (_gate)
         {
             if (item.Generation != _generation) return "!stack was replaced";
-            if (_stack is null)
+            if (double.IsNaN(_scale))
             {
                 if (Size(r, wcs.PixelScaleArcsec) is { Error: { } err }) return "!" + err;
-                _stack = Create(r, wcs.PixelScaleArcsec);
+                _scale = wcs.PixelScaleArcsec;
             }
-            stack = _stack;
+            if (!_stacks.TryGetValue(key, out fs!)) _stacks[key] = fs = new FilterStack { Stack = Create(r, _scale), Filter = key };
+            stack = fs.Stack;
             int plane = width * height;
             var bg = Enumerable.Range(0, channels).Select(c => LiveStacker.Background(data.AsSpan(c * plane, plane).ToArray())).ToArray();
-            _pedestal ??= channels == 3 ? bg : [bg[0], bg[0], bg[0]];
-            for (int c = 0; c < channels; c++) background[c] = r.NormalizeBackground.Value ? bg[c] - _pedestal[c] : 0;
+            // the stack holds sky-subtracted signal (so frames can be compared and scaled); the first frame's sky is added back on output
+            if (r.NormalizeBackground.Value)
+            {
+                fs.Pedestal ??= channels == 3 ? bg : [bg[0], bg[0], bg[0]];
+                for (int c = 0; c < channels; c++) background[c] = bg[c];
+            }
             _lastScale = rawWcs.PixelScaleArcsec;
         }
         var added = stack.Add(data, width, height, channels, wcs, background);
         if (!added.Added) return "!" + added.Message;
         double seconds = !double.IsNaN(item.Seconds) && item.Seconds > 0 ? item.Seconds : img.GetDouble("EXPTIME", img.GetDouble("EXPOSURE", 0));
-        lock (_gate) _exposure += seconds;
+        lock (_gate) { _exposure += seconds; fs.Exposure += seconds; }
         string resample = added.BinFactor > 1 ? $"binned {added.BinFactor}x, " : "";
         resample += added.Subsamples > 1 ? $"area-averaged {added.Subsamples}x{added.Subsamples}" : stack.Wcs.PixelScaleArcsec < wcs.PixelScaleArcsec * 0.999 ? $"interpolated ({stack.Interpolation})" : "resampled";
-        return $"{item.Source}: stacked ({how}{colour}, {wcs.PixelScaleArcsec:0.##}\"/px → {stack.Wcs.PixelScaleArcsec:0.##}\"/px, {resample})";
+        string extra = (key != "" ? $", {key}" : "") + (Math.Abs(added.FluxScale - 1) > 0.02 ? FormattableString.Invariant($", flux x{added.FluxScale:0.00}") : "")
+                       + (added.RejectedPixels > 0 ? $", {added.RejectedPixels} outlier pixels left out" : "");
+        return $"{item.Source}: stacked ({how}{colour}, {wcs.PixelScaleArcsec:0.##}\"/px → {stack.Wcs.PixelScaleArcsec:0.##}\"/px, {resample}{extra})";
     }
 
     private async Task<(TanWcs? Wcs, string How)> RegisterAsync(LiveStackRequest r, FitsImage img, Item item, CancellationToken ct)
@@ -307,8 +331,8 @@ public sealed class LiveStackService : IAsyncDisposable
         lock (_gate)
         {
             if (_request is null) return CommandResult.Fail("no stack");
-            _stack = _request.PixelScaleArcsec.Value > 0 ? Create(_request, _request.PixelScaleArcsec.Value) : null;
-            _rejected = 0; _exposure = 0; _pedestal = null; _message = "emptied";
+            _stacks.Clear(); _scale = _request.PixelScaleArcsec.Value > 0 ? _request.PixelScaleArcsec.Value : double.NaN;
+            _rejected = 0; _exposure = 0; _message = "emptied";
         }
         await Publish();
         return CommandResult.Success();
@@ -316,28 +340,63 @@ public sealed class LiveStackService : IAsyncDisposable
 
     private LiveStackImage GetImage(LiveStackImageRequest q)
     {
-        LiveStacker? stack; string label; double exposure; float[]? pedestal;
-        lock (_gate) { stack = _stack; label = _request?.Label.Text ?? ""; exposure = _exposure; pedestal = _pedestal; }
-        if (stack is null || stack.Frames == 0) return new LiveStackImage { Message = "nothing stacked yet" };
+        FilterStack? fs; string label;
+        lock (_gate)
+        {
+            label = _request?.Label.Text ?? "";
+            fs = q.Filter.Text != "" ? _stacks.GetValueOrDefault(q.Filter.Text.Trim()) : Primary;
+        }
+        if (fs is null || fs.Stack.Frames == 0) return new LiveStackImage { Message = q.Filter.Text != "" ? $"nothing stacked through {q.Filter.Text} yet" : "nothing stacked yet" };
+        var stack = fs.Stack;
         var (data, w, h, wcs) = stack.Reduced(q.MaxWidth.Value > 0 ? q.MaxWidth.Value : int.MaxValue, q.MaxHeight.Value > 0 ? q.MaxHeight.Value : int.MaxValue);
+        int channels = data.Length / (w * h), plane = w * h;
+        var pedestal = fs.Pedestal ?? [0f, 0f, 0f];
+        if (q.Neutralize.Value && channels == 3) Neutralize(data, plane);
+        // the sky level back on (one for all channels when neutralised), and where nothing has landed yet: that sky
+        float common = (pedestal[0] + pedestal[1] + pedestal[2]) / 3;
+        for (int c = 0; c < channels; c++)
+        {
+            float sky = q.Neutralize.Value && channels == 3 ? common : pedestal[channels == 3 ? c : 0];
+            for (int i = c * plane; i < (c + 1) * plane; i++) data[i] = float.IsNaN(data[i]) ? sky : data[i] + sky;
+        }
         var cards = wcs.Cards().ToList();
         string Q(string s) => "'" + s.Replace("'", "''") + "'";
         cards.Add(("OBJECT", Q(label)));
+        if (fs.Filter != "") cards.Add(("FILTER", Q(fs.Filter)));
         cards.Add(("NCOMBINE", stack.Frames.ToString(CultureInfo.InvariantCulture)));
-        cards.Add(("EXPTIME", exposure.ToString("0.###", CultureInfo.InvariantCulture)));
+        cards.Add(("EXPTIME", fs.Exposure.ToString("0.###", CultureInfo.InvariantCulture)));
         cards.Add(("CREATOR", Q("ELink live stack")));
-        // where nothing has landed yet: the sky level of that channel, so viewers see an even background
-        int channels = data.Length / (w * h), plane = w * h;
-        for (int c = 0; c < channels; c++)
-        {
-            float blank = pedestal is null ? 0 : pedestal[channels == 3 ? c : 0];
-            for (int i = c * plane; i < (c + 1) * plane; i++) if (float.IsNaN(data[i])) data[i] = blank;
-        }
         return new LiveStackImage
         {
-            Ok = true, Width = w, Height = h, Channels = channels, PixelScaleArcsec = wcs.PixelScaleArcsec, Frames = stack.Frames,
+            Ok = true, Width = w, Height = h, Channels = channels, PixelScaleArcsec = wcs.PixelScaleArcsec, Frames = stack.Frames, Filter = fs.Filter,
             Image = new ELink.Contracts.RawBytes { Data = FitsImage.WriteFloat32(w, h, data, cards, channels: channels) },
         };
+    }
+
+    /// <summary>Background and colour balance of a sky-subtracted RGB stack: each channel's remaining sky offset is
+    /// removed, then red and blue are scaled so the stars (the brightest pixels) are as bright as in green on average.</summary>
+    public static void Neutralize(float[] data, int plane)
+    {
+        var bright = new double[3];
+        for (int c = 0; c < 3; c++)
+        {
+            var values = new List<float>(plane / 4 + 1);
+            for (int i = c * plane; i < (c + 1) * plane; i += 4) if (!float.IsNaN(data[i])) values.Add(data[i]);
+            if (values.Count == 0) return;
+            values.Sort();
+            float sky = values[values.Count / 2];
+            for (int i = c * plane; i < (c + 1) * plane; i++) if (!float.IsNaN(data[i])) data[i] -= sky;
+            // mean of the top 0.5 %: the stars
+            int top = Math.Max(1, values.Count / 200);
+            bright[c] = values.Skip(values.Count - top).Average(v => v - sky);
+        }
+        if (bright[1] <= 0) return;
+        foreach (int c in new[] { 0, 2 })
+        {
+            if (bright[c] <= 0) continue;
+            float k = (float)(bright[1] / bright[c]);
+            for (int i = c * plane; i < (c + 1) * plane; i++) if (!float.IsNaN(data[i])) data[i] *= k;
+        }
     }
 
     private async Task UnhookAllAsync(string phase, string message)

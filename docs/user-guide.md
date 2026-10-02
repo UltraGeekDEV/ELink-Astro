@@ -247,7 +247,11 @@ flowchart LR
 
    The pattern comes from the frame's `BAYERPAT` (with `XBAYROFF`/`YBAYROFF`); pick one under *Bayer pattern* if
    the camera does not write it. The stack becomes colour when its first frame is colour.
-5. **Start**. Every new frame updates the picture. *Stop* stops listening (the stack stays), *Empty* clears it.
+5. **Quality**: *Reject outliers* leaves out what does not belong in a pixel (satellite and plane trails, cosmic
+   rays) once it has a few frames; *Match brightness* scales every frame to the stack's stars, so frames from other
+   cameras and scopes (or through thin cloud) blend in; *One stack per filter* keeps Ha, OIII, L, R, G, B... apart
+   (pick which to show). *Balance background and colour* gives colour stacks a neutral sky and white stars.
+6. **Start**. Every new frame updates the picture. *Stop* stops listening (the stack stays), *Empty* clears it.
 
 Only Light frames are used. Raw colour frames also show in colour in the camera and scope previews. The stack can be fetched as a 32-bit FITS with a
 WCS (it plate-solves on its own) through `ELink.Automation.LiveStack.GetImage`.

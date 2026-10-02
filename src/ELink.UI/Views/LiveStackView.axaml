@@ -34,6 +34,11 @@
           <StackPanel><TextBlock Classes="label" Text="Interpolation (upscaling)"/><ComboBox ItemsSource="{Binding Interpolations}" SelectedItem="{Binding Interpolation}" Width="150"/></StackPanel>
           <StackPanel><TextBlock Classes="label" Text="Memory limit MP"/><NumericUpDown Value="{Binding MaxMegapixels}" Minimum="1" Increment="10" FormatString="0" Width="130"/></StackPanel>
           <CheckBox IsChecked="{Binding NormalizeBackground}" Content="Match sky levels" VerticalAlignment="Bottom"/>
+          <CheckBox IsChecked="{Binding MatchFlux}" Content="Match brightness (other cameras, thin cloud)" VerticalAlignment="Bottom"/>
+        </StackPanel>
+        <StackPanel Classes="row">
+          <StackPanel><TextBlock Classes="label" Text="Reject outliers beyond σ (0 = off)"/><NumericUpDown Value="{Binding RejectSigma}" Minimum="0" Increment="0.5" FormatString="0.#" Width="200"/></StackPanel>
+          <CheckBox IsChecked="{Binding SeparateFilters}" Content="One stack per filter" VerticalAlignment="Bottom"/>
         </StackPanel>
         <TextBlock Classes="label" Text="{Binding SizeText}"/>
 
@@ -68,6 +73,10 @@
     <Border Classes="card">
       <StackPanel Spacing="6">
         <TextBlock Classes="section" Text="STACK"/>
+        <StackPanel Classes="row">
+          <StackPanel><TextBlock Classes="label" Text="Filter"/><ComboBox ItemsSource="{Binding StackFilters}" SelectedItem="{Binding ShownFilter}" Width="140"/></StackPanel>
+          <CheckBox IsChecked="{Binding Neutralize}" Content="Balance background and colour" VerticalAlignment="Bottom"/>
+        </StackPanel>
         <TextBlock Classes="label" Text="{Binding Summary}" TextWrapping="Wrap"/>
         <TextBlock Text="{Binding StateMessage}" TextWrapping="Wrap"/>
         <Image Source="{Binding Preview.Image}" Stretch="Uniform" MaxHeight="620"/>

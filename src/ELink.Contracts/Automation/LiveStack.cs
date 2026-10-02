@@ -23,6 +23,9 @@ public class LiveStackRequest : IBinaryConvertible
     public BinaryConvertibleDouble SolveTimeoutSeconds { get; set; } = 60.0;
     public BinaryConvertibleDouble MaxMegapixels { get; set; } = 40.0;
     public BinaryConvertibleString Debayer { get; set; } = "Interpolated";
+    public BinaryConvertibleBool SeparateFilters { get; set; } = true;
+    public BinaryConvertibleBool MatchFlux { get; set; } = true;
+    public BinaryConvertibleDouble RejectSigma { get; set; } = 3.0;
     public BinaryConvertibleString BayerPattern { get; set; } = "";
 
     public override string Name => "LiveStackRequest";
@@ -44,6 +47,9 @@ public class LiveStackRequest : IBinaryConvertible
         d.RegisterField("NormalizeBackground", (LiveStackRequest x) => x.NormalizeBackground).Description("match every frame's sky level to the first one before adding it");
         d.RegisterField("SolveTimeoutSeconds", (LiveStackRequest x) => x.SolveTimeoutSeconds);
         d.RegisterField("MaxMegapixels", (LiveStackRequest x) => x.MaxMegapixels).Description("refuse fields larger than this at the requested scale (8 bytes of memory per pixel, 16 in colour)");
+        d.RegisterField("SeparateFilters", (LiveStackRequest x) => x.SeparateFilters).Description("one stack per filter (frames say which); false = all into one");
+        d.RegisterField("MatchFlux", (LiveStackRequest x) => x.MatchFlux).Description("scale every frame so its stars match the stack (other cameras and scopes, thin cloud)");
+        d.RegisterField("RejectSigma", (LiveStackRequest x) => x.RejectSigma).Description("leave out samples this many standard deviations from a pixel's mean (satellites, planes); 0 = keep all");
         d.RegisterField("Debayer", (LiveStackRequest x) => x.Debayer).Description("raw colour (Bayer) frames: Interpolated (full resolution) | SuperPixel (each 2x2 cell is one RGB pixel, half resolution) | None (stack the raw mosaic as mono)");
         d.RegisterField("BayerPattern", (LiveStackRequest x) => x.BayerPattern).Description("RGGB | BGGR | GRBG | GBRG as seen from the first pixel of the file; empty = the frame's BAYERPAT (and X/YBAYROFF)");
     }
@@ -58,6 +64,7 @@ public class LiveStackFrame : IBinaryConvertible
     public BinaryConvertibleString Source { get; set; } = "";
     public BinaryConvertibleDouble PointingRaHours { get; set; } = double.NaN;
     public BinaryConvertibleDouble PointingDecDegrees { get; set; } = double.NaN;
+    public BinaryConvertibleString Filter { get; set; } = "";
 
     public override string Name => "LiveStackFrame";
     private static readonly NOTESDescriptor d = new();
@@ -68,6 +75,7 @@ public class LiveStackFrame : IBinaryConvertible
         d.RegisterField("Source", (LiveStackFrame x) => x.Source).Description("where it came from, for the log");
         d.RegisterField("PointingRaHours", (LiveStackFrame x) => x.PointingRaHours).Description("J2000 hint, NaN = unknown");
         d.RegisterField("PointingDecDegrees", (LiveStackFrame x) => x.PointingDecDegrees);
+        d.RegisterField("Filter", (LiveStackFrame x) => x.Filter).Description("empty = the FITS header's FILTER");
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();
@@ -88,6 +96,7 @@ public class LiveStackState : IBinaryConvertible
     public BinaryConvertibleDouble TotalExposureSeconds { get; set; } = 0.0;
     public BinaryConvertibleString LastFrame { get; set; } = "";
     public BinaryConvertibleInt32 Channels { get; set; } = 0;
+    public BinaryConvertibleCollection<BinaryConvertibleString> Filters { get; set; } = new();
 
     public override string Name => "LiveStackState";
     private static readonly NOTESDescriptor d = new();
@@ -107,6 +116,7 @@ public class LiveStackState : IBinaryConvertible
         d.RegisterField("TotalExposureSeconds", (LiveStackState x) => x.TotalExposureSeconds);
         d.RegisterField("LastFrame", (LiveStackState x) => x.LastFrame);
         d.RegisterField("Channels", (LiveStackState x) => x.Channels).Description("1 = mono, 3 = RGB; 0 until the stack exists");
+        d.RegisterField("Filters", (LiveStackState x) => x.Filters, maxCount: 16).Description("one entry per filter stack: \"name: frames\"");
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();
@@ -116,6 +126,8 @@ public class LiveStackImageRequest : IBinaryConvertible
 {
     public BinaryConvertibleInt32 MaxWidth { get; set; } = 0;
     public BinaryConvertibleInt32 MaxHeight { get; set; } = 0;
+    public BinaryConvertibleString Filter { get; set; } = "";
+    public BinaryConvertibleBool Neutralize { get; set; } = true;
 
     public override string Name => "LiveStackImageRequest";
     private static readonly NOTESDescriptor d = new();
@@ -124,6 +136,8 @@ public class LiveStackImageRequest : IBinaryConvertible
     {
         d.RegisterField("MaxWidth", (LiveStackImageRequest x) => x.MaxWidth).Description("area-average the stack down to fit; 0 = full size");
         d.RegisterField("MaxHeight", (LiveStackImageRequest x) => x.MaxHeight);
+        d.RegisterField("Filter", (LiveStackImageRequest x) => x.Filter).Description("which filter's stack; empty = the one with the most frames");
+        d.RegisterField("Neutralize", (LiveStackImageRequest x) => x.Neutralize).Description("colour stacks: even, neutral background and white-balanced stars");
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();
@@ -138,6 +152,7 @@ public class LiveStackImage : IBinaryConvertible
     public BinaryConvertibleDouble PixelScaleArcsec { get; set; } = 0.0;
     public BinaryConvertibleInt32 Frames { get; set; } = 0;
     public BinaryConvertibleInt32 Channels { get; set; } = 0;
+    public BinaryConvertibleString Filter { get; set; } = "";
     public RawBytes Image { get; set; } = new();
 
     public override string Name => "LiveStackImage";
@@ -152,6 +167,7 @@ public class LiveStackImage : IBinaryConvertible
         d.RegisterField("PixelScaleArcsec", (LiveStackImage x) => x.PixelScaleArcsec);
         d.RegisterField("Frames", (LiveStackImage x) => x.Frames);
         d.RegisterField("Channels", (LiveStackImage x) => x.Channels).Description("1 = mono, 3 = RGB planes (NAXIS3)");
+        d.RegisterField("Filter", (LiveStackImage x) => x.Filter);
         d.RegisterField("Image", (LiveStackImage x) => x.Image).Description("32-bit float FITS with the stack's WCS");
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);

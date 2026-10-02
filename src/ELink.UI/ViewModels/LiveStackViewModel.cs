@@ -56,6 +56,14 @@ public sealed partial class LiveStackViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool _normalizeBackground = true;
     [ObservableProperty] private double _maxMegapixels = 40;
     [ObservableProperty] private string _debayer = "Interpolated";
+    [ObservableProperty] private bool _separateFilters = true;
+    [ObservableProperty] private bool _matchFlux = true;
+    [ObservableProperty] private double _rejectSigma = 3;
+    [ObservableProperty] private bool _neutralize = true;
+    [ObservableProperty] private string? _shownFilter;
+    public ObservableCollection<string> StackFilters { get; } = new();
+    partial void OnShownFilterChanged(string? value) => _ = RefreshAsync();
+    partial void OnNeutralizeChanged(bool value) => _ = RefreshAsync();
     [ObservableProperty] private string _bayerPattern = "From frame";
 
     [ObservableProperty] private string _phase = "Idle";
@@ -90,6 +98,8 @@ public sealed partial class LiveStackViewModel : ObservableObject, IDisposable
                 ? (s.Phase.Text == "Idle" ? "" : "waiting for frames")
                 : $"{s.FramesStacked.Value} frames ({s.TotalExposureSeconds.Value / 60:0.#} min)   ·   {s.FramesRejected.Value} rejected   ·   {s.FramesPending.Value} queued   ·   " +
                   $"{s.Width.Value}×{s.Height.Value} {(s.Channels.Value == 3 ? "RGB" : "mono")} at {s.PixelScaleArcsec.Value:0.##}\"/px   ·   {s.CoveragePercent.Value:0}% covered";
+            var filters = s.Filters.Select(f => f.Text[..Math.Max(0, f.Text.LastIndexOf(':'))]).ToList();
+            if (!StackFilters.SequenceEqual(filters)) { StackFilters.Clear(); foreach (var f in filters) StackFilters.Add(f); }
             if (s.FramesStacked.Value != _shownFrames) { _shownFrames = s.FramesStacked.Value; _ = RefreshAsync(); }
         });
         await _follower.StartAsync();
@@ -118,6 +128,7 @@ public sealed partial class LiveStackViewModel : ObservableObject, IDisposable
             Interpolation = Interpolation, Registration = Registration, FramePixelScaleArcsec = FramePixelScale, FramePositionAngleDegrees = FramePositionAngle,
             NormalizeBackground = NormalizeBackground, MaxMegapixels = MaxMegapixels,
             Debayer = Debayer, BayerPattern = BayerPattern == "From frame" ? "" : BayerPattern,
+            SeparateFilters = SeparateFilters, MatchFlux = MatchFlux, RejectSigma = RejectSigma,
         };
         foreach (var s in Shooters.Where(s => s.Selected)) r.ShooterIds.Add(s.Id);
         if (r.ShooterIds.Count == 0) { Message = "tick at least one shooter or scope"; return; }
@@ -141,9 +152,9 @@ public sealed partial class LiveStackViewModel : ObservableObject, IDisposable
             {
                 _dirty = false;
                 var answers = await _mesh.Node.CallFunctionAsync<LiveStackImageRequest, LiveStackImage>(LiveStackIds.GetImage,
-                    new LiveStackImageRequest { MaxWidth = 1600, MaxHeight = 1200 }, TimeSpan.FromSeconds(30));
+                    new LiveStackImageRequest { MaxWidth = 1600, MaxHeight = 1200, Neutralize = Neutralize, Filter = ShownFilter is null or "(none)" ? "" : ShownFilter }, TimeSpan.FromSeconds(30));
                 if (answers?.FirstOrDefault() is { Ok.Value: true } img)
-                    UiThread.Post(() => Preview.Show(img.Image.Data, ".fits", $"{img.Frames.Value} frames  ·  shown at {img.PixelScaleArcsec.Value:0.##}\"/px"));
+                    UiThread.Post(() => Preview.Show(img.Image.Data, ".fits", $"{(img.Filter.Text != "" ? img.Filter.Text + ": " : "")}{img.Frames.Value} frames  ·  shown at {img.PixelScaleArcsec.Value:0.##}\"/px"));
             } while (_dirty);
         }
         catch (Exception ex) { Message = "cannot fetch the stack: " + ex.Message; }

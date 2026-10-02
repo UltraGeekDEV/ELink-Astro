@@ -75,7 +75,7 @@ public class LiveStackTests : IAsyncLifetime
     private async Task<(FitsImage Img, TanWcs Wcs)> Image(int max = 0)
     {
         var answers = await _node.CallFunctionAsync<LiveStackImageRequest, LiveStackImage>(LiveStackIds.GetImage,
-            new LiveStackImageRequest { MaxWidth = max, MaxHeight = max }, TimeSpan.FromSeconds(10));
+            new LiveStackImageRequest { MaxWidth = max, MaxHeight = max, Neutralize = false }, TimeSpan.FromSeconds(10));
         var a = Assert.Single(answers!);
         Assert.True(a.Ok.Value, a.Message.Text);
         var img = FitsImage.Parse(a.Image.Data);
@@ -284,6 +284,45 @@ public class LiveStackTests : IAsyncLifetime
         Assert.False((await Commands.CallAsync(_node, LiveStackIds.Start, bad)).Ok.Value);
         bad = Request(4); bad.BayerPattern = "RGBG";
         Assert.False((await Commands.CallAsync(_node, LiveStackIds.Start, bad)).Ok.Value);
+    }
+
+    [Fact]
+    public async Task EachFilterGetsItsOwnStack()
+    {
+        Assert.True((await Commands.CallAsync(_node, LiveStackIds.Start, Request(8))).Ok.Value);
+        var at = TanWcs.Centered(RA, DEC, 0, 4, 200, 150);
+        int n = 0;
+        foreach (var filter in new[] { "Ha", "Ha", "OIII" })
+            await _node.FireEventAsync(ShooterIds.Shot("cam"), new ShotEvent
+            {
+                Shooter = "cam", Format = ".fits", FrameType = "Light", Filter = filter, Timestamp = $"f{n++}", Data = new RawBytes(Frame(at, 200, 150, skyOffset: n * 100)),
+            });
+        Assert.True(await Eventually(() => _last is { FramesStacked.Value: 3, FramesPending.Value: 0 }), _last?.Message.Text);
+        Assert.Equal(new[] { "Ha: 2", "OIII: 1" }, _last!.Filters.Select(f => f.Text).ToArray());
+        var ha = Assert.Single((await _node.CallFunctionAsync<LiveStackImageRequest, LiveStackImage>(LiveStackIds.GetImage, new LiveStackImageRequest { Filter = "Ha" }, TimeSpan.FromSeconds(10)))!);
+        Assert.Equal(2, ha.Frames.Value); Assert.Equal("Ha", ha.Filter.Text);
+        var oiii = Assert.Single((await _node.CallFunctionAsync<LiveStackImageRequest, LiveStackImage>(LiveStackIds.GetImage, new LiveStackImageRequest { Filter = "OIII" }, TimeSpan.FromSeconds(10)))!);
+        Assert.Equal(1, oiii.Frames.Value);
+        Assert.Equal("OIII", FitsImage.Parse(oiii.Image.Data).Get("FILTER"));
+    }
+
+    [Fact]
+    public async Task ColourStacksComeOutNeutral()
+    {
+        int w = 360, h = 270;
+        Assert.True((await Commands.CallAsync(_node, LiveStackIds.Start, Request(4))).Ok.Value);
+        await Shoot("cam", BayerFrame(TanWcs.Centered(RA, DEC, 25, 4, w, h), w, h, "RGGB"));   // a strong colour cast: G 0.6, B 0.3 of R
+        Assert.True(await Eventually(() => _last is { FramesStacked.Value: 1 }), _last?.Message.Text);
+        var img = Assert.Single((await _node.CallFunctionAsync<LiveStackImageRequest, LiveStackImage>(LiveStackIds.GetImage, new LiveStackImageRequest(), TimeSpan.FromSeconds(10)))!);
+        var fits = FitsImage.Parse(img.Image.Data);
+        var wcs = TanWcs.FromHeader(fits.Header)!;
+        int plane = fits.Width * fits.Height;
+        var (cx, cy) = wcs.SkyToPixel(RA, DEC);
+        int i = (int)Math.Round(cy) * fits.Width + (int)Math.Round(cx);
+        // the bright centre: as bright in red, green and blue once balanced; the sky the same level in all three
+        double r = fits.Data[i], g = fits.Data[plane + i], b = fits.Data[2 * plane + i];
+        Assert.InRange(g / r, 0.9, 1.1); Assert.InRange(b / r, 0.9, 1.1);
+        Assert.Equal((double)fits.Data[10 * fits.Width + 10], fits.Data[2 * plane + 10 * fits.Width + 10], 0);
     }
 
     [Fact]
