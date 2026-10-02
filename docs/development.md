@@ -17,7 +17,7 @@ flowchart LR
         direction LR
         B[IndiBridge<br/>Mount / Camera / Focuser ...]
         C[Compose<br/>Pointer · Shooter · SmartScope]
-        A[Automation<br/>Solve · Centre · Focus · Sequence · Mosaic · Storage]
+        A[Automation<br/>Solve · Centre · Focus · Sequence · Mosaic · Live stack · Storage]
         S[Sky<br/>Atlas · Stellarium]
         U[UI<br/>Avalonia view models]
     end
@@ -140,6 +140,7 @@ frame belongs to. Shooters have offsets (arcmin east/north of the pointing axis)
 | Mosaic | its own plan | scope, rotator | coverage map painter (below) |
 | PlateSolve | — | shooter (optional) | wraps `solve-field`, one solve at a time |
 | Centering | mount state (incl. hand-controller slews) | mount, PlateSolve | sync + reslew, aim-off fallback, guide→primary offset |
+| LiveStack | any shooter's shots | PlateSolve (optional) | registers frames, resamples into a fixed sky grid |
 | Atlas | — | — | KStars stars, OpenNGC, GSC, constellations, search |
 | Stellarium | a pointer | pointer | telescope protocol server + Remote Control client |
 
@@ -174,6 +175,31 @@ stateDiagram-v2
 ```
 
 The guide camera is aimed at `target − offset` (offset negated across a pier flip), so the primary lands on target.
+
+### Live stacking
+
+```mermaid
+flowchart LR
+    Shot[Shot events] -->|non-blocking| Q[[bounded queue]]
+    Add{{Add: FITS pushed in}} --> Q
+    Q --> Reg[register<br/>own WCS · Solve dRPC · pointing]
+    Reg --> RS[LiveStacker.Add]
+    RS --> Acc[(sum + weight<br/>float grids)]
+    Acc --> Get{{GetImage: FITS + WCS,<br/>area-reduced to a max size}}
+```
+
+`LiveStacker` (in `ELink.Imaging`, no EVent) owns the output grid, a `TanWcs` built from the requested centre,
+angle and scale. Each frame is mapped through the **exact homography** between its TAN WCS and the grid (two
+gnomonic projections of one sphere are related by a plane homography), so there is no per-pixel trigonometry.
+
+| ratio r = output scale / frame scale | how |
+|---|---|
+| r < 1 (output finer) | sample the frame with Catmull-Rom bicubic (or bilinear / nearest) |
+| 1 ≤ r < 2 | average ⌈r⌉² bilinear samples spread over each output pixel |
+| r ≥ 2 | box-bin the frame by ⌊r⌋ first (exact area average, WCS follows), then as above |
+
+Partial edge pixels add a fractional weight, the mean is sum/weight, and each frame's background median is matched
+to the first frame's. Memory is 8 bytes per output pixel, capped by `MaxMegapixels`.
 
 ## Coordinates
 

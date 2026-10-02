@@ -43,6 +43,12 @@ public sealed class PlateSolveService : IAsyncDisposable
             result.Solved = o.Solved; result.RaHours = o.RaHours; result.DecDegrees = o.DecDegrees; result.PositionAngle = o.PositionAngle;
             result.PixelScale = o.PixelScale; result.FieldWidthDegrees = o.FieldWidthDegrees; result.FieldHeightDegrees = o.FieldHeightDegrees;
             result.Seconds = o.Seconds; result.Message = o.Message;
+            if (o.Wcs is { } w)
+            {
+                result.HasWcs = true; result.WcsCrVal1 = w.CrVal1; result.WcsCrVal2 = w.CrVal2;
+                result.WcsCrPix1 = w.CrPix1 + 1; result.WcsCrPix2 = w.CrPix2 + 1;
+                result.WcsCd11 = w.Cd11; result.WcsCd12 = w.Cd12; result.WcsCd21 = w.Cd21; result.WcsCd22 = w.Cd22;
+            }
         }
         catch (Exception ex) { result.Message = "solver failed: " + ex.Message; }
         finally { _one.Release(); }

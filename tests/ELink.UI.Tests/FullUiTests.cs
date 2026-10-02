@@ -68,6 +68,7 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
             : AtlasCatalog.From(new List<CatalogStar> { new(5.92, 7.41, 0.45f, 1.85f, 39801, "Betelgeuse") }, new List<CatalogDso> { new("M 42", "Nebula", "Orion Nebula, NGC 1976", 5.588, -5.39, 4f, 90, 60, 0) });
         await using var atlasSvc = new AtlasService(hostNode, skyCatalog); await atlasSvc.StartAsync();
         await using var centeringSvc = new CenteringService(hostNode); await centeringSvc.StartAsync();
+        await using var liveStackSvc = new LiveStackService(hostNode); await liveStackSvc.StartAsync();
         PlateSolveService? solveSvc = PlateSolver.Locate() is { } sf ? new PlateSolveService(hostNode, new PlateSolver(sf)) : null;
         if (solveSvc is not null) await solveSvc.StartAsync();
         string saveDir = Path.Combine(Path.GetTempPath(), "elink-ui-save-" + Guid.NewGuid().ToString("N"));
@@ -228,6 +229,26 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         vm.SelectedTab = vm.Tabs.First(t => t.Content is CenteringViewModel);
         Shot(window, "07f-centring");
         if (solveSvc is not null) await solveSvc.DisposeAsync();
+
+        // live stack: the mosaic's field (M42 from the atlas), frames placed by the scope's pointing, shown as they come
+        var live = vm.LiveStack;
+        Assert.True(await Eventually(() => live.Shooters.Any(c => c.Id == "main")));
+        live.FromMosaicCommand.Execute(null);
+        Assert.Equal("M42", live.Label);
+        Assert.True(live.Shooters.First(c => c.Id == "main").Selected);
+        live.PixelScale = 20; live.Registration = "Pointing"; live.FramePixelScale = 10;
+        Assert.Contains("px", live.SizeText);
+        await live.StartStackCommand.ExecuteAsync(null);
+        Assert.Equal("", live.Message);
+        Assert.True(await Eventually(() => live.Phase == "Stacking"));
+        scope.TargetRa = "05:35:17"; scope.TargetDec = "-05:23:28"; scope.Count = 1; scope.Filter = "";
+        await scope.ObserveCommand.ExecuteAsync(null);
+        Assert.True(await Eventually(() => live.Summary.StartsWith("1 frames"), 120000), $"{live.Summary} | {live.StateMessage}");
+        Assert.True(await Eventually(() => live.Preview.Image is not null, 30000), live.Preview.Info);
+        await live.StopCommand.ExecuteAsync(null);
+        Assert.True(await Eventually(() => live.Phase == "Stopped"));
+        vm.SelectedTab = vm.Tabs.First(t => t.Content is LiveStackViewModel);
+        Shot(window, "07g-live-stack");
 
         // generic INDI browser
         vm.SelectedTab = vm.Tabs.First(t => t.Content is IndiBrowserViewModel);

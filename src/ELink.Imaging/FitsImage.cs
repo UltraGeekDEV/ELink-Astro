@@ -118,5 +118,26 @@ public sealed class FitsImage
         return Encoding.ASCII.GetBytes(header).Concat(data).ToArray();
     }
 
+    /// <summary>Builds a 32-bit float mono FITS file (BITPIX -32); NaN pixels are written as <paramref name="blank"/>.</summary>
+    public static byte[] WriteFloat32(int width, int height, float[] pixels, IEnumerable<(string Key, string Value)>? extra = null, float blank = float.NaN)
+    {
+        var cards = new List<string>
+        {
+            Card("SIMPLE", "T"), Card("BITPIX", "-32"), Card("NAXIS", "2"), Card("NAXIS1", width.ToString()), Card("NAXIS2", height.ToString()),
+        };
+        if (extra is not null) foreach (var (k, v) in extra) cards.Add(Card(k, v));
+        cards.Add("END".PadRight(80));
+        var header = Encoding.ASCII.GetBytes(string.Concat(cards).PadRight((cards.Count * 80 + 2879) / 2880 * 2880));
+        long n = (long)width * height;
+        var bytes = new byte[header.Length + (n * 4 + 2879) / 2880 * 2880];
+        header.CopyTo(bytes, 0);
+        for (long i = 0; i < n; i++)
+        {
+            float v = pixels[i];
+            BinaryPrimitives.WriteSingleBigEndian(bytes.AsSpan((int)(header.Length + i * 4), 4), float.IsNaN(v) ? blank : v);
+        }
+        return bytes;
+    }
+
     private static string Card(string key, string value) => (key.PadRight(8) + "= " + value.PadLeft(20)).PadRight(80);
 }

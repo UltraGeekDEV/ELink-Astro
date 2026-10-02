@@ -186,6 +186,11 @@ public class PlateSolveTests : IAsyncLifetime
         Assert.True(Sky.SeparationDegrees(r.RaHours.Value, r.DecDegrees.Value, mra, mdec) * 60 < 1.0,
             $"solved at {r.RaHours.Value} {r.DecDegrees.Value}, the mount reports {mra} {mdec} (J2000), commanded {jra} -> {now.Number("RA")}");
         Assert.Equal(2.68, r.PixelScale.Value, 1);                          // 5.2 um pixels behind 400 mm
+        Assert.True(r.HasWcs.Value);                                          // the full solution, for registration
+        var wcs = LiveStackService.FromSolve(r, 1280, 1024);
+        Assert.Equal(2.68, wcs.PixelScaleArcsec, 1);
+        var (cra, cdec) = wcs.PixelToSky(639.5, 511.5);
+        Assert.True(Sky.SeparationDegrees(cra / 15, cdec, r.RaHours.Value, r.DecDegrees.Value) * 60 < 0.2);
         // a request with a nonsense image says why instead of throwing
         var bad = Assert.Single((await bridge.CallFunctionAsync<SolveRequest, SolveResult>(SolveIds.Solve, new SolveRequest { Image = new ELink.Contracts.RawBytes(new byte[] { 1, 2, 3 }) }, TimeSpan.FromSeconds(60)))!);
         Assert.False(bad.Solved.Value); Assert.NotEqual("", bad.Message.Text);

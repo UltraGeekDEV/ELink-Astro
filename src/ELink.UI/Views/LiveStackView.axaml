@@ -1,0 +1,73 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="ELink.UI.Views.LiveStackView">
+  <StackPanel MaxWidth="1000" Spacing="0">
+    <Border Classes="card">
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel>
+          <TextBlock Classes="title" Text="Live stack"/>
+          <TextBlock Classes="label" TextWrapping="Wrap" Text="Every frame of the ticked shooters is placed on the sky (its own WCS, a plate solve, or where it was pointed) and added into one image of the field below, at the pixel scale you choose. Finer than the frames: interpolated. Coarser: area-averaged."/>
+        </StackPanel>
+        <StackPanel Grid.Column="1" HorizontalAlignment="Right">
+          <TextBlock Classes="value" Text="{Binding Phase}" HorizontalAlignment="Right"/>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <Border Classes="card">
+      <StackPanel Spacing="10">
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock Classes="section" Text="FIELD (VIRTUAL FOV)"/>
+          <Button Grid.Column="1" Content="Use the mosaic's field" Command="{Binding FromMosaicCommand}"/>
+        </Grid>
+        <StackPanel Classes="row">
+          <StackPanel><TextBlock Classes="label" Text="Name"/><TextBox Text="{Binding Label}" Width="130"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Centre RA (J2000)"/><TextBox Text="{Binding CenterRa}" Width="120"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Centre Dec (J2000)"/><TextBox Text="{Binding CenterDec}" Width="120"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Width °"/><NumericUpDown Value="{Binding FovWidth}" Minimum="0.01" Maximum="60" Increment="0.1" FormatString="0.###" Width="120"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Height °"/><NumericUpDown Value="{Binding FovHeight}" Minimum="0.01" Maximum="60" Increment="0.1" FormatString="0.###" Width="120"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Angle °"/><NumericUpDown Value="{Binding PositionAngle}" Minimum="-180" Maximum="180" FormatString="0.#" Width="110"/></StackPanel>
+        </StackPanel>
+
+        <TextBlock Classes="section" Text="OUTPUT" Margin="0,6,0,0"/>
+        <StackPanel Classes="row">
+          <StackPanel><TextBlock Classes="label" Text="Pixel scale &quot;/px (0 = frames')"/><NumericUpDown Value="{Binding PixelScale}" Minimum="0" Increment="0.25" FormatString="0.###" Width="170"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Interpolation (upscaling)"/><ComboBox ItemsSource="{Binding Interpolations}" SelectedItem="{Binding Interpolation}" Width="150"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Memory limit MP"/><NumericUpDown Value="{Binding MaxMegapixels}" Minimum="1" Increment="10" FormatString="0" Width="130"/></StackPanel>
+          <CheckBox IsChecked="{Binding NormalizeBackground}" Content="Match sky levels" VerticalAlignment="Bottom"/>
+        </StackPanel>
+        <TextBlock Classes="label" Text="{Binding SizeText}"/>
+
+        <TextBlock Classes="section" Text="FRAMES" Margin="0,6,0,0"/>
+        <ItemsControl ItemsSource="{Binding Shooters}">
+          <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate><CheckBox IsChecked="{Binding Selected}" Content="{Binding Id}" Margin="0,0,16,0"/></DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <StackPanel Classes="row">
+          <StackPanel><TextBlock Classes="label" Text="Registration"/><ComboBox ItemsSource="{Binding Registrations}" SelectedItem="{Binding Registration}" Width="130"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Frame scale &quot;/px (hint)"/><NumericUpDown Value="{Binding FramePixelScale}" Minimum="0" Increment="0.1" FormatString="0.###" Width="160"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Frame angle ° (pointing)"/><NumericUpDown Value="{Binding FramePositionAngle}" Minimum="-180" Maximum="180" FormatString="0.#" Width="160"/></StackPanel>
+        </StackPanel>
+
+        <StackPanel Classes="row">
+          <Button Content="Start" Classes="primary" Command="{Binding StartStackCommand}"/>
+          <Button Content="Stop" Command="{Binding StopCommand}"/>
+          <Button Content="Empty" Command="{Binding ResetCommand}"/>
+          <Button Content="Refresh" Command="{Binding RefreshCommand}"/>
+        </StackPanel>
+        <TextBlock Classes="error" Text="{Binding Message}" IsVisible="{Binding Message.Length}" TextWrapping="Wrap"/>
+      </StackPanel>
+    </Border>
+
+    <Border Classes="card">
+      <StackPanel Spacing="6">
+        <TextBlock Classes="section" Text="STACK"/>
+        <TextBlock Classes="label" Text="{Binding Summary}" TextWrapping="Wrap"/>
+        <TextBlock Text="{Binding StateMessage}" TextWrapping="Wrap"/>
+        <Image Source="{Binding Preview.Image}" Stretch="Uniform" MaxHeight="620"/>
+        <TextBlock Classes="label" Text="{Binding Preview.Info}"/>
+      </StackPanel>
+    </Border>
+  </StackPanel>
+</UserControl>

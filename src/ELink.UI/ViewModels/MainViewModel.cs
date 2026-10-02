@@ -27,6 +27,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public MosaicViewModel Mosaic { get; }
     public AtlasViewModel Atlas { get; }
     public CenteringViewModel Centering { get; }
+    public LiveStackViewModel LiveStack { get; }
 
     public ObservableCollection<WorkspaceTab> Tabs { get; } = new();
     [ObservableProperty] private WorkspaceTab? _selectedTab;
@@ -49,10 +50,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Mosaic = new MosaicViewModel(mesh, Catalog);
         Atlas = new AtlasViewModel(mesh, Catalog, Mosaic);
         Centering = new CenteringViewModel(mesh, Catalog);
+        LiveStack = new LiveStackViewModel(mesh, Catalog, Mosaic);
         Tabs.Add(new WorkspaceTab("Compose", Composer, false));
         Tabs.Add(new WorkspaceTab("Sky atlas", Atlas, false));
         Tabs.Add(new WorkspaceTab("Centring", Centering, false));
         Tabs.Add(new WorkspaceTab("Mosaic", Mosaic, false));
+        Tabs.Add(new WorkspaceTab("Live stack", LiveStack, false));
         Tabs.Add(new WorkspaceTab("Sequence", Sequencer, false));
         Tabs.Add(new WorkspaceTab("Autofocus", Autofocus, false));
         Tabs.Add(new WorkspaceTab("Storage", Storage, false));
@@ -70,6 +73,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         await Mosaic.StartAsync();
         await Atlas.StartAsync();
         await Centering.StartAsync();
+        await LiveStack.StartAsync();
         await IndiBrowser.RefreshServersAsync();
     }
 
@@ -132,6 +136,6 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public void Dispose()
     {
         foreach (var t in Tabs) (t.Content as IDisposable)?.Dispose();
-        Catalog.Dispose(); IndiBrowser.Dispose(); Autofocus.Dispose(); Sequencer.Dispose(); Storage.Dispose(); Mosaic.Dispose(); Atlas.Dispose(); Centering.Dispose(); Mesh.Dispose();
+        Catalog.Dispose(); IndiBrowser.Dispose(); Autofocus.Dispose(); Sequencer.Dispose(); Storage.Dispose(); Mosaic.Dispose(); Atlas.Dispose(); Centering.Dispose(); LiveStack.Dispose(); Mesh.Dispose();
     }
 }

@@ -27,8 +27,8 @@ C# / .NET 8, Avalonia UI.
 | `ELink.Compose` | smart scopes, mount pointers, camera shooters, composition host with JSON persistence |
 | `ELink.Atlas` | sky atlas service: KStars star catalogue, OpenNGC deep-sky objects, constellation figures, GSC faint stars, search |
 | `ELink.Stellarium` | Stellarium bridge: ELink as a Stellarium telescope for any pointer, plus Remote Control (show target, read selection) |
-| `ELink.Imaging` | FITS reader, screen auto-stretch, star detection and HFR |
-| `ELink.Automation` | autofocus, sequencer (weather guard, pause/resume), mosaic scanner and frame storage services, driven only by EVent IDs |
+| `ELink.Imaging` | FITS read/write, TAN WCS, live stacker (resampling), screen auto-stretch, star detection and HFR |
+| `ELink.Automation` | autofocus, sequencer (weather guard, pause/resume), mosaic painter, plate solving, centring, live stacking and frame storage services, driven only by EVent IDs |
 | `ELink.UI` / `ELink.App` | Avalonia UI (library) and its stand-alone executable `elink-ui` |
 | `ELink.Bridge` | headless INDI bridge executable |
 | `ELink.Station` | all-in-one executable `elink`: bridge + composition host + UI on one node |
@@ -45,7 +45,9 @@ dotnet run --project src/ELink.Bridge  -- --indi localhost --port 5698
 dotnet run --project src/ELink.App     -- --host 127.0.0.1 --port 5698
 ```
 
-**Mosaic (painting a virtual FOV):** give a virtual field of view, the frames the scope shoots (each with its own size, angle and offset, so heterogeneous OTAs work), a stepover and a target exposure per spot. The scope then slowly *paints* the area with exposure time. A coverage map accumulates the seconds each spot has received, summed over all frames' rotated footprints. The planner sweeps serpentine raster passes whose hop is set so one pass deposits a uniform slice of the target (a deep target means several light passes at small stepovers, with shifted lattices; a rotator can turn the scope between passes), then tops up what the passes left short. Every move is one single shot. A producer plans visits into a bounded queue, an executor turns the rotator and has the smart scope slew and shoot, and a recorder builds the real coverage map. `SetTarget` and `SetStepover` change a running scan. Stacking is out of scope: frames are saved with their pointing.
+**Mosaic (painting a virtual FOV):** give a virtual field of view, the frames the scope shoots (each with its own size, angle and offset, so heterogeneous OTAs work), a stepover and a target exposure per spot. The scope then slowly *paints* the area with exposure time. A coverage map accumulates the seconds each spot has received, summed over all frames' rotated footprints. The planner sweeps serpentine raster passes whose hop is set so one pass deposits a uniform slice of the target (a deep target means several light passes at small stepovers, with shifted lattices; a rotator can turn the scope between passes), then tops up what the passes left short. Every move is one single shot. A producer plans visits into a bounded queue, an executor turns the rotator and has the smart scope slew and shoot, and a recorder builds the real coverage map. `SetTarget` and `SetStepover` change a running scan. Frames are saved with their pointing, and the live stack can build the field as it is painted.
+
+**Live stacking:** frames from any shooters are registered on the sky (their own WCS, a plate solve, or the pointing) and resampled into one image of a fixed field, for example the mosaic's virtual FOV, at a pixel scale you choose: finer than the frames interpolates (bicubic), coarser area-averages (binning plus supersampling), never decimates. The stack comes back as a float FITS with a WCS.
 
 **Focusers:** every INDI focuser is driven through the standard INDI focuser interface, the same properties Ekos uses (absolute, relative and timed moves, abort, sync, reverse, backlash, max travel, speed, temperature), so a ZWO EAF on `indi_asi_focuser`, a Moonlite, or anything else INDI supports works without vendor code. What a focuser can do is detected from the properties its driver defines.
 

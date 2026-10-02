@@ -60,8 +60,8 @@ flowchart LR
         S[Smart scopes<br/>click to open, ✕ to close]
     end
     subgraph Tabs
-        T1[Compose] --- T2[Sky atlas] --- T3[Centring] --- T4[Mosaic]
-        T4 --- T5[Sequence] --- T6[Autofocus] --- T7[Storage] --- T8[INDI]
+        T1[Compose] --- T2[Sky atlas] --- T3[Centring] --- T4[Mosaic] --- T4b[Live stack]
+        T4b --- T5[Sequence] --- T6[Autofocus] --- T7[Storage] --- T8[INDI]
     end
     Left --- Tabs
 ```
@@ -87,6 +87,8 @@ flowchart TD
     F -->|an area bigger than the frame| H[Mosaic]
     G --> I[Storage saves every frame]
     H --> I
+    H --> L[Live stack shows the field growing]
+    G --> L
 ```
 
 ## Compose
@@ -153,6 +155,37 @@ covered part, until every spot has received the target exposure.
    max shots, optional weather guard and rotator with field angles to cycle (e.g. `0, 60, 120`).
 4. **Preview** draws the plan, **Start** runs it. The heat map shows exposure received; yellow means done.
    *Apply target now* and *Apply stepover now* change a running mosaic.
+
+## Live stack
+
+Builds one image of a field as frames arrive: every frame is placed on the sky and added in, so a mosaic's
+virtual FOV fills in as the scope paints it, and a single target gets deeper with each frame.
+
+```mermaid
+flowchart LR
+    F[frame from a ticked shooter] --> R{register}
+    R -->|FITS has a WCS| W[use it]
+    R -->|else| S[plate solve]
+    R -->|Pointing| P[shot's pointing + frame scale/angle]
+    W & S & P --> X[resample into the field]
+    X -->|output finer| U[interpolate]
+    X -->|output coarser| D[area-average]
+    U & D --> A[add, sky levels matched] --> V[stack shown on the tab]
+```
+
+1. **Field**: *Use the mosaic's field* copies the Mosaic tab's centre, size and angle (and ticks its scope), or type
+   your own.
+2. **Output**: the **pixel scale** in arcsec per pixel. Smaller than the camera's means a larger, smoother image
+   (frames are interpolated: bicubic by default); larger means a smaller image where each output pixel is the
+   average of everything under it (no aliasing, less noise). `0` uses the first frame's scale. The size and memory
+   are shown under it; *Memory limit* refuses fields that would be too large.
+3. **Frames**: tick the shooters or scopes to stack. **Registration**: *Auto* uses a WCS already in the FITS, else
+   plate solves (give the frame scale as a hint to speed it up); *Solve* always solves; *Pointing* needs no solver
+   but only the frame scale and angle, and is as accurate as your mount.
+4. **Start**. Every new frame updates the picture. *Stop* stops listening (the stack stays), *Empty* clears it.
+
+Only Light frames are used; colour frames are stacked as luminance. The stack can be fetched as a 32-bit FITS with a
+WCS (it plate-solves on its own) through `ELink.Automation.LiveStack.GetImage`.
 
 ## Storage
 

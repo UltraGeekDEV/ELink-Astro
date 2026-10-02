@@ -73,6 +73,8 @@ await using var centering = new CenteringService(node, Path.Combine(Path.GetDire
 await centering.StartAsync();
 await using var mosaic = new MosaicService(node);
 await mosaic.StartAsync();
+await using var liveStack = new LiveStackService(node);
+await liveStack.StartAsync();
 await using var storage = new StorageService(node, saveDir);
 await storage.StartAsync();
 foreach (var id in save) await Commands.CallAsync(node, ELink.Contracts.Automation.StorageIds.Watch, new ELink.Contracts.Automation.StorageWatch { ShooterId = id });

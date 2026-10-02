@@ -9,12 +9,16 @@ references another module directly; they share only the contract (type) assembly
 - `ELink.Contracts`   NOTES types + ID naming for equipment (Camera, Focuser, Wheel, Rotator, Dome,
                       Weather, GPS, LightPanel, DustCover, Pointer/Mover). Capability based, not "mount based".
 - `ELink.Core`        Node bootstrap, discovery, device registry (from the network directory), helpers.
-- `ELink.Indi`        INDI wire client + INDI<->EVent bridge (translation layer). Pure protocol, no UI.
+- `ELink.Indi`        INDI wire client. Pure protocol, no EVent, no UI.
+- `ELink.IndiBridge`  INDI<->EVent translation: generic property mirror + typed device adapters.
 - `ELink.Bridge`      Executable hosting the bridge(s): connects to indiserver(s), publishes to EVent.
 - `ELink.Compose`     "Pointer" abstraction (anything that can point to a coordinate: mount, dome+mount,
                       alt-az, a smart scope) + "Shooter" (anything that can take frames) + SmartScope + groups.
-- `ELink.Sequencer`   Event driven sequence/target engine over smart scopes.
-- `ELink.App`         Avalonia UI (MVVM), talks to the mesh only.
+- `ELink.Imaging`     FITS, WCS, live stacker, stretch, star detection (no EVent).
+- `ELink.Automation`  Autofocus, sequencer, mosaic, plate solve, centring, live stack, storage services.
+- `ELink.Atlas` / `ELink.Stellarium`  Sky atlas service, Stellarium bridge.
+- `ELink.UI` / `ELink.App`  Avalonia UI (MVVM), talks to the mesh only.
+- `ELink.Station`     All-in-one executable (`elink`). See docs/development.md for diagrams.
 - `tests/`            Unit tests (in-memory transport) + integration tests against INDI simulators.
 
 ID scheme: `ELink.<Kind>.<DeviceName>.<Thing>` e.g. `ELink.Camera.CCD_Simulator.Exposure`,
@@ -35,9 +39,10 @@ ID scheme: `ELink.<Kind>.<DeviceName>.<Thing>` e.g. `ELink.Camera.CCD_Simulator.
 ## TODO
 
 ### Phase 0 — Setup
-- [ ] Solution layout (App references Contracts + EVent only; enforced by a test), .NET 8, central package management, EVent nupkg local feed
-- [ ] git init, .gitignore, README, public GitHub repo, push after every milestone
-- [ ] CI-free build/test scripts (`build.sh`, `test.sh`); indiserver sim launcher script
+- [x] Solution layout (UI references no backend; enforced by a test), .NET 8, EVent nupkg local feed
+- [x] git, .gitignore, README, public GitHub repo, pushed after every milestone
+- [x] Build/test script without resident build servers (`dev.sh`); tests start their own indiserver simulators
+- [x] Docs: user guide and developer guide (`docs/`)
 
 ### Phase 1 — INDI <-> EVent translation layer (FIRST TARGET)
 - [x] Read INDI dev guide / protocol spec
@@ -73,6 +78,8 @@ ID scheme: `ELink.<Kind>.<DeviceName>.<Thing>` e.g. `ELink.Camera.CCD_Simulator.
 - [x] Plate solve service (astrometry.net, unpacked in user space; any FITS or a shot from any Shooter)
 - [x] Automatic centring after every slew (also hand controller / other software): solve the guide camera, sync + reslew (aim off when syncs do not help), learned guide-to-primary offset per pier side
 - [x] Autofocus (HFR star measurement, hyperbola/parabola fit, coarse + fine sweeps) as a mesh service
+- [x] Live stacking into a fixed field (e.g. the mosaic's virtual FOV) at any pixel scale: WCS/solve/pointing registration, exact homography resampling, bicubic upscaling, area-averaged downscaling, sky-level matching, float FITS + WCS out
+- [ ] Live stack: outlier rejection (sigma clip), darks/flats, debayering colour frames
 - [x] Mosaic painter: virtual FOV as a coverage map of exposure seconds; heterogeneous rotated frames, rotator passes, small-stepover raster passes + greedy top-up, producer/executor/recorder pipeline, live dRPC control
 - [ ] Meridian flip (deferred), dithering, guiding (PHD2/INDI guider) as modules
 - [x] Sequencer (plans of blocks, autofocus, pause/resume, weather interlock); [ ] scheduler/priorities, dome interlock

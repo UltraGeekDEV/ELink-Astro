@@ -47,6 +47,15 @@ public class SolveResult : IBinaryConvertible
     public BinaryConvertibleDouble Seconds { get; set; } = 0.0;
     public BinaryConvertibleString ShooterId { get; set; } = "";
     public BinaryConvertibleString Message { get; set; } = "";
+    public BinaryConvertibleBool HasWcs { get; set; } = false;
+    public BinaryConvertibleDouble WcsCrVal1 { get; set; } = double.NaN;
+    public BinaryConvertibleDouble WcsCrVal2 { get; set; } = double.NaN;
+    public BinaryConvertibleDouble WcsCrPix1 { get; set; } = double.NaN;
+    public BinaryConvertibleDouble WcsCrPix2 { get; set; } = double.NaN;
+    public BinaryConvertibleDouble WcsCd11 { get; set; } = double.NaN;
+    public BinaryConvertibleDouble WcsCd12 { get; set; } = double.NaN;
+    public BinaryConvertibleDouble WcsCd21 { get; set; } = double.NaN;
+    public BinaryConvertibleDouble WcsCd22 { get; set; } = double.NaN;
 
     public override string Name => "SolveResult";
     private static readonly NOTESDescriptor d = new();
@@ -63,6 +72,15 @@ public class SolveResult : IBinaryConvertible
         d.RegisterField("Seconds", (SolveResult x) => x.Seconds).Description("how long solving took");
         d.RegisterField("ShooterId", (SolveResult x) => x.ShooterId);
         d.RegisterField("Message", (SolveResult x) => x.Message).Description("why it did not solve, empty on success");
+        d.RegisterField("HasWcs", (SolveResult x) => x.HasWcs).Description("the full TAN solution below is filled in");
+        d.RegisterField("WcsCrVal1", (SolveResult x) => x.WcsCrVal1).Description("tangent point RA, degrees J2000");
+        d.RegisterField("WcsCrVal2", (SolveResult x) => x.WcsCrVal2).Description("tangent point Dec, degrees J2000");
+        d.RegisterField("WcsCrPix1", (SolveResult x) => x.WcsCrPix1).Description("tangent point pixel x, FITS 1-based, file row order");
+        d.RegisterField("WcsCrPix2", (SolveResult x) => x.WcsCrPix2).Description("tangent point pixel y, FITS 1-based");
+        d.RegisterField("WcsCd11", (SolveResult x) => x.WcsCd11).Description("CD matrix, degrees per pixel");
+        d.RegisterField("WcsCd12", (SolveResult x) => x.WcsCd12);
+        d.RegisterField("WcsCd21", (SolveResult x) => x.WcsCd21);
+        d.RegisterField("WcsCd22", (SolveResult x) => x.WcsCd22);
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();

@@ -5,7 +5,11 @@ using System.Text.RegularExpressions;
 namespace ELink.Automation;
 
 public sealed record SolveOutcome(bool Solved, double RaHours, double DecDegrees, double PositionAngle, double PixelScale,
-    double FieldWidthDegrees, double FieldHeightDegrees, double Seconds, string Message);
+    double FieldWidthDegrees, double FieldHeightDegrees, double Seconds, string Message)
+{
+    /// <summary>The full solution (TAN part of solve-field's .wcs), for registering the image pixel by pixel.</summary>
+    public ELink.Imaging.TanWcs? Wcs { get; init; }
+}
 
 /// <summary>Plate solving with astrometry.net's <c>solve-field</c> (installed system-wide, or unpacked in user space; set
 /// ELINK_SOLVE_FIELD to point at a specific one).</summary>
@@ -56,11 +60,39 @@ public sealed class PlateSolver
             catch (OperationCanceledException) { try { p.Kill(true); } catch { } return Fail(sw, ct.IsCancellationRequested ? "cancelled" : "solving timed out"); }
             string output = await stdout + "\n" + await stderr;
             var outcome = Parse(output, sw.Elapsed.TotalSeconds);
+            string wcsFile = Path.Combine(dir, "frame.wcs");
+            if (outcome.Solved && File.Exists(wcsFile))
+            {
+                try { outcome = outcome with { Wcs = ELink.Imaging.TanWcs.FromHeader(ReadHeader(await File.ReadAllBytesAsync(wcsFile, ct))) }; }
+                catch (FormatException) { }
+            }
             return outcome.Solved
                 ? outcome
                 : Fail(sw, output.Contains("did not solve", StringComparison.OrdinalIgnoreCase) || output.Contains("Did not solve") ? "no solution (not enough stars, or the hints/scale are wrong)" : FirstError(output));
         }
         finally { try { Directory.Delete(dir, true); } catch { } }
+    }
+
+    /// <summary>The primary header of a FITS file without data (solve-field's .wcs).</summary>
+    public static Dictionary<string, string> ReadHeader(byte[] bytes)
+    {
+        var h = new Dictionary<string, string>(StringComparer.Ordinal);
+        for (int pos = 0; pos + 80 <= bytes.Length; pos += 80)
+        {
+            string line = System.Text.Encoding.ASCII.GetString(bytes, pos, 80);
+            string key = line[..8].TrimEnd();
+            if (key == "END") return h;
+            if (line[8] != '=') continue;
+            string v = line[10..];
+            if (v.TrimStart().StartsWith('\''))
+            {
+                int a = v.IndexOf('\''), b = v.IndexOf('\'', a + 1);
+                v = b > a ? v[(a + 1)..b].TrimEnd() : v[(a + 1)..];
+            }
+            else { int slash = v.IndexOf('/'); v = (slash >= 0 ? v[..slash] : v).Trim(); }
+            h[key] = v;
+        }
+        throw new FormatException("FITS header is not terminated");
     }
 
     private static SolveOutcome Fail(Stopwatch sw, string message) => new(false, double.NaN, double.NaN, double.NaN, double.NaN, double.NaN, double.NaN, sw.Elapsed.TotalSeconds, message);
