@@ -83,6 +83,8 @@ public sealed partial class ComposerViewModel : ObservableObject
     [ObservableProperty] private int _ditherEvery = 3;
     [ObservableProperty] private double _ditherPixels = 5;
     [ObservableProperty] private double _settlePixels = 1.5;
+    [ObservableProperty] private bool _meridianFlip = true;
+    [ObservableProperty] private double _flipAfterMinutes = 6;
 
     [ObservableProperty] private string? _selectedExisting;
     [ObservableProperty] private string _message = "";
@@ -180,7 +182,7 @@ public sealed partial class ComposerViewModel : ObservableObject
     {
         var def = new ScopeDefinition
         {
-            Id = ScopeId.Trim(), DisplayName = ScopeName.Trim(), DitherEvery = DitherEvery, DitherPixels = DitherPixels, SettlePixels = SettlePixels,
+            Id = ScopeId.Trim(), DisplayName = ScopeName.Trim(), MeridianFlip = MeridianFlip, FlipAfterHours = FlipAfterMinutes / 60, DitherEvery = DitherEvery, DitherPixels = DitherPixels, SettlePixels = SettlePixels,
             GuideShooterId = Guided ? SelectedGuideWith : "", GuideOutput = SelectedGuideOutput, GuideExposureSeconds = GuideExposure,
             GuidePortId = SelectedGuidePort == MountPort ? "" : SelectedGuidePort, GuideTargetId = PulseOutput ? "" : GuideTargetId.Trim(),
         };

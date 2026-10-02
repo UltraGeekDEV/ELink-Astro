@@ -159,6 +159,11 @@ flowchart TD
     Rig -.->|guides with one of| OAGS["main-guide (the OAG)"] & GS
 ```
 
+The scope also does its own **meridian flip**: it follows its site's sidereal time for the target's hour angle and
+its pointer's pier side (ASCOM/INDI: West = looking east, before the flip). Before each exposure round it waits for
+the flip point if the round would cross it, then re-gotos the target and checks the pier side turned to East; a timer
+does the same while it idles on target. Guiding is stopped first and recalibrates on the new side.
+
 The scope owns a guider built from its guide settings (`<scope>-guider`; output Pulse to its mount's guide port
 unless another port is named, or Correction to a target). A train cannot image and guide for the same scope.
 

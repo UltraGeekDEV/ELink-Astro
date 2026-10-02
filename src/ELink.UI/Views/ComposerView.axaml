@@ -94,6 +94,10 @@
           <StackPanel><TextBlock Classes="label" Text="Dither px"/><NumericUpDown Value="{Binding DitherPixels}" Minimum="0.5" Increment="1" FormatString="0.#" Width="110"/></StackPanel>
           <StackPanel><TextBlock Classes="label" Text="Settled below px"/><NumericUpDown Value="{Binding SettlePixels}" Minimum="0.1" Increment="0.5" FormatString="0.#" Width="130"/></StackPanel>
         </StackPanel>
+        <StackPanel Classes="row">
+          <CheckBox IsChecked="{Binding MeridianFlip}" Content="Flip by itself at the meridian (German mounts; needs the site)" VerticalAlignment="Bottom"/>
+          <StackPanel><TextBlock Classes="label" Text="Flip this many minutes past the meridian"/><NumericUpDown Value="{Binding FlipAfterMinutes}" Minimum="0" Maximum="60" Increment="1" FormatString="0.#" Width="150"/></StackPanel>
+        </StackPanel>
         <Button Content="Define scope" Classes="primary" Command="{Binding DefineScopeCommand}" HorizontalAlignment="Left"/>
       </StackPanel>
     </Border>

@@ -59,6 +59,7 @@ public sealed class MountPointer : IAsyncDisposable
         var (ra, dec) = ToJ2000(m.RaHours.Value, m.DecDegrees.Value, m.Epoch.Text);
         s.RaHours = ra; s.DecDegrees = dec;
         s.Message = m.Message.Text;
+        s.PierSide = m.PierSide.Text;
         bool slewing = m.Phase.Text is "Slewing" or "Parking";
         // settled: the reported position is on the target, or (as Ekos takes it) the mount finished a slew to this very
         // target; some mounts and simulators report a few arcminutes off where they were sent, which centring then fixes

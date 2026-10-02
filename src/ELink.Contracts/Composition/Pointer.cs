@@ -13,6 +13,7 @@ public class PointerState : IBinaryConvertible
     public BinaryConvertibleDouble DecDegrees { get; set; } = 0.0;
     public BinaryConvertibleBool OnTarget { get; set; } = false;
     public BinaryConvertibleString Message { get; set; } = "";
+    public BinaryConvertibleString PierSide { get; set; } = "Unknown";
 
     public override string Name => "PointerState";
     private static readonly NOTESDescriptor d = new();
@@ -24,6 +25,7 @@ public class PointerState : IBinaryConvertible
         d.RegisterField("DecDegrees", (PointerState x) => x.DecDegrees).Description("where it points now, J2000");
         d.RegisterField("OnTarget", (PointerState x) => x.OnTarget).Description("settled on the last commanded target");
         d.RegisterField("Message", (PointerState x) => x.Message);
+        d.RegisterField("PierSide", (PointerState x) => x.PierSide).Description("East | West | Unknown (German equatorials; East = on the east side, looking west)");
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();

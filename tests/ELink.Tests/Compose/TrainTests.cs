@@ -153,13 +153,14 @@ public class TrainStackTests(ITestOutputHelper log) : IAsyncLifetime
         Assert.True(r.Ok.Value, r.Error.Text);
         Assert.True(await Eventually(() => state is { Observing.Value: false }, 400000), $"{state?.Phase.Text} {state?.Message.Text} | guider {guider?.Phase.Text} {guider?.Message.Text}");
         log.WriteLine($"scope: {state!.Phase.Text} {state.Message.Text}; guider: {guider?.Phase.Text}, {guider?.Calibration.Text}, {guider?.Dithers.Value} dithers, RMS {guider?.RmsTotalArcsec.Value:0.00}\"");
-        Assert.Equal(2, state.ShotsDone.Value);
-        Assert.Equal("", state.Message.Text);
-        Assert.True(guider!.Calibrated.Value);
-        Assert.Equal(1, guider.Dithers.Value);                     // between the two frames, not before the first
-        Assert.Equal("Guiding", guider.Phase.Text);                // still guiding after the run
+        string context = $"scope {state.Phase.Text} '{state.Message.Text}' {state.ShotsDone.Value} rounds; guider {guider?.Phase.Text} '{guider?.Message.Text}' calibrated {guider?.Calibrated.Value} dithers {guider?.Dithers.Value}; shots {shots.Count}";
+        Assert.True(state.ShotsDone.Value == 2, context);
+        Assert.True(state.Message.Text == "", context);
+        Assert.True(guider!.Calibrated.Value, context);
+        Assert.True(guider.Dithers.Value == 1, context);           // between the two frames, not before the first
+        Assert.True(guider.Phase.Text == "Guiding", context);      // still guiding after the run
         // only the imaging camera's frames come out of the scope, through the wheel; the guide frames stay inside
-        Assert.Equal(2, shots.Count);
+        Assert.True(shots.Count == 2, context);
         Assert.All(shots, s => { Assert.Equal("main-CCD_Simulator", s.Shooter.Text); Assert.Equal("Red", s.Filter.Text); });
         Assert.All(shots, s => Assert.Contains("FOCALLEN", System.Text.Encoding.ASCII.GetString(s.Data.Data, 0, 2880 * 2)));
     }

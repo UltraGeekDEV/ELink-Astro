@@ -38,6 +38,9 @@ public class ScopeDefinition : IBinaryConvertible
     public BinaryConvertibleString GuidePortId { get; set; } = "";
     public BinaryConvertibleString GuideTargetId { get; set; } = "";
     public BinaryConvertibleDouble GuideExposureSeconds { get; set; } = 2.0;
+    public BinaryConvertibleBool MeridianFlip { get; set; } = true;
+    public BinaryConvertibleDouble FlipAfterHours { get; set; } = 0.1;
+    public BinaryConvertibleString SiteId { get; set; } = "home";
     public BinaryConvertibleInt32 DitherEvery { get; set; } = 0;
     public BinaryConvertibleDouble DitherPixels { get; set; } = 5.0;
     public BinaryConvertibleDouble SettlePixels { get; set; } = 1.5;
@@ -59,6 +62,9 @@ public class ScopeDefinition : IBinaryConvertible
         d.RegisterField("GuidePortId", (ScopeDefinition x) => x.GuidePortId).Description("GuidePort for Pulse; empty = the first pointer's mount");
         d.RegisterField("GuideTargetId", (ScopeDefinition x) => x.GuideTargetId).Description("GuideTarget for Correction");
         d.RegisterField("GuideExposureSeconds", (ScopeDefinition x) => x.GuideExposureSeconds);
+        d.RegisterField("MeridianFlip", (ScopeDefinition x) => x.MeridianFlip).Description("flip by itself when the target passes the meridian (German equatorial mounts)");
+        d.RegisterField("FlipAfterHours", (ScopeDefinition x) => x.FlipAfterHours).Description("how far past the meridian (hour angle) to flip; never in the middle of an exposure");
+        d.RegisterField("SiteId", (ScopeDefinition x) => x.SiteId).Description("the site whose sidereal time gives the hour angle");
         d.RegisterField("DitherEvery", (ScopeDefinition x) => x.DitherEvery).Description("dither after every N exposure rounds; 0 = never");
         d.RegisterField("DitherPixels", (ScopeDefinition x) => x.DitherPixels).Description("dither size, guide camera pixels");
         d.RegisterField("SettlePixels", (ScopeDefinition x) => x.SettlePixels).Description("guiding counts as settled below this error ...");
@@ -108,7 +114,7 @@ public class ScopeState : IBinaryConvertible
     public override NOTESDescriptor Descriptor => d;
     static ScopeState()
     {
-        d.RegisterField("Phase", (ScopeState x) => x.Phase).Description("Idle | Pointing | OnTarget | Guiding (starting, settling) | Exposing | Dithering | Error");
+        d.RegisterField("Phase", (ScopeState x) => x.Phase).Description("Idle | Pointing | OnTarget | Guiding (starting, settling) | Exposing | Dithering | WaitingForFlip | Flipping | Error");
         d.RegisterField("Message", (ScopeState x) => x.Message);
         d.RegisterField("ShotsDone", (ScopeState x) => x.ShotsDone).Description("exposure rounds finished in the current/last Observe");
         d.RegisterField("ShotsPlanned", (ScopeState x) => x.ShotsPlanned);

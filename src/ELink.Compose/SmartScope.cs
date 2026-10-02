@@ -1,6 +1,7 @@
 using System.Globalization;
 using ELink.Contracts.Composition;
 using ELink.Contracts.Equipment;
+using ELink.Contracts.Site;
 using ELink.Core;
 using ELink.Core.Astro;
 using Event.CoreFunctionality;
@@ -38,6 +39,12 @@ public sealed class SmartScope : IAsyncDisposable
     private bool _guideRequested, _awaitSlew;
     private int _roundsSinceDither;
     private string _guideNote = "";
+    // the scope's own meridian flip
+    private readonly RemoteState<SiteState> _site;
+    private SkyTarget? _target;            // the last target, J2000, for the flip's re-goto
+    private bool _flippedForTarget;
+    private double _haAtGoto = double.NaN;
+    private Timer? _flipTimer;
 
     /// <param name="guiderId">the guider this scope drives; null = the definition's GuiderId</param>
     public SmartScope(TypeSafeEVentNode node, ScopeDefinition definition, string? guiderId = null)
@@ -56,6 +63,8 @@ public sealed class SmartScope : IAsyncDisposable
         _shooterPub = new(node, ShooterIds.State(_id), ShooterIds.GetState(_id), BuildShooter);
         _scopePub = new(node, ScopeIds.State(_id), ScopeIds.GetState(_id), () => { lock (_scopeGate) return Clone(_scope); });
         _guiderId = guiderId ?? definition.GuiderId.Text;
+        string site = definition.SiteId.Text == "" ? SiteIds.Default : definition.SiteId.Text;
+        _site = new RemoteState<SiteState>(node, SiteIds.State(site), SiteIds.GetState(site));
         if (_guiderId != "") _guider = new RemoteState<GuiderState>(node, GuiderIds.State(_guiderId), GuiderIds.GetState(_guiderId));
     }
 
@@ -65,6 +74,7 @@ public sealed class SmartScope : IAsyncDisposable
     public async Task StartAsync()
     {
         if (_guider is not null) await _guider.StartAsync();
+        await _site.StartAsync();
         foreach (var p in _pointers) { await p.State.StartAsync(); p.State.Changed += __ => { _ = _pointerPub.PublishAsync(); _ = Task.Run(RefreshScopeAsync); _ = Task.Run(FollowPointingAsync); }; }
         foreach (var s in _shooters)
         {
@@ -83,13 +93,22 @@ public sealed class SmartScope : IAsyncDisposable
         await _pointerPub.StartAsync();
         await _shooterPub.StartAsync();
         await _scopePub.StartAsync();
+        if (_def.MeridianFlip.Value) _flipTimer = new Timer(_ => _ = IdleFlipCheckAsync(), null, TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(15));
     }
 
     // ---- Pointer interface ------------------------------------------------------------------------------------
 
-    private async Task<CommandResult> GotoAsync(SkyTarget target)
+    private Task<CommandResult> GotoAsync(SkyTarget target) => GotoAsync(target, flipping: false);
+
+    private async Task<CommandResult> GotoAsync(SkyTarget target, bool flipping)
     {
         if (_pointers.Count == 0) return CommandResult.Fail($"scope {_id} has no pointer");
+        if (!flipping)
+        {
+            var (tra, tdec) = target.Epoch.Text == "JNow" ? Precession.DateToJ2000(target.RaHours.Value, target.DecDegrees.Value, DateTime.UtcNow) : (target.RaHours.Value, target.DecDegrees.Value);
+            lock (_scopeGate) { _target = new SkyTarget { RaHours = tra, DecDegrees = tdec, Epoch = "J2000" }; _flippedForTarget = false; }
+            _haAtGoto = HourAngle() ?? double.NaN;
+        }
         lock (_scopeGate) _awaitSlew = true;   // ignore "on target" until the pointers have started to move
         await StopGuidingAsync();   // never guide through a slew
         double ra = target.RaHours.Value, dec = target.DecDegrees.Value;
@@ -121,7 +140,85 @@ public sealed class SmartScope : IAsyncDisposable
             : s.OnTarget ? "OnTarget"
             : states.Any(x => x!.Phase.Text == "Parked") ? "Parked" : "Idle";
         s.Message = states.Select(x => x!.Message.Text).FirstOrDefault(m => m != "") ?? "";
+        s.PierSide = first.PierSide.Text;
         return s;
+    }
+
+    // ---- the scope's own meridian flip -------------------------------------------------------------------------
+
+    /// <summary>Hour angle of the current target at the scope's site (hours, negative = east of the meridian); null
+    /// when the site or the target is not known.</summary>
+    private double? HourAngle()
+    {
+        SkyTarget? t; lock (_scopeGate) t = _target;
+        if (t is null || _site.Latest is not { Known.Value: true } site) return null;
+        var now = DateTime.UtcNow;
+        var (ra, _) = Precession.J2000ToDate(t.RaHours.Value, t.DecDegrees.Value, now);
+        return Horizon.HourAngleHours(ra, now, site.Config.LongitudeDegrees.Value);
+    }
+
+    /// <summary>Still on the side of the pier it took east of the meridian: West (looking east), or, for mounts that do
+    /// not say, not flipped yet for a target that was east of the flip point when it was acquired.</summary>
+    private bool OnPreFlipSide()
+    {
+        string pier = BuildPointer().PierSide.Text;
+        if (pier == "West") return true;
+        if (pier == "East") return false;
+        bool flipped; lock (_scopeGate) flipped = _flippedForTarget;
+        return !flipped && !double.IsNaN(_haAtGoto) && _haAtGoto < _def.FlipAfterHours.Value;
+    }
+
+    /// <summary>Before an exposure round: if the target will be past the flip point before the exposure ends, wait for
+    /// the flip point (never flip mid-exposure, never too early for the mount to flip), then flip.</summary>
+    private async Task<CommandResult> FlipIfDueAsync(double exposureSeconds, CancellationToken ct = default)
+    {
+        if (!_def.MeridianFlip.Value || HourAngle() is not { } ha || ha < -6 || !OnPreFlipSide()) return CommandResult.Success();
+        double flipAt = _def.FlipAfterHours.Value;
+        if (ha + exposureSeconds / 3600 < flipAt) return CommandResult.Success();
+        if (ha < flipAt)
+        {
+            await SetScope(s => { s.Phase = "WaitingForFlip"; s.Message = FormattableString.Invariant($"meridian flip in {(flipAt - ha) * 60:0.0} min"); });
+            while (HourAngle() is { } now && now < flipAt) await Task.Delay(500, ct);
+        }
+        return await FlipAsync(ct);
+    }
+
+    private async Task<CommandResult> FlipAsync(CancellationToken ct = default)
+    {
+        SkyTarget? target; lock (_scopeGate) target = _target;
+        if (target is null) return CommandResult.Success();
+        string before = BuildPointer().PierSide.Text;
+        await SetScope(s => { s.Phase = "Flipping"; s.Message = "meridian flip"; });
+        await StopGuidingAsync();
+        var go = await GotoAsync(target, flipping: true);
+        if (!go.Ok.Value) return CommandResult.Fail("meridian flip: " + go.Error.Text);
+        // the pointer may still say "on target" for a moment: first see the mount move (or turn over), then settle
+        var moving = DateTime.UtcNow.AddSeconds(20);
+        while (DateTime.UtcNow < moving && BuildPointer() is var p && p.Phase.Text != "Slewing" && (p.PierSide.Text == before || before == "Unknown")) await Task.Delay(200, ct);
+        try
+        {
+            await Task.WhenAll(_pointers.Select(x => x.State.WaitAsync(s => s.OnTarget.Value || s.Phase.Text is "Error" or "Parked" or "Disconnected", TimeSpan.FromMinutes(10), ct)));
+        }
+        catch (TimeoutException) { return CommandResult.Fail("meridian flip: the mount did not settle"); }
+        string after = BuildPointer().PierSide.Text;
+        if (before == "West" && after == "West") return CommandResult.Fail("meridian flip: the mount did not turn over (check its meridian limits)");
+        lock (_scopeGate) _flippedForTarget = true;
+        await SetScope(s => s.Message = $"meridian flip done (pier {after})");
+        return CommandResult.Success();
+    }
+
+    /// <summary>Tracking on target with nothing to expose: flip when due rather than track into the pier.</summary>
+    private async Task IdleFlipCheckAsync()
+    {
+        if (!_exposeLock.Wait(0)) return;   // a round is being prepared or exposed: it checks by itself
+        try
+        {
+            if (BuildPointer().Phase.Text != "OnTarget" || HourAngle() is not { } ha || ha < _def.FlipAfterHours.Value || ha > 6 || !OnPreFlipSide()) return;
+            var r = await FlipAsync();
+            if (!r.Ok.Value) await SetScope(s => s.Message = r.Error.Text);
+        }
+        catch (Exception ex) { try { await SetScope(s => s.Message = "meridian flip: " + ex.Message); } catch { } }
+        finally { _exposeLock.Release(); }
     }
 
     // ---- the scope's own guiding --------------------------------------------------------------------------------
@@ -153,8 +250,10 @@ public sealed class SmartScope : IAsyncDisposable
     /// <summary>Before an exposure round: make sure the guider runs, then dither (every DitherEvery rounds) or just wait
     /// until settled. A guider that fails to start fails the round; one that is merely slow to settle is noted and the
     /// round goes ahead.</summary>
-    private async Task<CommandResult> PrepareGuidedAsync()
+    private async Task<CommandResult> PrepareRoundAsync(double exposureSeconds)
     {
+        var flip = await FlipIfDueAsync(exposureSeconds);
+        if (!flip.Ok.Value) return flip;
         if (_guider is null) return CommandResult.Success();
         // starting is idempotent: a running guider just says yes
         lock (_scopeGate) _guideRequested = true;
@@ -181,21 +280,21 @@ public sealed class SmartScope : IAsyncDisposable
     private async Task<CommandResult> ExposeCommandAsync(ShooterExposure e)
     {
         if (_shooters.Count == 0) return CommandResult.Fail($"scope {_id} has no shooter");
-        if (_guider is null) return await ExposeAsync(e);
+        if (_guider is null && !_def.MeridianFlip.Value) return await ExposeAsync(e);
         _ = Task.Run(async () =>
         {
-            var r = await ExposeGuidedAsync(e);
+            var r = await ExposePreparedAsync(e);
             if (!r.Ok.Value) await SetScope(s => s.Message = r.Error.Text);
         });
         return CommandResult.Success();
     }
 
-    private async Task<CommandResult> ExposeGuidedAsync(ShooterExposure e)
+    private async Task<CommandResult> ExposePreparedAsync(ShooterExposure e)
     {
         await _exposeLock.WaitAsync();
         try
         {
-            var g = await PrepareGuidedAsync();
+            var g = await PrepareRoundAsync(e.Seconds.Value);
             if (!g.Ok.Value) return g;
             var r = await ExposeAsync(e);
             if (r.Ok.Value) lock (_scopeGate) _roundsSinceDither++;
@@ -314,7 +413,7 @@ public sealed class SmartScope : IAsyncDisposable
             {
                 ct.ThrowIfCancellationRequested();
                 while (_shots.CurrentCount > 0) _shots.Wait(0); // forget frames from before this round
-                var ex = _guider is null ? await ExposeAsync(r.Exposure) : await ExposeGuidedAsync(r.Exposure);
+                var ex = _guider is null && !_def.MeridianFlip.Value ? await ExposeAsync(r.Exposure) : await ExposePreparedAsync(r.Exposure);
                 if (!ex.Ok.Value) throw new InvalidOperationException(ex.Error.Text);
                 await SetScope(s => { s.Phase = "Exposing"; s.Message = _guideNote; });
                 var roundTimeout = TimeSpan.FromSeconds(r.Exposure.Seconds.Value + 180);
@@ -355,7 +454,8 @@ public sealed class SmartScope : IAsyncDisposable
         try { _observe?.Cancel(); } catch (ObjectDisposedException) { }
         if (_observeTask is not null) await Task.WhenAny(_observeTask, Task.Delay(2000));
         _commands.Dispose(); _pointerPub.Dispose(); _shooterPub.Dispose(); _scopePub.Dispose();
-        _guider?.Dispose();
+        _guider?.Dispose(); _site.Dispose();
+        if (_flipTimer is not null) await _flipTimer.DisposeAsync();
         foreach (var p in _pointers) p.State.Dispose();
         foreach (var s in _shooters)
         {

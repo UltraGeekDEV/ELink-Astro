@@ -206,7 +206,7 @@ public sealed class CompositionHost : IAsyncDisposable
         List<ScopeSaved> Scopes, List<GuiderSaved>? Guiders = null, List<TrainSaved>? Trains = null);
     private sealed record TrainSaved(string Id, string Label, double FocalLength, double Aperture, List<(string Camera, string Role)> Cameras, string Wheel, string Focuser, string Rotator);
     private sealed record ScopeSaved(string Id, string Name, List<string> Pointers, List<ShooterSaved> Shooters,
-        string? GuiderId = null, string? GuideShooterId = null, string? GuideOutput = null, string? GuidePortId = null, string? GuideTargetId = null, double GuideExposure = 2, int DitherEvery = 0, double DitherPixels = 5, double SettlePixels = 1.5, double SettleSeconds = 10, double SettleTimeoutSeconds = 120);
+        string? GuiderId = null, string? GuideShooterId = null, string? GuideOutput = null, string? GuidePortId = null, string? GuideTargetId = null, double GuideExposure = 2, bool MeridianFlip = true, double FlipAfterHours = 0.1, string? SiteId = null, int DitherEvery = 0, double DitherPixels = 5, double SettlePixels = 1.5, double SettleSeconds = 10, double SettleTimeoutSeconds = 120);
     private sealed record GuiderSaved(string Id, string Shooter, string Output, string GuidePort, string Target, string Mount, double Exposure, double PixelScale,
         double? CameraAngle, bool Solve, double RaAggressiveness, double DecAggressiveness, double MinMove, int MaxPulse, int CalibrationStep, double CalibrationPixels, string DecMode);
     private sealed record ShooterSaved(string Id, double East, double North);
@@ -221,7 +221,7 @@ public sealed class CompositionHost : IAsyncDisposable
             _shooters.Values.Select(x => (x.Def.Id.Text, x.Def.CameraId.Text, x.Def.FilterWheelId.Text)).ToList(),
             _scopes.Values.Select(x => new ScopeSaved(x.Def.Id.Text, x.Def.DisplayName.Text, x.Def.Pointers.Select(p => p.Text).ToList(),
                 x.Def.Shooters.Select(s => new ShooterSaved(s.Id.Text, s.OffsetEastArcmin.Value, s.OffsetNorthArcmin.Value)).ToList(),
-                x.Def.GuiderId.Text, x.Def.GuideShooterId.Text, x.Def.GuideOutput.Text, x.Def.GuidePortId.Text, x.Def.GuideTargetId.Text, x.Def.GuideExposureSeconds.Value, x.Def.DitherEvery.Value, x.Def.DitherPixels.Value, x.Def.SettlePixels.Value, x.Def.SettleSeconds.Value, x.Def.SettleTimeoutSeconds.Value)).ToList(),
+                x.Def.GuiderId.Text, x.Def.GuideShooterId.Text, x.Def.GuideOutput.Text, x.Def.GuidePortId.Text, x.Def.GuideTargetId.Text, x.Def.GuideExposureSeconds.Value, x.Def.MeridianFlip.Value, x.Def.FlipAfterHours.Value, x.Def.SiteId.Text, x.Def.DitherEvery.Value, x.Def.DitherPixels.Value, x.Def.SettlePixels.Value, x.Def.SettleSeconds.Value, x.Def.SettleTimeoutSeconds.Value)).ToList(),
             _guiders.Values.Select(x => x.Def).Select(g => new GuiderSaved(g.Id.Text, g.ShooterId.Text, g.Output.Text, g.GuidePortId.Text, g.TargetId.Text, g.MountId.Text,
                 g.ExposureSeconds.Value, g.PixelScaleArcsec.Value, double.IsNaN(g.CameraAngleDegrees.Value) ? null : g.CameraAngleDegrees.Value, g.SolveOrientation.Value,
                 g.RaAggressiveness.Value, g.DecAggressiveness.Value, g.MinMovePixels.Value, g.MaxPulseMs.Value, g.CalibrationStepMs.Value, g.CalibrationPixels.Value, g.DecMode.Text)).ToList(),
@@ -263,7 +263,8 @@ public sealed class CompositionHost : IAsyncDisposable
                 var d = new ScopeDefinition
                 {
                     Id = sc.Id, DisplayName = sc.Name, GuiderId = sc.GuiderId ?? "", GuideShooterId = sc.GuideShooterId ?? "", GuideOutput = sc.GuideOutput ?? "Pulse",
-                    GuidePortId = sc.GuidePortId ?? "", GuideTargetId = sc.GuideTargetId ?? "", GuideExposureSeconds = sc.GuideExposure, DitherEvery = sc.DitherEvery, DitherPixels = sc.DitherPixels,
+                    GuidePortId = sc.GuidePortId ?? "", GuideTargetId = sc.GuideTargetId ?? "", GuideExposureSeconds = sc.GuideExposure,
+                    MeridianFlip = sc.MeridianFlip, FlipAfterHours = sc.FlipAfterHours, SiteId = sc.SiteId ?? "home", DitherEvery = sc.DitherEvery, DitherPixels = sc.DitherPixels,
                     SettlePixels = sc.SettlePixels, SettleSeconds = sc.SettleSeconds, SettleTimeoutSeconds = sc.SettleTimeoutSeconds,
                 };
                 foreach (var p in sc.Pointers) d.Pointers.Add(p);
@@ -289,7 +290,8 @@ public sealed class CompositionHost : IAsyncDisposable
         var c = new ScopeDefinition
         {
             Id = d.Id.Text, DisplayName = d.DisplayName.Text, GuiderId = d.GuiderId.Text, GuideShooterId = d.GuideShooterId.Text, GuideOutput = d.GuideOutput.Text,
-            GuidePortId = d.GuidePortId.Text, GuideTargetId = d.GuideTargetId.Text, GuideExposureSeconds = d.GuideExposureSeconds.Value, DitherEvery = d.DitherEvery.Value, DitherPixels = d.DitherPixels.Value,
+            GuidePortId = d.GuidePortId.Text, GuideTargetId = d.GuideTargetId.Text, GuideExposureSeconds = d.GuideExposureSeconds.Value,
+            MeridianFlip = d.MeridianFlip.Value, FlipAfterHours = d.FlipAfterHours.Value, SiteId = d.SiteId.Text, DitherEvery = d.DitherEvery.Value, DitherPixels = d.DitherPixels.Value,
             SettlePixels = d.SettlePixels.Value, SettleSeconds = d.SettleSeconds.Value, SettleTimeoutSeconds = d.SettleTimeoutSeconds.Value,
         };
         foreach (var p in d.Pointers) c.Pointers.Add(p.Text);

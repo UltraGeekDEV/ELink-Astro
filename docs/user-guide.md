@@ -107,6 +107,10 @@ flowchart TD
    exposure rounds) and by how many guide-camera pixels. A guided scope does everything itself: it stops guiding
    before any slew, starts (and calibrates the first time) once on target, waits until guiding has settled before
    each exposure, and dithers between them.
+   **Meridian flip** (on by default, needs the Site): when the target passes the meridian by the set minutes, the
+   scope finishes the running exposure (or waits for the flip point if the next exposure would cross it), slews to
+   the target again so the mount turns over, checks the pier side changed, recalibrates guiding and carries on.
+   An idle scope tracking across the meridian flips too.
 
 Definitions are saved and come back on the next start. A defined scope appears under *Smart scopes* on the left; its
 panel has **Observe** (go to, wait until settled, take *Count* frames), *Go to only*, *Expose only* and *Abort*.

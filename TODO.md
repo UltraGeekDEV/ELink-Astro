@@ -102,7 +102,7 @@ focus triggers/offsets -> live-stack rejection/calibration -> the rest.
 - [x] Guiding inside the scope: multi-star guider, PHD2-style calibration over INDI pulse guiding, dithering and settling driven by the scope itself; "goto guiding" output (GuideCorrection: you are here, should be here) for ELink-native devices
 - [ ] Guiding extras: PHD2 as an alternative guider behind the same contract, guide graph history, Dec backlash compensation, predictive PEC
 - [ ] Centring inside the scope (spec): the scope centres after its own slews instead of a separate watcher
-- [ ] Meridian flip inside the scope
+- [x] Meridian flip inside the scope: hour angle from the site, pier side from the mount, waits for the flip point between exposures, verifies the turn-over, flips idle scopes too
 - [x] Sequencer (plans of blocks, autofocus, pause/resume, weather interlock); [ ] scheduler/priorities, dome interlock
 - [x] Frame storage (FITS headers stamped, night folders, JSON-lines session log)
 
