@@ -33,7 +33,7 @@ Every smart scope (imaging train) is autonomous: guiding, dithering, centring, f
 | `ELink.Atlas` | sky atlas service: KStars star catalogue, OpenNGC deep-sky objects, constellation figures, GSC faint stars, search |
 | `ELink.Stellarium` | Stellarium bridge: ELink as a Stellarium telescope for any pointer, plus Remote Control (show target, read selection) |
 | `ELink.Imaging` | FITS read/write, TAN WCS, live stacker (resampling), screen auto-stretch, star detection and HFR |
-| `ELink.Automation` | autofocus, sequencer (weather guard, pause/resume), image requests (area filling), plate solving, centring, live stacking and frame storage services, driven only by EVent IDs |
+| `ELink.Automation` | autofocus, the scheduler, image requests (area filling), plate solving, centring, live stacking and frame storage services, driven only by EVent IDs |
 | `ELink.UI` / `ELink.App` | Avalonia UI (library) and its stand-alone executable `elink-ui` |
 | `ELink.Bridge` | headless INDI bridge executable |
 | `ELink.Station` | all-in-one executable `elink`: bridge + composition host + UI on one node |

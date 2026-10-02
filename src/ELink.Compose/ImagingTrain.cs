@@ -23,6 +23,8 @@ public sealed class ImagingTrain : IAsyncDisposable
     private readonly StatePublisher<TrainState> _trainPub;
     private readonly HashSet<string> _opticsGiven = new();
     private string _message = "";
+    private readonly Dictionary<string, double> _angles = new();   // by camera id, learned from plate solves
+    private Action<ELink.Contracts.Automation.SolveResult>? _onSolved;
 
     public ImagingTrain(TypeSafeEVentNode node, ImagingTrainDefinition definition)
     {
@@ -62,6 +64,16 @@ public sealed class ImagingTrain : IAsyncDisposable
             if (m.State.Latest is { } now) _ = GiveOpticsAsync(m, now);
         }
         foreach (var m in _imaging) await _node.HookEventAsync(ShooterIds.Shot(m.ShooterId), m.OnShot, $"train {_id} frames");
+        // every solve of one of its cameras tells where that camera's image up points on the sky
+        _onSolved = r =>
+        {
+            if (!r.Solved.Value || double.IsNaN(r.PositionAngle.Value)) return;
+            var m = All.FirstOrDefault(x => x.ShooterId == r.ShooterId.Text) ?? (r.ShooterId.Text == _id && _imaging.Count == 1 ? _imaging[0] : null);
+            if (m is null) return;
+            lock (_angles) _angles[m.Camera.CameraId.Text] = r.PositionAngle.Value;
+            _ = _trainPub.PublishAsync();
+        };
+        await _node.HookEventAsync(ELink.Contracts.Automation.SolveIds.Solved, _onSolved, $"train {_id}: camera angles");
         await _commands.AddAsync<ShooterExposure, CommandResult>(ShooterIds.Expose(_id), ExposeAsync, $"expose every imaging camera of train {_id}");
         await _commands.AddAsync<NOTESVoid, CommandResult>(ShooterIds.Abort(_id), _ => AbortAsync(), "abort the exposures");
         await _shooterPub.StartAsync();
@@ -140,6 +152,7 @@ public sealed class ImagingTrain : IAsyncDisposable
         {
             var c = m.State.Latest;
             var info = new TrainCameraInfo { CameraId = m.Camera.CameraId.Text, Role = m.Camera.Role.Text, ShooterId = m.ShooterId, Connected = c?.Connected.Value ?? false };
+            lock (_angles) if (_angles.TryGetValue(m.Camera.CameraId.Text, out var angle)) info.AngleDegrees = angle;
             // the train's own sensor numbers win over a driver that does not know (a DSLR reporting zeros)
             double pixel = m.Camera.PixelSizeUm.Value > 0 ? m.Camera.PixelSizeUm.Value : c?.PixelSizeUm.Value ?? 0;
             int width = m.Camera.SensorWidth.Value > 0 ? m.Camera.SensorWidth.Value : c?.SensorWidth.Value ?? 0;
@@ -163,6 +176,7 @@ public sealed class ImagingTrain : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         foreach (var m in _imaging) { try { _node.UnhookEvent(ShooterIds.Shot(m.ShooterId), m.OnShot); } catch (ObjectDisposedException) { } }
+        if (_onSolved is not null) { try { _node.UnhookEvent(ELink.Contracts.Automation.SolveIds.Solved, _onSolved); } catch (ObjectDisposedException) { } }
         _commands.Dispose(); _shooterPub.Dispose(); _trainPub.Dispose();
         foreach (var m in All) { await m.Shooter.DisposeAsync(); m.State.Dispose(); m.ShooterState.Dispose(); }
     }

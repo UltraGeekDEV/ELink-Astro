@@ -249,6 +249,17 @@ public sealed partial class ImageViewModel : ObservableObject, IDisposable
     [RelayCommand] private Task ResumeAsync() => Void(ImagingIds.Resume);
     [RelayCommand] private Task AbortAsync() => Void(ImagingIds.Abort);
 
+    /// <summary>The Schedule tab, to add this image to.</summary>
+    public Func<ScheduleViewModel>? Scheduler { get; set; }
+
+    [RelayCommand]
+    private async Task AddToScheduleAsync()
+    {
+        if (Scheduler?.Invoke() is not { } schedule || !TryRequest(out var req)) return;
+        await schedule.AddAsync(req);
+        Message = schedule.Message != "" ? schedule.Message : $"{req.Label.Text} is on the schedule";
+    }
+
     [RelayCommand]
     private async Task ApplyTargetAsync()
     {

@@ -61,7 +61,7 @@ flowchart LR
     end
     subgraph Tabs
         T1[Compose] --- T2[Sky atlas] --- T2b[Site] --- T3[Centring] --- T4[Image] --- T4b[Live stack]
-        T4b --- T5[Sequence] --- T6[Autofocus] --- T7[Storage] --- T8[INDI]
+        T4b --- T5[Schedule] --- T6[Autofocus] --- T7[Storage] --- T8[INDI]
     end
     Left --- Tabs
 ```
@@ -84,7 +84,7 @@ flowchart TD
     C --> D[Centring corrects automatically]
     D --> E[Autofocus]
     E --> F{What to shoot}
-    F -->|a list of targets| G[Sequence]
+    F -->|several targets, many nights| G[Schedule]
     F -->|this image of this area| H[Image]
     G --> I[Storage saves every frame]
     H --> I
@@ -185,11 +185,17 @@ If the mount's syncs do not move its pointing, centring notices and aims off by 
 Pick the shooter and the focuser, exposure, step size and number of samples, **Run**. It sweeps the focuser, measures
 star size (HFR), fits the curve and moves to the best position. The focus curve is drawn as it goes.
 
-## Sequence
+## Schedule
 
-A plan is a list of blocks: target, exposure seconds, count, filter, frame type, and *Refocus before*. Pick the scope,
-optionally a weather device (unsafe weather pauses, and the plan resumes with only the missing frames) and the
-autofocus shooter/focuser for refocus blocks. **Start**, **Pause**, **Resume**, **Abort**.
+Images to take, without babysitting. On the **Image** tab set an image up and press **Add to schedule** (same name
+= replaced). Each entry has a **priority**, a **minimum altitude** (0 = your site's horizon), **only when dark**,
+how far it must be **from the Moon** and how bright a Moon (**% lit**) it tolerates while the Moon is up.
+
+**Run**: every minute the scheduler looks at the sky (Site tab must be set) and takes the best image that is
+possible now *and* stays possible for at least half an hour: higher priority first, then whatever sets soonest. When
+an image stops being possible (it sets, dawn, the Moon) it is stopped and kept; when it is deep enough it is
+*Complete*. Each entry says why it waits ("too low, rises 23:10", "not dark", "12° from the Moon"...). Left running,
+it carries on the next night by itself.
 
 ## Image
 

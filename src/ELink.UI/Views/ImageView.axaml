@@ -52,6 +52,7 @@
           <Button Content="Resume" Command="{Binding ResumeCommand}"/>
           <Button Content="Abort" Classes="danger" Command="{Binding AbortCommand}"/>
           <Button Content="Apply depth now" Command="{Binding ApplyTargetCommand}"/>
+          <Button Content="Add to schedule" Command="{Binding AddToScheduleCommand}"/>
           <CheckBox IsChecked="{Binding StartAfresh}" Content="Start afresh (forget what this name has)" VerticalAlignment="Center"/>
         </StackPanel>
         <TextBlock Classes="label" Text="{Binding Summary}" TextWrapping="Wrap"/>

@@ -78,6 +78,29 @@ public class TrainCompositionTests
     }
 }
 
+public class TrainAngleTests
+{
+    [Fact]
+    public async Task ATrainLearnsItsCamerasAngleFromSolves()
+    {
+        using var node = ElinkNode.Create("TA-" + Guid.NewGuid().ToString("N")[..6], ELink.Testing.TestPorts.Next());
+        var def = new ImagingTrainDefinition { Id = "t", FocalLengthMm = 400 };
+        def.Cameras.Add(new TrainCamera { CameraId = "c1", Role = "Imaging" });
+        def.Cameras.Add(new TrainCamera { CameraId = "oag", Role = "Guiding" });
+        await using var train = new ImagingTrain(node, def); await train.StartAsync();
+        async Task<TrainState> State() => Assert.Single((await node.CallFunctionAsync<NOTESVoid, TrainState>(TrainIds.GetState("t"), NOTESVoid.Void))!);
+        Assert.True(double.IsNaN((await State()).Cameras[0].AngleDegrees.Value));
+        // a solve of the train itself (its one imaging camera), and one of its guide camera
+        await node.FireEventAsync(ELink.Contracts.Automation.SolveIds.Solved, new ELink.Contracts.Automation.SolveResult { Solved = true, PositionAngle = 33.5, ShooterId = "t" });
+        await node.FireEventAsync(ELink.Contracts.Automation.SolveIds.Solved, new ELink.Contracts.Automation.SolveResult { Solved = true, PositionAngle = 210, ShooterId = "t-guide" });
+        await node.FireEventAsync(ELink.Contracts.Automation.SolveIds.Solved, new ELink.Contracts.Automation.SolveResult { Solved = false, PositionAngle = 99, ShooterId = "t" });   // a failed solve teaches nothing
+        await Task.Delay(200);
+        var s = await State();
+        Assert.Equal(33.5, s.Cameras.First(c => c.CameraId.Text == "c1").AngleDegrees.Value);
+        Assert.Equal(210, s.Cameras.First(c => c.CameraId.Text == "oag").AngleDegrees.Value);
+    }
+}
+
 /// <summary>An imaging train with an off-axis guider, on INDI's simulators: the scope images with the train and
 /// guides with the train's own guide camera, dithering between frames, all by itself.</summary>
 public class TrainStackTests(ITestOutputHelper log) : IAsyncLifetime

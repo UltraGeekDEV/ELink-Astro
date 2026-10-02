@@ -1,0 +1,56 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="ELink.UI.Views.ScheduleView">
+  <StackPanel MaxWidth="1100" Spacing="0">
+    <Border Classes="card">
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel>
+          <TextBlock Classes="title" Text="Schedule"/>
+          <TextBlock Classes="label" TextWrapping="Wrap" Text="Images to take (add them from the Image tab). While running, the best image that is possible now and stays possible for a while is taken: higher priority first, then the one that sets soonest. When it stops being possible it is stopped and kept, and carries on another night until it is deep enough."/>
+        </StackPanel>
+        <StackPanel Grid.Column="1" HorizontalAlignment="Right">
+          <TextBlock Classes="value" Text="{Binding Phase}" HorizontalAlignment="Right"/>
+          <TextBlock Classes="label" Text="{Binding Running}" HorizontalAlignment="Right"/>
+        </StackPanel>
+      </Grid>
+    </Border>
+    <Border Classes="card">
+      <StackPanel Spacing="8">
+        <ItemsControl ItemsSource="{Binding Rows}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Border BorderBrush="#334" BorderThickness="0,0,0,1" Padding="0,6">
+                <StackPanel Spacing="4">
+                  <StackPanel Classes="row">
+                    <CheckBox IsChecked="{Binding Enabled}"/>
+                    <TextBlock Text="{Binding Label}" FontWeight="SemiBold" Width="160" VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding What}" Classes="label" Width="220" VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding Status}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                  </StackPanel>
+                  <StackPanel Classes="row">
+                    <StackPanel><TextBlock Classes="label" Text="Priority"/><NumericUpDown Value="{Binding Priority}" FormatString="0" Width="100"/></StackPanel>
+                    <StackPanel><TextBlock Classes="label" Text="Min altitude ° (0 = horizon)"/><NumericUpDown Value="{Binding MinAltitude}" Minimum="0" Maximum="89" FormatString="0" Width="170"/></StackPanel>
+                    <CheckBox IsChecked="{Binding RequireDark}" Content="Only when dark" VerticalAlignment="Bottom"/>
+                    <StackPanel><TextBlock Classes="label" Text="Moon at least °"/><NumericUpDown Value="{Binding MinMoonSeparation}" Minimum="0" Maximum="180" FormatString="0" Width="120"/></StackPanel>
+                    <StackPanel><TextBlock Classes="label" Text="Moon at most % lit (when up)"/><NumericUpDown Value="{Binding MaxMoonPercent}" Minimum="0" Maximum="100" FormatString="0" Width="170"/></StackPanel>
+                  </StackPanel>
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <TextBlock Classes="label" Text="Nothing scheduled yet: set up an image on the Image tab and press Add to schedule." IsVisible="{Binding !Rows.Count}"/>
+        <StackPanel Classes="row">
+          <Button Content="Run" Classes="primary" Command="{Binding RunCommand}"/>
+          <Button Content="Stop" Command="{Binding StopCommand}"/>
+          <Button Content="Apply changes" Command="{Binding ApplyCommand}"/>
+          <ComboBox ItemsSource="{Binding Rows}" SelectedItem="{Binding SelectedRow}" Width="200">
+            <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Label}"/></DataTemplate></ComboBox.ItemTemplate>
+          </ComboBox>
+          <Button Content="Remove" Classes="danger" Command="{Binding RemoveCommand}"/>
+        </StackPanel>
+        <TextBlock Text="{Binding StateMessage}" TextWrapping="Wrap"/>
+        <TextBlock Classes="error" Text="{Binding Message}" IsVisible="{Binding Message.Length}" TextWrapping="Wrap"/>
+      </StackPanel>
+    </Border>
+  </StackPanel>
+</UserControl>

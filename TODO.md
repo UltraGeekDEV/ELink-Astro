@@ -111,7 +111,9 @@ focus triggers/offsets -> live-stack rejection/calibration -> the rest.
 - [ ] Guiding extras: PHD2 as an alternative guider behind the same contract, guide graph history, Dec backlash compensation, predictive PEC
 - [x] Centring inside the scope: solve after its own slews, aim-off re-goto until within tolerance, stale-frame check, learned pointing correction nearby
 - [x] Meridian flip inside the scope: hour angle from the site, pier side from the mount, waits for the flip point between exposures, verifies the turn-over, flips idle scopes too
-- [x] Sequencer (plans of blocks, autofocus, pause/resume, weather interlock); [ ] scheduler/priorities, dome interlock
+- [x] Scheduler of image requests (priority, altitude/horizon, darkness, Moon distance and brightness, time windows; stops what becomes impossible; carries on night after night); replaces the old Observe-block sequencer
+- [x] Camera angles learned from plate solves and used for planning
+- [ ] Dome interlock
 - [x] Frame storage (FITS headers stamped, night folders, JSON-lines session log)
 
 ### Phase 4b — Sky

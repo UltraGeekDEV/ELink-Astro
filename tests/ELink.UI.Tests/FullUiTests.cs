@@ -63,7 +63,7 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         await using var host = new CompositionHost(hostNode);
         await host.StartAsync();
         await using var autofocus = new AutofocusService(hostNode); await autofocus.StartAsync();
-        await using var sequencer = new SequencerService(hostNode); await sequencer.StartAsync();
+        await using var scheduler = new SchedulerService(hostNode); await scheduler.StartAsync();
         await using var imagingSvc = new ImagingService(hostNode); await imagingSvc.StartAsync();
         var skyCatalog = File.Exists("/usr/share/kstars/namedstars.dat") ? await Task.Run(() => AtlasCatalog.LoadKStars())
             : AtlasCatalog.From(new List<CatalogStar> { new(5.92, 7.41, 0.45f, 1.85f, 39801, "Betelgeuse") }, new List<CatalogDso> { new("M 42", "Nebula", "Orion Nebula, NGC 1976", 5.588, -5.39, 4f, 90, 60, 0) });
@@ -144,25 +144,12 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         Assert.True(await Eventually(() => scope.Shots.Count == 2), $"shots: {scope.Shots.Count}");
         Shot(window, "07-scope-done");
 
-        // sequencer through the UI: one block, one frame
+        // storage: the main scope's frames are saved (the Image run below makes some)
         var store = vm.Storage;
         Assert.True(await Eventually(() => store.Shooters.Contains("main")));
         store.SelectedShooter = "main";
         await store.WatchCommand.ExecuteAsync(null);
         Assert.True(await Eventually(() => store.Watching.Contains("main")));
-        var seq = vm.Sequencer;
-        Assert.True(await Eventually(() => seq.Scopes.Contains("main")));
-        seq.SelectedScope = "main";
-        seq.Blocks[0].Ra = "04:00:00"; seq.Blocks[0].Dec = "25:00:00"; seq.Blocks[0].Seconds = 1; seq.Blocks[0].Count = 1; seq.Blocks[0].Label = "UI block";
-        await seq.StartPlanCommand.ExecuteAsync(null);
-        Assert.Equal("", seq.Message);
-        Assert.True(await Eventually(() => seq.Phase == "Done", 120000), $"{seq.Phase} {seq.StateMessage}");
-        Assert.Contains("1 total", seq.Progress);
-        Assert.True(await Eventually(() => store.FramesSaved >= 1), "the frame was not saved");
-        Assert.True(await Eventually(() => store.Recent.Count >= 1));
-        Assert.Single(Directory.GetFiles(saveDir, "UI_block_*.fits", SearchOption.AllDirectories));
-        vm.SelectedTab = vm.Tabs.First(t => t.Content is SequencerViewModel);
-        Shot(window, "07b-sequencer");
         vm.SelectedTab = vm.Tabs.First(t => t.Content is AutofocusViewModel);
         Assert.True(await Eventually(() => vm.Autofocus.Shooters.Contains("cam") && vm.Autofocus.Focusers.Contains("Focuser_Simulator")));
         Shot(window, "07c-autofocus");
@@ -185,6 +172,15 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         Assert.NotNull(image.Map);
         Assert.Contains(image.Workers, w => w.StartsWith("main: Done"));
         Assert.True(await Eventually(() => image.Stack.Image is not null, 120000), image.Stack.Info);
+        Assert.True(await Eventually(() => store.FramesSaved >= 1), "the image's frames were saved");
+        Assert.NotEmpty(Directory.GetFiles(saveDir, "UIField_*.fits", SearchOption.AllDirectories));
+        // and onto the schedule (it waits for a site: none is set yet)
+        await image.AddToScheduleCommand.ExecuteAsync(null);
+        Assert.Contains("schedule", image.Message);
+        Assert.True(await Eventually(() => vm.Schedule.Rows.Any(r => r.Label == "UIField")));
+        Assert.True(await Eventually(() => vm.Schedule.Rows.First(r => r.Label == "UIField").Status.Contains("site")), vm.Schedule.Rows.First().Status);
+        vm.SelectedTab = vm.Tabs.First(t => t.Content is ScheduleViewModel);
+        Shot(window, "07d2-schedule");
         vm.SelectedTab = vm.Tabs.First(t => t.Content is ImageViewModel);
         Shot(window, "07d-image");
 

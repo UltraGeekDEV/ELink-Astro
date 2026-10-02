@@ -18,7 +18,7 @@ namespace ELink.Automation;
 /// the scope. A live stack of all their frames is the resulting image.</para></summary>
 public sealed class ImagingService : IAsyncDisposable
 {
-    private sealed record ScopeFrames(string ScopeId, FrameSpec[] Frames, double FinestScale, string? Error);
+    private sealed record ScopeFrames(string ScopeId, FrameSpec[] Frames, double FinestScale, string? Error, List<string> UnknownAngles);
     private sealed record Plan(CoverageMap Map, CoverageMap Actual, List<ScopeFrames> Scopes, double Width, double Height, double Stepover, double Scale);
 
     private readonly TypeSafeEVentNode _node;
@@ -87,10 +87,11 @@ public sealed class ImagingService : IAsyncDisposable
     private async Task<ScopeFrames> FramesOfAsync(string scopeId, CompositionSnapshot snap)
     {
         var frames = new List<FrameSpec>();
+        var unknownAngles = new List<string>();
         double finest = double.NaN;
         string? error = await Collect(scopeId, 0, 0, 0);
         if (error is null && frames.Count == 0) error = $"scope {scopeId} has no imaging camera with a known field";
-        return new ScopeFrames(scopeId, frames.ToArray(), finest, error);
+        return new ScopeFrames(scopeId, frames.ToArray(), finest, error, unknownAngles);
 
         async Task<string?> Collect(string id, double dE, double dN, int depth)
         {
@@ -111,7 +112,10 @@ public sealed class ImagingService : IAsyncDisposable
                     {
                         if (!(c.FieldWidthDegrees.Value > 0) || !(c.FieldHeightDegrees.Value > 0))
                             return $"train {sid}: the field of {c.CameraId.Text} is not known (focal length set? camera connected?)";
-                        frames.Add(new FrameSpec(c.FieldWidthDegrees.Value / 2, c.FieldHeightDegrees.Value / 2, 0, oe, on));
+                        // the camera's angle on the sky, if a solve has told its train (no rotator: it stays put)
+                        double angle = double.IsNaN(c.AngleDegrees.Value) ? 0 : c.AngleDegrees.Value;
+                        if (double.IsNaN(c.AngleDegrees.Value)) unknownAngles.Add(c.ShooterId.Text);
+                        frames.Add(new FrameSpec(c.FieldWidthDegrees.Value / 2, c.FieldHeightDegrees.Value / 2, angle, oe, on));
                         if (double.IsNaN(finest) || c.PixelScaleArcsec.Value < finest) finest = c.PixelScaleArcsec.Value;
                     }
                 }
@@ -194,6 +198,7 @@ public sealed class ImagingService : IAsyncDisposable
     private async Task<CommandResult> StartRunAsync(ImagingRequest r)
     {
         lock (_gate) if (_cts is not null) return CommandResult.Fail("an image is already being taken: abort it first");
+        await LearnAnglesAsync(r);
         // an image of this name started before: carry on with it (same field only), or start it afresh
         string? runDir = _dataDir is null ? null : Path.Combine(_dataDir, "images", Safe(r.Label.Text));
         Kept? kept = null;
@@ -381,6 +386,28 @@ public sealed class ImagingService : IAsyncDisposable
         List<ShotEvent> got; lock (frames) got = frames.ToList();
         if (got.Count > 0 && got.All(f => f.Quality.Text == "Rejected")) return RejectedMark + got[0].QualityNote.Text;
         return "";
+    }
+
+    /// <summary>Cameras whose angle on the sky is not known yet (no solve since they were set up): one plate solve each,
+    /// if a solver is on the mesh, so the plan lays their frames out as they really are. Failures only cost accuracy.</summary>
+    private async Task LearnAnglesAsync(ImagingRequest r)
+    {
+        try
+        {
+            var snap = await SnapshotAsync();
+            var unknown = new List<string>();
+            foreach (var id in r.ScopeIds.Select(s => s.Text).Distinct())
+                if (await FramesOfAsync(id, snap) is { Error: null } f) unknown.AddRange(f.UnknownAngles);
+            if (unknown.Count == 0) return;
+            await Set(s => s.Message = $"learning the camera angle of {string.Join(", ", unknown)}");
+            await Task.WhenAll(unknown.Distinct().Select(shooter => _node.CallFunctionAsync<SolveRequest, SolveResult>(SolveIds.Solve, new SolveRequest
+            {
+                ShooterId = shooter, ExposureSeconds = Math.Clamp(r.Exposure.Seconds.Value, 1, 10), TimeoutSeconds = 90,
+                HintRaHours = r.Center.RaHours.Value, HintDecDegrees = r.Center.DecDegrees.Value, HintRadiusDegrees = 30,
+            }, TimeSpan.FromSeconds(200))));
+            await Task.Delay(300);   // the trains publish what they learned
+        }
+        catch (Exception) { }
     }
 
     // ---- keeping images for another night ------------------------------------------------------------------------

@@ -43,7 +43,9 @@ public class ImagingTests : IAsyncLifetime
     }
 
     /// <summary>A scope of one mount and one train whose imaging camera covers w x h degrees.</summary>
-    private async Task AddScopeAsync(string id, double w, double h, int slewMs = 20, bool withTrain = true)
+    private readonly Dictionary<string, TrainState> _trainStates = new();
+
+    private async Task AddScopeAsync(string id, double w, double h, int slewMs = 20, bool withTrain = true, double angle = double.NaN)
     {
         var p = new FakePointer(_node, id + "-mount", slewMs); await p.StartAsync(); _owned.Add(p); _pointers[id] = p;
         string train = id + "-train";
@@ -54,7 +56,8 @@ public class ImagingTests : IAsyncLifetime
             t.Cameras.Add(new TrainCamera { CameraId = id + "-cam", Role = "Imaging" });
             _snap.Trains.Add(t);
             var state = new TrainState { Id = train, FocalLengthMm = 400 };
-            state.Cameras.Add(new TrainCameraInfo { CameraId = id + "-cam", Role = "Imaging", Connected = true, PixelScaleArcsec = 2.0, FieldWidthDegrees = w, FieldHeightDegrees = h });
+            state.Cameras.Add(new TrainCameraInfo { CameraId = id + "-cam", Role = "Imaging", ShooterId = train + "-cam", Connected = true, PixelScaleArcsec = 2.0, FieldWidthDegrees = w, FieldHeightDegrees = h, AngleDegrees = angle });
+            _trainStates[id] = state;
             await _fakes.AddAsync<NOTESVoid, TrainState>(TrainIds.GetState(train), _ => Task.FromResult(state), "fake train");
         }
         var def = new ScopeDefinition { Id = id, DisplayName = id };
@@ -191,6 +194,30 @@ public class ImagingTests : IAsyncLifetime
         Assert.True(await Eventually(() => _last is { Phase.Text: "Done", Visits.Value: 1 }), _last?.Phase.Text);
         Assert.True((await Commands.CallAsync(_node, ImagingIds.DeleteSaved, (EVent.Connections.Models.BaseBinaryConvertibles.BinaryConvertibleString)"M31")).Ok.Value);
         Assert.Empty(Assert.Single((await _node.CallFunctionAsync<NOTESVoid, SavedImages>(ImagingIds.ListSaved, NOTESVoid.Void))!).Images);
+    }
+
+    [Fact]
+    public async Task FramesAreLaidOutAtTheirCamerasLearnedAngles()
+    {
+        await AddScopeAsync("known", 0.5, 0.35, angle: 30);
+        await AddScopeAsync("unknown", 0.5, 0.35);
+        // a solver: solving the unknown camera's shooter teaches its train the angle (as a real train learns from Solved)
+        var asked = new List<string>();
+        await _fakes.AddAsync<SolveRequest, SolveResult>(SolveIds.Solve, r =>
+        {
+            lock (asked) asked.Add(r.ShooterId.Text);
+            _trainStates["unknown"].Cameras[0].AngleDegrees = 112;
+            return Task.FromResult(new SolveResult { Solved = true, PositionAngle = 112, ShooterId = r.ShooterId.Text });
+        }, "fake solver");
+        var preview = Assert.Single((await _node.CallFunctionAsync<ImagingRequest, ImagingState>(ImagingIds.Preview, Request(2, 1.4, 0.2, "known", "unknown"), TimeSpan.FromSeconds(60)))!);
+        Assert.Equal(30, preview.Workers.First(w => w.ScopeId.Text == "known").Frames[0].RotationDegrees.Value);
+        Assert.Equal(0, preview.Workers.First(w => w.ScopeId.Text == "unknown").Frames[0].RotationDegrees.Value);   // not known yet: square to the sky
+
+        var r = Request(2, 1.4, 0.05, "known", "unknown"); r.MaxVisits = 2;
+        Assert.True((await Commands.CallAsync(_node, ImagingIds.Start, r, TimeSpan.FromSeconds(60))).Ok.Value);
+        Assert.Equal(new[] { "unknown-train-cam" }, asked);                               // only the camera nobody had solved
+        Assert.True(await Eventually(() => _last is { Phase.Text: "Done" or "Error" }), _last?.Message.Text);
+        Assert.Equal(112, _last!.Workers.First(w => w.ScopeId.Text == "unknown").Frames[0].RotationDegrees.Value);
     }
 
     [Fact]

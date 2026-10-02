@@ -69,6 +69,7 @@ public class TrainCameraInfo : IBinaryConvertible
     public BinaryConvertibleDouble PixelScaleArcsec { get; set; } = double.NaN;
     public BinaryConvertibleDouble FieldWidthDegrees { get; set; } = double.NaN;
     public BinaryConvertibleDouble FieldHeightDegrees { get; set; } = double.NaN;
+    public BinaryConvertibleDouble AngleDegrees { get; set; } = double.NaN;
 
     public override string Name => "TrainCameraInfo";
     private static readonly NOTESDescriptor d = new();
@@ -82,6 +83,7 @@ public class TrainCameraInfo : IBinaryConvertible
         d.RegisterField("PixelScaleArcsec", (TrainCameraInfo x) => x.PixelScaleArcsec).Description("from the focal length and the camera's pixel size and binning");
         d.RegisterField("FieldWidthDegrees", (TrainCameraInfo x) => x.FieldWidthDegrees);
         d.RegisterField("FieldHeightDegrees", (TrainCameraInfo x) => x.FieldHeightDegrees);
+        d.RegisterField("AngleDegrees", (TrainCameraInfo x) => x.AngleDegrees).Description("where the camera's image up points on the sky, east of north, learned from its last plate solve; NaN = not known yet");
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();

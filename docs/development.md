@@ -17,7 +17,7 @@ flowchart LR
         direction LR
         B[IndiBridge<br/>Mount / Camera / Focuser ...]
         C[Compose<br/>Pointer · Shooter · SmartScope]
-        A[Automation<br/>Image · Solve · Centre · Focus · Sequence · Live stack · Storage]
+        A[Automation<br/>Image · Schedule · Solve · Centre · Focus · Live stack · Storage]
         S[Sky<br/>Atlas · Stellarium]
         U[UI<br/>Avalonia view models]
     end
@@ -185,7 +185,7 @@ frame belongs to. Shooters have offsets (arcmin east/north of the pointing axis)
 | service | listens to | drives | notes |
 |---|---|---|---|
 | Autofocus | shooter shots | focuser | HFR per position, parabola fit on HFR², coarse + fine |
-| Sequencer | weather state | scope `Observe`, autofocus | blocks, pause/resume, weather interlock |
+| Scheduler | site (dark, Moon, altitudes) | the image request | best possible image now, stops what becomes impossible, night after night |
 | Storage | any shooter's shots | disk | night folders, FITS headers, JSON-lines log |
 | Imaging | scopes' trains | any number of scopes | one image of an area, work shared between scopes (below) |
 | PlateSolve | — | shooter (optional) | wraps `solve-field`, one solve at a time |

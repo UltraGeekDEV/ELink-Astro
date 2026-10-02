@@ -59,8 +59,8 @@ await using var host = new CompositionHost(node, compose);
 await host.StartAsync();
 await using var autofocus = new AutofocusService(node);
 await autofocus.StartAsync();
-await using var sequencer = new SequencerService(node);
-await sequencer.StartAsync();
+await using var scheduler = new SchedulerService(node, Path.Combine(Path.GetDirectoryName(compose)!, "schedule.bin"));
+await scheduler.StartAsync();
 PlateSolveService? solver = null;
 if (PlateSolver.Locate() is { } solveField)
 {

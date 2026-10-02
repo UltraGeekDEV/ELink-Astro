@@ -127,19 +127,20 @@ public class StorageTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task FramesOfARunningSequenceAreNamedAfterItsBlock()
+    public async Task FramesAreNamedAfterWhatWasObserved()
     {
         var pointer = new FakePointer(_node, "sp", 50); await pointer.StartAsync();
         var shooter = new FakeShooter(_node, "ss") { Fits = true }; await shooter.StartAsync();
         var def = new ScopeDefinition { Id = "stscope" }; def.Pointers.Add("sp"); def.Shooters.Add(new ScopeShooterRef { Id = "ss" });
         await using var scope = new SmartScope(_node, def); await scope.StartAsync();
-        await using var seq = new SequencerService(_node); await seq.StartAsync();
         await using var svc = new StorageService(_node, _dir); await svc.StartAsync();
         await Watch("stscope");
 
-        var plan = new SequencePlan { Id = "night1", ScopeId = "stscope" };
-        plan.Blocks.Add(new SequenceBlock { Label = "M 42", Count = 2, Target = new SkyTarget { RaHours = 5.6, DecDegrees = -5, Epoch = "J2000" }, Exposure = new ShooterExposure { Seconds = 0.1, Filter = "Ha" } });
-        Assert.True((await Commands.CallAsync(_node, SequencerIds.Start, plan)).Ok.Value);
+        Assert.True((await Commands.CallAsync(_node, ScopeIds.Command("stscope", "Observe"), new ObserveRequest
+        {
+            Target = new SkyTarget { RaHours = 5.6, DecDegrees = -5, Epoch = "J2000" }, Exposure = new ShooterExposure { Seconds = 0.1, Filter = "Ha" }, Count = 2,
+            ObjectName = "M 42", PlanId = "night1",
+        })).Ok.Value);
         Assert.True(await Eventually(() => svc.FramesSaved == 2), $"saved {svc.FramesSaved}");
         var files = Directory.GetFiles(_dir, "*.fits", SearchOption.AllDirectories).Select(Path.GetFileName).Order().ToArray();
         Assert.Equal(new[] { "M_42_Light_Ha_0.1s_0001.fits", "M_42_Light_Ha_0.1s_0002.fits" }, files);
