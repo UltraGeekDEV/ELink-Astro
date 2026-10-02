@@ -50,7 +50,7 @@ public sealed partial class AutofocusViewModel : ObservableObject, IDisposable
     private void RebuildChoices()
     {
         var c = _catalog.Composition;
-        Fill(Shooters, c.CameraShooters.Select(s => s.Id.Text).Concat(c.Scopes.Select(s => s.Id.Text)));
+        Fill(Shooters, _catalog.AllShooters());
         Fill(Focusers, _catalog.OfKind(DeviceKinds.Focuser).Select(d => d.Id));
         SelectedShooter ??= Shooters.FirstOrDefault(); SelectedFocuser ??= Focusers.FirstOrDefault();
     }
@@ -156,7 +156,7 @@ public sealed partial class SequencerViewModel : ObservableObject, IDisposable
         var c = _catalog.Composition;
         Fill(Scopes, c.Scopes.Select(s => s.Id.Text));
         Fill(Weather, new[] { "" }.Concat(_catalog.OfKind(DeviceKinds.Weather).Select(d => d.Id)));
-        Fill(Shooters, c.CameraShooters.Select(s => s.Id.Text).Concat(c.Scopes.Select(s => s.Id.Text)));
+        Fill(Shooters, _catalog.AllShooters());
         Fill(Focusers, new[] { "" }.Concat(_catalog.OfKind(DeviceKinds.Focuser).Select(d => d.Id)));
         SelectedScope ??= Scopes.FirstOrDefault(); FocusShooter ??= Shooters.FirstOrDefault(); FocusFocuser ??= "";
     }
@@ -250,7 +250,7 @@ public sealed partial class StorageViewModel : ObservableObject, IDisposable
     private void RebuildChoices()
     {
         var c = _catalog.Composition;
-        var items = c.CameraShooters.Select(s => s.Id.Text).Concat(c.Scopes.Select(s => s.Id.Text)).ToList();
+        var items = _catalog.AllShooters().ToList();
         if (!Shooters.SequenceEqual(items)) { Shooters.Clear(); foreach (var i in items) Shooters.Add(i); }
         SelectedShooter ??= Shooters.FirstOrDefault();
     }

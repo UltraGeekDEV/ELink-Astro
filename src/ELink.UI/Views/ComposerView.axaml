@@ -5,7 +5,7 @@
       <StackPanel Spacing="4">
         <TextBlock Classes="title" Text="Compose"/>
         <TextBlock TextWrapping="Wrap" Opacity="0.75"
-                   Text="A smart scope is point-to plus shoot-at. Turn mounts into pointers and cameras into shooters, then combine any pointers and shooters, including other scopes, into a scope."/>
+                   Text="A smart scope is point-to plus shoot-at. Turn mounts into pointers and optics plus cameras into imaging trains, then combine pointers and trains (several per mount, other scopes too) into a scope that guides itself."/>
       </StackPanel>
     </Border>
 
@@ -22,39 +22,37 @@
 
     <Border Classes="card">
       <StackPanel Spacing="10">
-        <TextBlock Classes="section" Text="2 · SHOOTER FROM A CAMERA"/>
+        <TextBlock Classes="section" Text="2 · IMAGING TRAIN"/>
+        <TextBlock Classes="label" TextWrapping="Wrap" Text="One telescope or lens and what sits behind it. Give each camera its role: Imaging, or Guiding for an off-axis guider behind the same optics. A train with only a guide scope's camera can be another scope's guider."/>
         <StackPanel Classes="row">
-          <StackPanel><TextBlock Classes="label" Text="New shooter id"/><TextBox Text="{Binding NewShooterId}" Width="160" Watermark="e.g. main-cam"/></StackPanel>
-          <StackPanel><TextBlock Classes="label" Text="Camera"/><ComboBox ItemsSource="{Binding Cameras}" SelectedItem="{Binding SelectedCamera}" Width="200"/></StackPanel>
-          <StackPanel><TextBlock Classes="label" Text="Filter wheel (optional)"/><ComboBox ItemsSource="{Binding Wheels}" SelectedItem="{Binding SelectedWheel}" Width="200"/></StackPanel>
-          <Button Content="Define shooter" Command="{Binding DefineShooterCommand}" VerticalAlignment="Bottom"/>
+          <StackPanel><TextBlock Classes="label" Text="Train id"/><TextBox Text="{Binding NewTrainId}" Width="140" Watermark="e.g. main"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Label"/><TextBox Text="{Binding TrainLabel}" Width="200" Watermark="e.g. 80/480 + ASI2600"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Focal length mm"/><NumericUpDown Value="{Binding FocalLength}" Minimum="0" Increment="10" FormatString="0.#" Width="140"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Aperture mm"/><NumericUpDown Value="{Binding Aperture}" Minimum="0" Increment="5" FormatString="0.#" Width="120"/></StackPanel>
+        </StackPanel>
+        <TextBlock Classes="label" Text="Cameras"/>
+        <ItemsControl ItemsSource="{Binding TrainCameras}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <StackPanel Classes="row" Margin="0,0,0,2">
+                <TextBlock Text="{Binding CameraId}" Width="200" VerticalAlignment="Center"/>
+                <ComboBox ItemsSource="{Binding $parent[UserControl].DataContext.CameraRoles}" SelectedItem="{Binding Role}" Width="130"/>
+              </StackPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <StackPanel Classes="row">
+          <StackPanel><TextBlock Classes="label" Text="Filter wheel"/><ComboBox ItemsSource="{Binding Wheels}" SelectedItem="{Binding SelectedWheel}" Width="180"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Focuser"/><ComboBox ItemsSource="{Binding Focusers}" SelectedItem="{Binding SelectedFocuser}" Width="180"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Rotator"/><ComboBox ItemsSource="{Binding Rotators}" SelectedItem="{Binding SelectedRotator}" Width="180"/></StackPanel>
+          <Button Content="Define train" Command="{Binding DefineTrainCommand}" VerticalAlignment="Bottom"/>
         </StackPanel>
       </StackPanel>
     </Border>
 
     <Border Classes="card">
       <StackPanel Spacing="10">
-        <TextBlock Classes="section" Text="3 · GUIDER (OPTIONAL)"/>
-        <TextBlock Classes="label" TextWrapping="Wrap" Text="A guide camera (a shooter, not one of the scope's imaging shooters) and where its corrections go: timed pulses to a guide port, or &quot;you are here, should be here&quot; to a device that moves itself. The scope that owns it guides and dithers on its own."/>
-        <StackPanel Classes="row">
-          <StackPanel><TextBlock Classes="label" Text="New guider id"/><TextBox Text="{Binding NewGuiderId}" Width="140" Watermark="e.g. guide"/></StackPanel>
-          <StackPanel><TextBlock Classes="label" Text="Guide camera (shooter)"/><ComboBox ItemsSource="{Binding GuideCameras}" SelectedItem="{Binding SelectedGuideCamera}" Width="170"/></StackPanel>
-          <StackPanel><TextBlock Classes="label" Text="Output"/><ComboBox ItemsSource="{Binding GuideOutputs}" SelectedItem="{Binding SelectedGuideOutput}" Width="130"/></StackPanel>
-          <StackPanel IsVisible="{Binding PulseOutput}"><TextBlock Classes="label" Text="Guide port"/><ComboBox ItemsSource="{Binding GuidePorts}" SelectedItem="{Binding SelectedGuidePort}" Width="190"/></StackPanel>
-          <StackPanel IsVisible="{Binding !PulseOutput}"><TextBlock Classes="label" Text="Target device id"/><TextBox Text="{Binding GuideTargetId}" Width="190"/></StackPanel>
-        </StackPanel>
-        <StackPanel Classes="row">
-          <StackPanel><TextBlock Classes="label" Text="Mount it rides on"/><ComboBox ItemsSource="{Binding GuideMounts}" SelectedItem="{Binding SelectedGuideMount}" Width="190"/></StackPanel>
-          <StackPanel><TextBlock Classes="label" Text="Exposure s"/><NumericUpDown Value="{Binding GuideExposure}" Minimum="0.05" Increment="0.5" FormatString="0.##" Width="120"/></StackPanel>
-          <StackPanel><TextBlock Classes="label" Text="Pixel scale &quot;/px (0 = from FITS/solve)"/><NumericUpDown Value="{Binding GuideScale}" Minimum="0" Increment="0.1" FormatString="0.###" Width="170"/></StackPanel>
-          <Button Content="Define guider" Command="{Binding DefineGuiderCommand}" VerticalAlignment="Bottom"/>
-        </StackPanel>
-      </StackPanel>
-    </Border>
-
-    <Border Classes="card">
-      <StackPanel Spacing="10">
-        <TextBlock Classes="section" Text="4 · SMART SCOPE"/>
+        <TextBlock Classes="section" Text="3 · SMART SCOPE"/>
         <StackPanel Classes="row">
           <StackPanel><TextBlock Classes="label" Text="Scope id"/><TextBox Text="{Binding ScopeId}" Width="160" Watermark="e.g. wide"/></StackPanel>
           <StackPanel><TextBlock Classes="label" Text="Display name"/><TextBox Text="{Binding ScopeName}" Width="240"/></StackPanel>
@@ -68,8 +66,8 @@
             </ItemsControl>
           </StackPanel>
           <StackPanel Grid.Column="2">
-            <TextBlock Classes="label" Text="Shooters (offset of each from the pointing axis, arcmin)"/>
-            <TextBlock Text="define a shooter above" Classes="label" IsVisible="{Binding !ShooterChoices.Count}"/>
+            <TextBlock Classes="label" Text="Trains (any number on one mount; offset of each from the pointing axis, arcmin)"/>
+            <TextBlock Text="define a train above" Classes="label" IsVisible="{Binding !ShooterChoices.Count}"/>
             <ItemsControl ItemsSource="{Binding ShooterChoices}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate>
@@ -83,8 +81,15 @@
             </ItemsControl>
           </StackPanel>
         </Grid>
+        <TextBlock Classes="label" Text="Guiding: the scope guides and dithers by itself with this (another train, a train's off-axis guider, or none)"/>
         <StackPanel Classes="row">
-          <StackPanel><TextBlock Classes="label" Text="Its guider"/><ComboBox ItemsSource="{Binding Guiders}" SelectedItem="{Binding SelectedGuider}" Width="170"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Guide with"/><ComboBox ItemsSource="{Binding GuideWith}" SelectedItem="{Binding SelectedGuideWith}" Width="190"/></StackPanel>
+          <StackPanel IsVisible="{Binding Guided}"><TextBlock Classes="label" Text="Output"/><ComboBox ItemsSource="{Binding GuideOutputs}" SelectedItem="{Binding SelectedGuideOutput}" Width="130"/></StackPanel>
+          <StackPanel IsVisible="{Binding Guided}"><StackPanel IsVisible="{Binding PulseOutput}"><TextBlock Classes="label" Text="Guide port"/><ComboBox ItemsSource="{Binding GuidePorts}" SelectedItem="{Binding SelectedGuidePort}" Width="180"/></StackPanel></StackPanel>
+          <StackPanel IsVisible="{Binding Guided}"><StackPanel IsVisible="{Binding !PulseOutput}"><TextBlock Classes="label" Text="Target device id"/><TextBox Text="{Binding GuideTargetId}" Width="180"/></StackPanel></StackPanel>
+          <StackPanel IsVisible="{Binding Guided}"><TextBlock Classes="label" Text="Guide exposure s"/><NumericUpDown Value="{Binding GuideExposure}" Minimum="0.05" Increment="0.5" FormatString="0.##" Width="130"/></StackPanel>
+        </StackPanel>
+        <StackPanel Classes="row" IsVisible="{Binding Guided}">
           <StackPanel><TextBlock Classes="label" Text="Dither every N rounds (0 = never)"/><NumericUpDown Value="{Binding DitherEvery}" Minimum="0" FormatString="0" Width="200"/></StackPanel>
           <StackPanel><TextBlock Classes="label" Text="Dither px"/><NumericUpDown Value="{Binding DitherPixels}" Minimum="0.5" Increment="1" FormatString="0.#" Width="110"/></StackPanel>
           <StackPanel><TextBlock Classes="label" Text="Settled below px"/><NumericUpDown Value="{Binding SettlePixels}" Minimum="0.1" Increment="0.5" FormatString="0.#" Width="130"/></StackPanel>

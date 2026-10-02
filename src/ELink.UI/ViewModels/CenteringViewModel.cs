@@ -51,7 +51,7 @@ public sealed partial class CenteringViewModel : ObservableObject, IDisposable
     {
         Fill(Mounts, _catalog.OfKind(DeviceKinds.Mount).Select(d => d.Id));
         var c = _catalog.Composition;
-        Fill(Shooters, c.CameraShooters.Select(s => s.Id.Text).Concat(c.Scopes.Select(s => s.Id.Text)));
+        Fill(Shooters, _catalog.AllShooters());
         MountId ??= Mounts.FirstOrDefault();
     }
 

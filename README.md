@@ -5,6 +5,7 @@ C# / .NET 8, Avalonia UI.
 
 - **Everything is an EVent endpoint.** Equipment, smart scopes, the UI: no module references another; they share only
   the contract types and EVent IDs (`src/ELink.Contracts`). A test enforces that the UI never references a backend.
+- **Imaging trains.** A train is one optical path: optics, cameras (imaging, or an off-axis guider), filter wheel, focuser, rotator. A scope carries any number of trains on a mount and guides with whichever train (or OAG camera) you assign.
 - **Not tied to a mount or one OTA.** A *Pointer* is anything that can be pointed at the sky, a *Shooter* is anything that
   takes frames. A **smart scope** is `pointers[] + shooters[]` ("point to, shoot at") and is itself a Pointer and a Shooter,
   so scopes compose into scopes: several OTAs on a mount, several mounts on a target, wide + narrow rigs, ...

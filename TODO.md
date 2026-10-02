@@ -86,6 +86,8 @@ focus triggers/offsets -> live-stack rejection/calibration -> the rest.
 - [x] Shooter capability (contract + CameraShooter glue with filter wheel): Expose, ROI/binning/gain, frame events (image + metadata)
 - [x] SmartScope = point-to + shoot-at wrapper: any pointer + any N shooters/focusers/wheels/rotators; own EVent identity
 - [x] SmartScope-of-SmartScopes (arrays, multi-OTA per mount, multi-mount per target, wide + narrow, etc.)
+- [x] Imaging trains (optics, cameras with Imaging/Guiding roles, wheel, focuser, rotator; focal length pushed to cameras; per-camera scale and field); scopes with any number of trains per mount and inline guiding with any train or OAG camera
+- [ ] Use train fields of view directly in the "fill this area" request (no hand-entered frame sizes)
 - [x] Composition at run time over EVent (Define/Remove/Snapshot) + JSON persistence
 - [x] Per-shooter offsets (primary shooter is centred on target); pointing model hooks still open
 

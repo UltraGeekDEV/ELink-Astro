@@ -42,6 +42,7 @@ public sealed class CameraAdapter(AdapterContext ctx) : IndiDeviceAdapter<Camera
         await RegisterCommandAsync<ExposeRequest, CommandResult>("Expose", ExposeAsync, "start an exposure; the finished frame arrives on the .Frame event");
         await RegisterCommandAsync<NOTESVoid, CommandResult>("AbortExposure", _ => AbortAsync(), "abort the running exposure");
         await RegisterCommandAsync<BinaryConvertibleDouble, CommandResult>("SetTemperature", SetTemperatureAsync, "cooling target in °C");
+        await RegisterCommandAsync<ELink.Contracts.Composition.CameraOptics, CommandResult>(ELink.Contracts.Composition.TrainIds.CameraSetOptics, SetOpticsAsync, "the telescope in front of the camera (SCOPE_INFO): frames then carry FOCALLEN");
     }
 
     private async Task<CommandResult> ExposeAsync(ExposeRequest r)
@@ -111,5 +112,14 @@ public sealed class CameraAdapter(AdapterContext ctx) : IndiDeviceAdapter<Camera
             });
         }
         catch (ObjectDisposedException) { }
+    }
+
+    private async Task<CommandResult> SetOpticsAsync(ELink.Contracts.Composition.CameraOptics o)
+    {
+        if (Need("SCOPE_INFO", "FOCAL_LENGTH") is { } missing) return missing;
+        if (!(o.FocalLengthMm.Value > 0)) return CommandResult.Fail("focal length must be positive");
+        var values = new List<(string, double)> { ("FOCAL_LENGTH", o.FocalLengthMm.Value) };
+        if (o.ApertureMm.Value > 0 && P("SCOPE_INFO")!.Has("APERTURE")) values.Add(("APERTURE", o.ApertureMm.Value));
+        return await Send(() => Client.SetNumbersAsync(Device, "SCOPE_INFO", values));
     }
 }

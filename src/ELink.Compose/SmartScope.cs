@@ -39,7 +39,8 @@ public sealed class SmartScope : IAsyncDisposable
     private int _roundsSinceDither;
     private string _guideNote = "";
 
-    public SmartScope(TypeSafeEVentNode node, ScopeDefinition definition)
+    /// <param name="guiderId">the guider this scope drives; null = the definition's GuiderId</param>
+    public SmartScope(TypeSafeEVentNode node, ScopeDefinition definition, string? guiderId = null)
     {
         _node = node; _def = definition; _id = definition.Id.Text;
         foreach (var p in definition.Pointers)
@@ -54,7 +55,7 @@ public sealed class SmartScope : IAsyncDisposable
         _pointerPub = new(node, PointerIds.State(_id), PointerIds.GetState(_id), BuildPointer);
         _shooterPub = new(node, ShooterIds.State(_id), ShooterIds.GetState(_id), BuildShooter);
         _scopePub = new(node, ScopeIds.State(_id), ScopeIds.GetState(_id), () => { lock (_scopeGate) return Clone(_scope); });
-        _guiderId = definition.GuiderId.Text;
+        _guiderId = guiderId ?? definition.GuiderId.Text;
         if (_guiderId != "") _guider = new RemoteState<GuiderState>(node, GuiderIds.State(_guiderId), GuiderIds.GetState(_guiderId));
     }
 

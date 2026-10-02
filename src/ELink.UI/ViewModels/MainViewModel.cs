@@ -121,7 +121,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         if (item is null) return;
         var existing = Tabs.FirstOrDefault(t => t.Content is ScopePanelViewModel s && s.ScopeId == item.Id);
         if (existing is not null) { SelectedTab = existing; return; }
-        string guider = Catalog.Composition.Scopes.FirstOrDefault(s => s.Id.Text == item.Id)?.GuiderId.Text ?? "";
+        var def = Catalog.Composition.Scopes.FirstOrDefault(s => s.Id.Text == item.Id);
+        // a named guider, or the one the scope owns through its own guide settings
+        string guider = def is null ? "" : def.GuiderId.Text != "" ? def.GuiderId.Text : def.GuideShooterId.Text != "" ? def.Id.Text + "-guider" : "";
         var panel = new ScopePanelViewModel(Mesh, item.Id, item.DisplayName, guider);
         await panel.StartAsync();
         var tab = new WorkspaceTab($"Scope: {item.DisplayName}", panel, true);

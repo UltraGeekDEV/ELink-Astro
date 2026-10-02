@@ -136,21 +136,31 @@ heavy work (solving, stacking, saving) to a queue.
 
 ## Composition
 
-A *Pointer* is anything that can be pointed at the sky, a *Shooter* anything that takes frames. A **SmartScope** is
-`pointers[] + shooters[]` and is registered as both a Pointer and a Shooter under its own id, so scopes nest.
+A *Pointer* is anything that can be pointed at the sky, a *Shooter* anything that takes frames. An **imaging
+train** is one optical path: optics (focal length, aperture), one or more cameras (each `Imaging`, or `Guiding` for
+an off-axis guider behind the same optics), filter wheel, focuser, rotator. A train is a Shooter (all its imaging
+cameras at once); its guiding camera is the Shooter `<train>-guide`. It hands its focal length to its cameras
+(INDI `SCOPE_INFO`, so frames carry `FOCALLEN`) and publishes each camera's pixel scale and field.
+
+A **SmartScope** is `pointers[] + trains[]` (any number per mount, each with an offset) plus *what it guides with*:
+another train (a guide scope), a train's `-guide` camera (an OAG), or nothing. It is registered as both a Pointer and
+a Shooter under its own id, so scopes nest.
 
 ```mermaid
 flowchart TD
-    Rig[Scope 'rig'<br/>Pointer + Shooter]
-    Wide[Scope 'wide']
-    Narrow[Scope 'narrow']
-    P1[MountPointer 'eq6'] --> M1[(Mount<br/>Telescope_Simulator)]
-    S1[CameraShooter 'guide'] --> C1[(Camera)]
-    S2[CameraShooter 'main'] --> C2[(Camera)] & W[(FilterWheel)]
-    Rig --> Wide & Narrow
-    Wide --> P1 & S1
-    Narrow --> P1 & S2
+    Rig[Scope 'rig'<br/>Pointer + Shooter<br/>guides itself]
+    EQ[MountPointer 'eq'] --> M1[(Mount)]
+    Main[Train 'main' 800 mm] --> C1[(Camera)] & W[(Wheel)] & F[(Focuser)]
+    Main --> OAG[(OAG camera<br/>role Guiding)]
+    Wide[Train 'wide' 250 mm] --> C2[(Camera)]
+    GS[Train 'guidescope' 200 mm] --> C3[(Camera)]
+    Rig --> EQ
+    Rig -->|images with| Main & Wide
+    Rig -.->|guides with one of| OAGS["main-guide (the OAG)"] & GS
 ```
+
+The scope owns a guider built from its guide settings (`<scope>-guider`; output Pulse to its mount's guide port
+unless another port is named, or Correction to a target). A train cannot image and guide for the same scope.
 
 `Observe` = go to, wait until every pointer settles, expose every shooter N times. Each `ShotEvent` carries the leaf
 shooter id, the J2000 pointing and the `ObjectName` / `PlanId` of the request, so consumers never have to guess what a

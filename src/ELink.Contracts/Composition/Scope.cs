@@ -33,6 +33,11 @@ public class ScopeDefinition : IBinaryConvertible
     public BinaryConvertibleCollection<BinaryConvertibleString> Pointers { get; set; } = new();
     public BinaryConvertibleCollection<ScopeShooterRef> Shooters { get; set; } = new();
     public BinaryConvertibleString GuiderId { get; set; } = "";
+    public BinaryConvertibleString GuideShooterId { get; set; } = "";
+    public BinaryConvertibleString GuideOutput { get; set; } = "Pulse";
+    public BinaryConvertibleString GuidePortId { get; set; } = "";
+    public BinaryConvertibleString GuideTargetId { get; set; } = "";
+    public BinaryConvertibleDouble GuideExposureSeconds { get; set; } = 2.0;
     public BinaryConvertibleInt32 DitherEvery { get; set; } = 0;
     public BinaryConvertibleDouble DitherPixels { get; set; } = 5.0;
     public BinaryConvertibleDouble SettlePixels { get; set; } = 1.5;
@@ -49,6 +54,11 @@ public class ScopeDefinition : IBinaryConvertible
         d.RegisterField("Pointers", (ScopeDefinition x) => x.Pointers, maxCount: 64).Description("Pointer ids; the first is the reference, all are sent to the same target");
         d.RegisterField("Shooters", (ScopeDefinition x) => x.Shooters, maxCount: 64);
         d.RegisterField("GuiderId", (ScopeDefinition x) => x.GuiderId).Description("the scope's own guider: it guides between slews and dithers between frames by itself; empty = unguided");
+        d.RegisterField("GuideShooterId", (ScopeDefinition x) => x.GuideShooterId).Description("guide with this: a whole train (a guide scope), a train's guide camera (<train>-guide, an OAG) or any Shooter; the scope then owns a guider of its own. Ignored when GuiderId is set");
+        d.RegisterField("GuideOutput", (ScopeDefinition x) => x.GuideOutput).Description("Pulse | Correction");
+        d.RegisterField("GuidePortId", (ScopeDefinition x) => x.GuidePortId).Description("GuidePort for Pulse; empty = the first pointer's mount");
+        d.RegisterField("GuideTargetId", (ScopeDefinition x) => x.GuideTargetId).Description("GuideTarget for Correction");
+        d.RegisterField("GuideExposureSeconds", (ScopeDefinition x) => x.GuideExposureSeconds);
         d.RegisterField("DitherEvery", (ScopeDefinition x) => x.DitherEvery).Description("dither after every N exposure rounds; 0 = never");
         d.RegisterField("DitherPixels", (ScopeDefinition x) => x.DitherPixels).Description("dither size, guide camera pixels");
         d.RegisterField("SettlePixels", (ScopeDefinition x) => x.SettlePixels).Description("guiding counts as settled below this error ...");
@@ -124,6 +134,8 @@ public static class ScopeIds
     public const string DefineCameraShooter = "ELink.Compose.DefineCameraShooter";
     /// <summary>GuiderDefinition in, CommandResult out.</summary>
     public const string DefineGuider = "ELink.Compose.DefineGuider";
+    /// <summary>ImagingTrainDefinition in, CommandResult out.</summary>
+    public const string DefineTrain = "ELink.Compose.DefineTrain";
     /// <summary>BinaryConvertibleString "Scope:id", "Pointer:id" or "Shooter:id" in, CommandResult out.</summary>
     public const string Remove = "ELink.Compose.Remove";
     /// <summary>Void in, <see cref="CompositionSnapshot"/> out (one per composition host).</summary>
@@ -177,6 +189,7 @@ public class CompositionSnapshot : IBinaryConvertible
     public BinaryConvertibleCollection<CameraShooterDefinition> CameraShooters { get; set; } = new();
     public BinaryConvertibleCollection<ScopeDefinition> Scopes { get; set; } = new();
     public BinaryConvertibleCollection<GuiderDefinition> Guiders { get; set; } = new();
+    public BinaryConvertibleCollection<ImagingTrainDefinition> Trains { get; set; } = new();
 
     public override string Name => "CompositionSnapshot";
     private static readonly NOTESDescriptor d = new();
@@ -187,6 +200,7 @@ public class CompositionSnapshot : IBinaryConvertible
         d.RegisterField("CameraShooters", (CompositionSnapshot x) => x.CameraShooters);
         d.RegisterField("Scopes", (CompositionSnapshot x) => x.Scopes);
         d.RegisterField("Guiders", (CompositionSnapshot x) => x.Guiders);
+        d.RegisterField("Trains", (CompositionSnapshot x) => x.Trains);
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();

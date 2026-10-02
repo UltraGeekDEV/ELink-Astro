@@ -95,18 +95,18 @@ flowchart TD
 ## Compose
 
 1. **Pointer from a mount**: give it an id (`eq6`), pick the mount, *Define pointer*.
-2. **Shooter from a camera**: id (`main`), camera, optional filter wheel, *Define shooter*. Do the same for the guide
-   camera.
-3. **Guider** (optional): an id, the guide camera's shooter, and where corrections go: **Pulse** to a guide port
-   (the mount's pulse guiding, or a camera's ST4 port; anything INDI calls a guider) or **Correction** to a device
-   that takes "you are here, should be here" and moves itself. Pick the mount it rides on (for declination and
-   pier side) and the guide exposure.
-4. **Smart scope**: id and name, tick the pointers and shooters. For each shooter you can give its offset from the
-   pointing axis (arcmin east/north); leave 0 for the main camera. *Define scope*.
-
-   Pick the scope's **guider** and how often to **dither** (every N exposure rounds) and by how many guide-camera
-   pixels. A guided scope does everything itself: it stops guiding before any slew, starts (and calibrates the first
-   time) once on target, waits until guiding has settled before each exposure, and dithers between them.
+2. **Imaging train**: one telescope (or lens) and what sits behind it: an id, a label, the focal length and
+   aperture, and a role for each camera: **Imaging**, or **Guiding** for an off-axis guider in the same train. Add
+   the filter wheel, focuser and rotator if it has them. A guide scope is just another train. The train tells its
+   cameras the focal length, so frames carry it and plate scales are known.
+3. **Smart scope**: id and name, tick the pointers and the trains: as many trains as ride on the mount (a main
+   scope and a wide-field, say), each with its offset from the pointing axis in arcminutes (0 for the main one).
+   **Guide with**: another train (a guide scope), a train's off-axis guider (`<train>-guide`), or no guiding.
+   Pulses go to the mount's own guide port unless you pick another (a camera's ST4 port); **Correction** sends
+   "you are here, should be here" to a device that moves itself instead. Set how often to **dither** (every N
+   exposure rounds) and by how many guide-camera pixels. A guided scope does everything itself: it stops guiding
+   before any slew, starts (and calibrates the first time) once on target, waits until guiding has settled before
+   each exposure, and dithers between them.
 
 Definitions are saved and come back on the next start. A defined scope appears under *Smart scopes* on the left; its
 panel has **Observe** (go to, wait until settled, take *Count* frames), *Go to only*, *Expose only* and *Abort*.

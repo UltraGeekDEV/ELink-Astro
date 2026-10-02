@@ -117,8 +117,12 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         var composer = vm.Composer;
         composer.NewPointerId = "eq"; composer.SelectedMount = "Telescope_Simulator";
         await composer.DefinePointerCommand.ExecuteAsync(null);
-        composer.NewShooterId = "cam"; composer.SelectedCamera = "CCD_Simulator"; composer.SelectedWheel = "Filter_Simulator";
-        await composer.DefineShooterCommand.ExecuteAsync(null);
+        // an imaging train: optics, the CCD behind the filter wheel
+        Assert.True(await Eventually(() => composer.TrainCameras.Any(c => c.CameraId == "CCD_Simulator")));
+        composer.NewTrainId = "cam"; composer.TrainLabel = "sim 400 mm"; composer.FocalLength = 400; composer.SelectedWheel = "Filter_Simulator";
+        foreach (var c in composer.TrainCameras) c.Role = c.CameraId == "CCD_Simulator" ? "Imaging" : ComposerViewModel.NotInTrain;
+        await composer.DefineTrainCommand.ExecuteAsync(null);
+        Assert.Equal("train 'cam' defined", composer.Message);
         Assert.True(await Eventually(() => composer.PointerChoices.Any(c => c.Id == "eq") && composer.ShooterChoices.Any(c => c.Id == "cam")));
         composer.ScopeId = "main"; composer.ScopeName = "Main scope";
         composer.PointerChoices.First(c => c.Id == "eq").IsSelected = true;
@@ -279,21 +283,20 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         Assert.True(await Eventually(() => vm.Catalog.OfKind(DeviceKinds.GuidePort).Any(d => d.Id == "Telescope_Simulator") && vm.Catalog.OfKind(DeviceKinds.Camera).Any(d => d.Id == "Guide_Simulator")));
         Assert.True((await Commands.CallAsync(bridge, EquipmentIds.Command(DeviceKinds.Camera, "Guide_Simulator", "Connect"), (BinaryConvertibleBool)true)).Ok.Value);
         vm.SelectedTab = vm.Tabs.First(t => t.Content is ComposerViewModel);
-        composer.NewShooterId = "gcam"; composer.SelectedCamera = "Guide_Simulator"; composer.SelectedWheel = "";
-        await composer.DefineShooterCommand.ExecuteAsync(null);
-        Assert.True(await Eventually(() => composer.GuideCameras.Contains("gcam") && composer.GuidePorts.Contains("Telescope_Simulator")), composer.Message);
-        composer.NewGuiderId = "guide"; composer.SelectedGuideCamera = "gcam"; composer.SelectedGuideOutput = "Pulse";
-        composer.SelectedGuidePort = "Telescope_Simulator"; composer.SelectedGuideMount = "Telescope_Simulator"; composer.GuideExposure = 1;
-        Assert.True(composer.PulseOutput);
-        await composer.DefineGuiderCommand.ExecuteAsync(null);
-        Assert.Contains("defined", composer.Message);
-        Assert.True(await Eventually(() => composer.Guiders.Contains("guide") && composer.Existing.Contains("Guider:guide")));
-        composer.ScopeId = "guided"; composer.ScopeName = "Guided scope"; composer.SelectedGuider = "guide"; composer.DitherEvery = 2;
+        // a second train on the same mount, used as the guide scope
+        Assert.True(await Eventually(() => composer.TrainCameras.Any(c => c.CameraId == "Guide_Simulator") && composer.GuidePorts.Contains("Telescope_Simulator")));
+        composer.NewTrainId = "guidescope"; composer.TrainLabel = "guide scope"; composer.FocalLength = 400; composer.SelectedWheel = "";
+        foreach (var c in composer.TrainCameras) c.Role = c.CameraId == "Guide_Simulator" ? "Imaging" : ComposerViewModel.NotInTrain;
+        await composer.DefineTrainCommand.ExecuteAsync(null);
+        Assert.True(await Eventually(() => composer.GuideWith.Contains("guidescope") && composer.Existing.Contains("Train:guidescope")), composer.Message);
+        composer.SelectedGuideWith = "guidescope"; composer.SelectedGuideOutput = "Pulse"; composer.SelectedGuidePort = ComposerViewModel.MountPort; composer.GuideExposure = 1;
+        Assert.True(composer.Guided && composer.PulseOutput);
+        composer.ScopeId = "guided"; composer.ScopeName = "Guided scope"; composer.DitherEvery = 2;
         foreach (var c in composer.PointerChoices) c.IsSelected = c.Id == "eq";
         foreach (var c in composer.ShooterChoices) c.IsSelected = c.Id == "cam";
         await composer.DefineScopeCommand.ExecuteAsync(null);
         Assert.True(await Eventually(() => vm.Catalog.Scopes.Any(s => s.Id == "guided")), composer.Message);
-        Assert.Equal("guide", vm.Catalog.Composition.Scopes.First(s => s.Id.Text == "guided").GuiderId.Text);
+        Assert.Equal("guidescope", vm.Catalog.Composition.Scopes.First(s => s.Id.Text == "guided").GuideShooterId.Text);
         Shot(window, "07h-compose-guider");
         await vm.OpenScopeCommand.ExecuteAsync(vm.Catalog.Scopes.First(s => s.Id == "guided"));
         var guided = Assert.IsType<ScopePanelViewModel>(vm.SelectedTab!.Content);

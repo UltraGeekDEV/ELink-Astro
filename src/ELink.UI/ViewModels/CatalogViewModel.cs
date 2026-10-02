@@ -67,6 +67,7 @@ public sealed partial class CatalogViewModel : ObservableObject
                 foreach (var x in s.CameraShooters) merged.CameraShooters.Add(x);
                 foreach (var x in s.Scopes) merged.Scopes.Add(x);
                 foreach (var x in s.Guiders) merged.Guiders.Add(x);
+                foreach (var x in s.Trains) merged.Trains.Add(x);
             }
             Merge(merged);
         });
@@ -99,6 +100,19 @@ public sealed partial class CatalogViewModel : ObservableObject
     }
 
     public IEnumerable<DeviceItem> OfKind(string kind) => Devices.Where(d => d.Kind == kind);
+
+    /// <summary>Every Shooter composed: imaging trains, their guide cameras, single-camera shooters and scopes.</summary>
+    public IEnumerable<string> AllShooters(bool withScopes = true)
+    {
+        var c = Composition;
+        foreach (var t in c.Trains)
+        {
+            yield return t.Id.Text;
+            if (t.Cameras.Any(x => x.Role.Text == "Guiding")) yield return TrainIds.GuideShooter(t.Id.Text);
+        }
+        foreach (var s in c.CameraShooters) yield return s.Id.Text;
+        if (withScopes) foreach (var s in c.Scopes) yield return s.Id.Text;
+    }
 
     public void Dispose()
     {

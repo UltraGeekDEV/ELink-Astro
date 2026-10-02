@@ -74,7 +74,7 @@ public sealed partial class LiveStackViewModel : ObservableObject, IDisposable
     private void RebuildChoices()
     {
         var c = _catalog.Composition;
-        var ids = c.CameraShooters.Select(s => s.Id.Text).Concat(c.Scopes.Select(s => s.Id.Text)).ToList();
+        var ids = _catalog.AllShooters().ToList();
         if (Shooters.Select(s => s.Id).SequenceEqual(ids)) return;
         var selected = Shooters.Where(s => s.Selected).Select(s => s.Id).ToHashSet();
         Shooters.Clear();
