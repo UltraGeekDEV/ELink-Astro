@@ -12,11 +12,12 @@ using ELink.UI;
 // ELink station: INDI bridge + composition host + UI in one process, on one EVent node. The UI and the backend
 // still only talk through EVent (here over the node's local loopback). The node also listens, so other ELink
 // processes (another UI, a sequencer) can join this station's mesh.
-//   elink [--indi host[:port][=name]]... [--port 5698] [--listen 127.0.0.1] [--compose file.json] [--save-dir DIR] [--save SHOOTER]... [--stellarium-port 10001] [--stellarium-remote URL] [--sky-data /usr/share/kstars] [--no-ui]
+//   elink [--profile NAME] [--indi host[:port][=name]]... [--port 5698] [--listen 127.0.0.1] [--compose file.json] [--save-dir DIR] [--save SHOOTER]... [--stellarium-port 10001] [--stellarium-remote URL] [--sky-data /usr/share/kstars] [--no-ui]
 var indi = new List<(string Name, string Host, int Port)>();
 int port = ElinkNode.DefaultPort; var listen = IPAddress.Loopback; bool ui = true;
 string saveDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "ELink");
 var save = new List<string>();
+string? profile = null;
 int stellariumPort = 10001; string stellariumRemote = "http://127.0.0.1:8090"; string skyData = "/usr/share/kstars";
 string compose = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "elink", "compose.json");
 for (int i = 0; i < args.Length; i++)
@@ -33,6 +34,7 @@ for (int i = 0; i < args.Length; i++)
         case "--stellarium-port": stellariumPort = int.Parse(Next()); break;
         case "--stellarium-remote": stellariumRemote = Next(); break;
         case "--sky-data": skyData = Next(); break;
+        case "--profile": profile = Next(); break;
         case "--indi":
             {
                 string spec = Next(), name = "";
@@ -45,16 +47,24 @@ for (int i = 0; i < args.Length; i++)
                 break;
             }
         default:
-            Console.WriteLine("usage: elink [--indi host[:port][=name]]... [--port 5698] [--listen 127.0.0.1] [--compose file.json] [--save-dir DIR] [--save SHOOTER]... [--stellarium-port 10001] [--stellarium-remote URL] [--sky-data DIR] [--no-ui]");
+            Console.WriteLine("usage: elink [--indi host[:port][=name]]... [--port 5698] [--listen 127.0.0.1] [--compose file.json] [--save-dir DIR] [--save SHOOTER]... [--stellarium-port 10001] [--stellarium-remote URL] [--sky-data DIR] [--profile NAME] [--no-ui]");
             return args[i] is "-h" or "--help" ? 0 : 1;
     }
 }
-if (indi.Count == 0) indi.Add(("indi", "localhost", 7624));
+// with a profile, ELink runs the drivers itself; otherwise it bridges an indiserver already running
+if (indi.Count == 0 && profile is null) indi.Add(("indi", "localhost", 7624));
 
 Directory.CreateDirectory(Path.GetDirectoryName(compose)!);
 using var node = ElinkNode.Create("Station", port, listen);   // created here, off any UI thread
 var directory = new DeviceDirectory(node);
 await directory.StartAsync();
+await using var profiles = new ProfileService(node, directory, Path.Combine(Path.GetDirectoryName(compose)!, "profiles.bin"));
+await profiles.StartAsync();
+if (profile is not null)
+{
+    var started = await Commands.CallAsync(node, ELink.Contracts.Equipment.ProfileIds.Start, (EVent.Connections.Models.BaseBinaryConvertibles.BinaryConvertibleString)profile, TimeSpan.FromSeconds(60));
+    Console.WriteLine(started.Ok.Value ? $"profile {profile}: running" : $"profile {profile}: {started.Error.Text}");
+}
 await using var host = new CompositionHost(node, compose);
 await host.StartAsync();
 await using var autofocus = new AutofocusService(node);

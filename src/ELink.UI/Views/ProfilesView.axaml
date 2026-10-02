@@ -1,0 +1,46 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="ELink.UI.Views.ProfilesView">
+  <StackPanel MaxWidth="1100" Spacing="0">
+    <Border Classes="card">
+      <StackPanel>
+        <TextBlock Classes="title" Text="Equipment profiles"/>
+        <TextBlock Classes="label" TextWrapping="Wrap" Text="Which INDI drivers make up your rig. Start a profile and ELink runs the drivers itself (its own indiserver), puts the devices on the mesh, connects them, and starts the server again if it dies. The station can start one at launch: elink --profile NAME."/>
+        <TextBlock Text="{Binding Status}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+      </StackPanel>
+    </Border>
+    <Border Classes="card">
+      <StackPanel Spacing="10">
+        <StackPanel Classes="row">
+          <StackPanel><TextBlock Classes="label" Text="Profiles"/><ComboBox ItemsSource="{Binding Profiles}" SelectedItem="{Binding SelectedProfile}" Width="220"/></StackPanel>
+          <Button Content="Start" Classes="primary" Command="{Binding StartProfileCommand}" VerticalAlignment="Bottom"/>
+          <Button Content="Stop" Command="{Binding StopProfileCommand}" VerticalAlignment="Bottom"/>
+        </StackPanel>
+        <StackPanel Classes="row">
+          <StackPanel><TextBlock Classes="label" Text="Name"/><TextBox Text="{Binding Label}" Width="220"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="indiserver port"/><NumericUpDown Value="{Binding Port}" Minimum="1" Maximum="65535" FormatString="0" Width="130"/></StackPanel>
+          <CheckBox IsChecked="{Binding AutoConnect}" Content="Connect the devices" VerticalAlignment="Bottom"/>
+        </StackPanel>
+        <Grid ColumnDefinitions="*,16,300">
+          <StackPanel Spacing="4">
+            <TextBlock Classes="label" Text="Installed drivers (search: e.g. eqmod, asi, gphoto, focuser)"/>
+            <TextBox Text="{Binding Search}" Watermark="search"/>
+            <ListBox ItemsSource="{Binding Matches}" SelectedItem="{Binding SelectedMatch}" Height="240">
+              <ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Line}"/></DataTemplate></ListBox.ItemTemplate>
+            </ListBox>
+            <Button Content="Add →" Command="{Binding AddDriverCommand}"/>
+          </StackPanel>
+          <StackPanel Grid.Column="2" Spacing="4">
+            <TextBlock Classes="label" Text="In this profile"/>
+            <ListBox ItemsSource="{Binding Chosen}" SelectedItem="{Binding SelectedChosen}" Height="270"/>
+            <Button Content="Remove" Command="{Binding RemoveDriverCommand}"/>
+          </StackPanel>
+        </Grid>
+        <StackPanel Classes="row">
+          <Button Content="Save profile" Classes="primary" Command="{Binding SaveCommand}"/>
+          <Button Content="Delete profile" Classes="danger" Command="{Binding DeleteCommand}"/>
+        </StackPanel>
+        <TextBlock Classes="error" Text="{Binding Message}" IsVisible="{Binding Message.Length}" TextWrapping="Wrap"/>
+      </StackPanel>
+    </Border>
+  </StackPanel>
+</UserControl>

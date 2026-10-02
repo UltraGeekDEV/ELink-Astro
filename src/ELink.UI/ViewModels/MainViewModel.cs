@@ -23,6 +23,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public IndiBrowserViewModel IndiBrowser { get; }
     public AutofocusViewModel Autofocus { get; }
     public ScheduleViewModel Schedule { get; }
+    public ProfilesViewModel Profiles { get; }
     public StorageViewModel Storage { get; }
     public ImageViewModel Image { get; }
     public AtlasViewModel Atlas { get; }
@@ -47,6 +48,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         IndiBrowser = new IndiBrowserViewModel(mesh);
         Autofocus = new AutofocusViewModel(mesh, Catalog);
         Schedule = new ScheduleViewModel(mesh);
+        Profiles = new ProfilesViewModel(mesh);
         Storage = new StorageViewModel(mesh, Catalog);
         Image = new ImageViewModel(mesh, Catalog);
         Image.Scheduler = () => Schedule;
@@ -63,6 +65,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Tabs.Add(new WorkspaceTab("Schedule", Schedule, false));
         Tabs.Add(new WorkspaceTab("Autofocus", Autofocus, false));
         Tabs.Add(new WorkspaceTab("Storage", Storage, false));
+        Tabs.Add(new WorkspaceTab("Profiles", Profiles, false));
         Tabs.Add(new WorkspaceTab("INDI", IndiBrowser, false));
         SelectedTab = Tabs[0];
         Mesh.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(MeshSession.Status)) OnPropertyChanged(nameof(ConnectionStatus)); };
@@ -73,6 +76,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         await Catalog.StartAsync();
         await Autofocus.StartAsync();
         await Schedule.StartAsync();
+        await Profiles.StartAsync();
         await Storage.StartAsync();
         await Image.StartAsync();
         await Atlas.StartAsync();
@@ -144,6 +148,6 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public void Dispose()
     {
         foreach (var t in Tabs) (t.Content as IDisposable)?.Dispose();
-        Catalog.Dispose(); IndiBrowser.Dispose(); Autofocus.Dispose(); Schedule.Dispose(); Storage.Dispose(); Image.Dispose(); Atlas.Dispose(); Centering.Dispose(); LiveStack.Dispose(); Site.Dispose(); Mesh.Dispose();
+        Catalog.Dispose(); IndiBrowser.Dispose(); Autofocus.Dispose(); Schedule.Dispose(); Profiles.Dispose(); Storage.Dispose(); Image.Dispose(); Atlas.Dispose(); Centering.Dispose(); LiveStack.Dispose(); Site.Dispose(); Mesh.Dispose();
     }
 }

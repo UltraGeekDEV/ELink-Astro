@@ -64,6 +64,7 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         await host.StartAsync();
         await using var autofocus = new AutofocusService(hostNode); await autofocus.StartAsync();
         await using var scheduler = new SchedulerService(hostNode); await scheduler.StartAsync();
+        await using var profilesSvc = new ProfileService(hostNode, new DeviceDirectory(hostNode)); await profilesSvc.StartAsync();
         await using var imagingSvc = new ImagingService(hostNode); await imagingSvc.StartAsync();
         var skyCatalog = File.Exists("/usr/share/kstars/namedstars.dat") ? await Task.Run(() => AtlasCatalog.LoadKStars())
             : AtlasCatalog.From(new List<CatalogStar> { new(5.92, 7.41, 0.45f, 1.85f, 39801, "Betelgeuse") }, new List<CatalogDso> { new("M 42", "Nebula", "Orion Nebula, NGC 1976", 5.588, -5.39, 4f, 90, 60, 0) });
@@ -299,6 +300,20 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         Shot(window, "07i-scope-guiding");
         await guided.StopGuidingCommand.ExecuteAsync(null);
         Assert.True(await Eventually(() => guided.GuidePhase == "Idle", 30000), guided.GuidePhase);
+
+        // profiles: the installed drivers can be searched and put into a profile (not started here: the test runs its own server)
+        var profiles = vm.Profiles;
+        await profiles.StartAsync();
+        profiles.Search = "simulator telescope";
+        Assert.True(await Eventually(() => profiles.Matches.Any(m => m.Executable == "indi_simulator_telescope")), $"{profiles.Matches.Count} matches");
+        profiles.SelectedMatch = profiles.Matches.First(m => m.Executable == "indi_simulator_telescope");
+        profiles.AddDriverCommand.Execute(null);
+        profiles.Label = "UI rig"; profiles.Port = 7999;
+        await profiles.SaveCommand.ExecuteAsync(null);
+        Assert.Equal("profile 'UI rig' saved", profiles.Message);
+        Assert.True(await Eventually(() => profiles.Profiles.Contains("UI rig")));
+        vm.SelectedTab = vm.Tabs.First(t => t.Content is ProfilesViewModel);
+        Shot(window, "07j-profiles");
 
         // generic INDI browser
         vm.SelectedTab = vm.Tabs.First(t => t.Content is IndiBrowserViewModel);

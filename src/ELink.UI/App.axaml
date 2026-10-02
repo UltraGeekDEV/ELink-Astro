@@ -17,6 +17,7 @@
     <DataTemplate DataType="vm:ComposerViewModel"><v:ComposerView/></DataTemplate>
     <DataTemplate DataType="vm:AutofocusViewModel"><v:AutofocusView/></DataTemplate>
     <DataTemplate DataType="vm:ScheduleViewModel"><v:ScheduleView/></DataTemplate>
+    <DataTemplate DataType="vm:ProfilesViewModel"><v:ProfilesView/></DataTemplate>
     <DataTemplate DataType="vm:StorageViewModel"><v:StorageView/></DataTemplate>
     <DataTemplate DataType="vm:ImageViewModel"><v:ImageView/></DataTemplate>
     <DataTemplate DataType="vm:AtlasViewModel"><v:AtlasView/></DataTemplate>

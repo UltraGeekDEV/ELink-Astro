@@ -36,7 +36,8 @@ That starts everything (INDI bridge, scopes, services, sky atlas, Stellarium lin
 
 | option | meaning | default |
 |---|---|---|
-| `--indi host[:port][=name]` | an indiserver to bridge; repeat for several | `localhost:7624` |
+| `--profile NAME` | run an equipment profile's drivers (Profiles tab) | — |
+| `--indi host[:port][=name]` | an indiserver to bridge; repeat for several | `localhost:7624` (without a profile) |
 | `--port N` / `--listen IP` | mesh port and interface for other ELink processes | `5698`, loopback |
 | `--compose file.json` | where scope definitions (and the centring offset, next to it) are kept | `~/.config/elink/compose.json` |
 | `--save-dir DIR` / `--save SHOOTER` | save frames of a shooter from the start | — |
@@ -44,6 +45,15 @@ That starts everything (INDI bridge, scopes, services, sky atlas, Stellarium lin
 | `--stellarium-remote URL` | Stellarium Remote Control | `http://127.0.0.1:8090` |
 | `--sky-data DIR` | KStars sky data | `/usr/share/kstars` |
 | `--no-ui` | headless; connect a UI later | — |
+
+**Profiles** (recommended): instead of starting `indiserver` by hand, make a profile on the **Profiles** tab (pick
+your drivers from the list INDI installed: eqmod, asi, gphoto, ...) and start it there, or at launch:
+
+```bash
+dotnet run --project src/ELink.Station -- --profile "My rig"
+```
+
+ELink then runs the drivers itself, connects the devices and restarts the server if it dies.
 
 **UI on another machine**: run the station with `--no-ui --listen 0.0.0.0`, then on the other machine:
 

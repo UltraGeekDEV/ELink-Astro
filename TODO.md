@@ -113,6 +113,7 @@ focus triggers/offsets -> live-stack rejection/calibration -> the rest.
 - [x] Meridian flip inside the scope: hour angle from the site, pier side from the mount, waits for the flip point between exposures, verifies the turn-over, flips idle scopes too
 - [x] Scheduler of image requests (priority, altitude/horizon, darkness, Moon distance and brightness, time windows; stops what becomes impossible; carries on night after night); replaces the old Observe-block sequencer
 - [x] Camera angles learned from plate solves and used for planning
+- [x] Equipment profiles: ELink runs the INDI drivers (own indiserver with a control pipe), connects devices, restarts a dying server; driver catalogue; --profile; Profiles tab
 - [ ] Dome interlock
 - [x] Frame storage (FITS headers stamped, night folders, JSON-lines session log)
 
