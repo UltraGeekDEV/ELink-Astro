@@ -5,7 +5,7 @@ using Event.Connections.Models.BaseBinaryConvertibles;
 namespace ELink.Contracts.Equipment;
 
 /// <summary>Camera status. Commands under ELink.Camera.&lt;Id&gt;.: Connect(bool), Expose(<see cref="ExposeRequest"/>),
-/// AbortExposure(Void), SetTemperature(double). Finished frames arrive on <c>.Frame</c> (<see cref="FrameEvent"/>).</summary>
+/// AbortExposure(Void), SetTemperature(double), SetCooler(bool). Finished frames arrive on <c>.Frame</c> (<see cref="FrameEvent"/>).</summary>
 public class CameraState : IBinaryConvertible
 {
     public BinaryConvertibleBool Connected { get; set; } = false;
@@ -23,6 +23,10 @@ public class CameraState : IBinaryConvertible
     public BinaryConvertibleCollection<BinaryConvertibleString> IsoChoices { get; set; } = new();
     public BinaryConvertibleString Iso { get; set; } = "";
     public BinaryConvertibleString TransferFormat { get; set; } = "";
+    public BinaryConvertibleDouble Offset { get; set; } = double.NaN;
+    public BinaryConvertibleBool CoolerOn { get; set; } = false;
+    public BinaryConvertibleDouble CoolerPower { get; set; } = double.NaN;
+    public BinaryConvertibleDouble TemperatureTarget { get; set; } = double.NaN;
     public BinaryConvertibleString Message { get; set; } = "";
 
     public override string Name => "CameraState";
@@ -45,6 +49,10 @@ public class CameraState : IBinaryConvertible
         d.RegisterField("IsoChoices", (CameraState x) => x.IsoChoices, maxCount: 64).Description("DSLRs: the ISO settings the camera offers (INDI CCD_ISO); empty otherwise");
         d.RegisterField("Iso", (CameraState x) => x.Iso).Description("the ISO in use");
         d.RegisterField("TransferFormat", (CameraState x) => x.TransferFormat).Description("FITS | Native | empty (INDI CCD_TRANSFER_FORMAT); ELink asks for FITS before exposing");
+        d.RegisterField("Offset", (CameraState x) => x.Offset).Description("NaN if the camera has no offset control");
+        d.RegisterField("CoolerOn", (CameraState x) => x.CoolerOn);
+        d.RegisterField("CoolerPower", (CameraState x) => x.CoolerPower).Description("percent; NaN = not reported");
+        d.RegisterField("TemperatureTarget", (CameraState x) => x.TemperatureTarget).Description("the set point last asked for; NaN = none");
         d.RegisterField("Message", (CameraState x) => x.Message);
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
@@ -59,6 +67,7 @@ public class ExposeRequest : IBinaryConvertible
     public BinaryConvertibleInt32 BinY { get; set; } = 0;
     public BinaryConvertibleDouble Gain { get; set; } = double.NaN;
     public BinaryConvertibleString Iso { get; set; } = "";
+    public BinaryConvertibleDouble Offset { get; set; } = double.NaN;
 
     public override string Name => "ExposeRequest";
     private static readonly NOTESDescriptor d = new();
@@ -71,6 +80,7 @@ public class ExposeRequest : IBinaryConvertible
         d.RegisterField("BinY", (ExposeRequest x) => x.BinY).Description("0 = leave the camera's current binning");
         d.RegisterField("Gain", (ExposeRequest x) => x.Gain).Description("NaN = leave the camera's current gain");
         d.RegisterField("Iso", (ExposeRequest x) => x.Iso).Description("DSLRs: e.g. 800 or ISO800; empty = leave it");
+        d.RegisterField("Offset", (ExposeRequest x) => x.Offset).Description("NaN = leave the camera's current offset");
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();

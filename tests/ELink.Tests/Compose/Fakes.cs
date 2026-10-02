@@ -345,3 +345,119 @@ public sealed class FakeGuider : IAsyncDisposable
 
     public ValueTask DisposeAsync() { _cmds.Dispose(); _pub.Dispose(); return ValueTask.CompletedTask; }
 }
+
+/// <summary>A camera that is only EVent endpoints: a cooler whose sensor follows the set point at once, frames of 16x16 FITS.</summary>
+public sealed class FakeCamera : IAsyncDisposable
+{
+    private readonly TypeSafeEVentNode _node;
+    private readonly string _id;
+    private readonly CommandSet _cmds;
+    private readonly StatePublisher<CameraState> _pub;
+    private string _phase = "Idle";
+    public double Temperature = 0, SetPoint = double.NaN;
+    public bool CoolerOn, Connected = true;
+    public List<double> SetPoints { get; } = new();
+    public List<ExposeRequest> Exposures { get; } = new();
+    public List<double> TemperatureAtExposure { get; } = new();
+
+    public FakeCamera(TypeSafeEVentNode node, string id)
+    {
+        _node = node; _id = id;
+        _cmds = new CommandSet(node);
+        _pub = new(node, EquipmentIds.State(DeviceKinds.Camera, id), EquipmentIds.GetState(DeviceKinds.Camera, id), () => new CameraState
+        {
+            Connected = Connected, Phase = Connected ? _phase : "Disconnected", HasCooler = true, Temperature = Temperature, CoolerOn = CoolerOn, TemperatureTarget = SetPoint,
+        });
+    }
+
+    private string Cmd(string what) => EquipmentIds.Command(DeviceKinds.Camera, _id, what);
+
+    public async Task StartAsync()
+    {
+        await _cmds.AddAsync<BinaryConvertibleDouble, CommandResult>(Cmd("SetTemperature"), async t =>
+        {
+            lock (SetPoints) SetPoints.Add(t.Value);
+            SetPoint = t.Value; if (CoolerOn) Temperature = t.Value;
+            await _pub.PublishAsync(); return CommandResult.Success();
+        }, "fake set point");
+        await _cmds.AddAsync<BinaryConvertibleBool, CommandResult>(Cmd("SetCooler"), async on => { CoolerOn = on.Value; await _pub.PublishAsync(); return CommandResult.Success(); }, "fake cooler");
+        await _cmds.AddAsync<ExposeRequest, CommandResult>(Cmd("Expose"), async e =>
+        {
+            lock (Exposures) { Exposures.Add(e); TemperatureAtExposure.Add(Temperature); }
+            _phase = "Exposing"; await _pub.PublishAsync();
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay((int)(e.Seconds.Value * 1000));
+                _phase = "Idle"; await _pub.PublishAsync();
+                await _node.FireEventAsync(Cmd("Frame"), new FrameEvent
+                {
+                    Device = _id, Format = ".fits", ExposureSeconds = e.Seconds, FrameType = e.FrameType, Timestamp = DateTime.UtcNow.ToString("o"),
+                    Data = new RawBytes(ELink.Imaging.FitsImage.Write16(16, 16, new ushort[256])),
+                });
+            });
+            return CommandResult.Success();
+        }, "fake expose");
+        await _cmds.AddAsync<NOTESVoid, CommandResult>(Cmd("AbortExposure"), _ => Task.FromResult(CommandResult.Success()), "fake abort");
+        await _pub.StartAsync();
+    }
+
+    public Task PublishAsync() => _pub.PublishAsync();
+    public ValueTask DisposeAsync() { _cmds.Dispose(); _pub.Dispose(); return ValueTask.CompletedTask; }
+}
+
+/// <summary>A filter wheel that is only EVent endpoints and arrives at once.</summary>
+public sealed class FakeWheel : IAsyncDisposable
+{
+    private readonly CommandSet _cmds;
+    private readonly StatePublisher<FilterWheelState> _pub;
+    private readonly string[] _names;
+    private readonly string _id;
+    public int Slot = 1;
+    public FakeWheel(TypeSafeEVentNode node, string id, params string[] names)
+    {
+        _id = id; _names = names;
+        _cmds = new CommandSet(node);
+        _pub = new(node, EquipmentIds.State(DeviceKinds.FilterWheel, id), EquipmentIds.GetState(DeviceKinds.FilterWheel, id), () =>
+        {
+            var s = new FilterWheelState { Connected = true, Slot = Slot };
+            foreach (var n in _names) s.FilterNames.Add(n);
+            return s;
+        });
+    }
+    public async Task StartAsync()
+    {
+        await _cmds.AddAsync<BinaryConvertibleInt32, CommandResult>(EquipmentIds.Command(DeviceKinds.FilterWheel, _id, "SelectSlot"), async slot =>
+        {
+            Slot = slot.Value; await _pub.PublishAsync(); return CommandResult.Success();
+        }, "fake wheel");
+        await _pub.StartAsync();
+    }
+    public ValueTask DisposeAsync() { _cmds.Dispose(); _pub.Dispose(); return ValueTask.CompletedTask; }
+}
+
+/// <summary>An absolute focuser that is only EVent endpoints and arrives at once.</summary>
+public sealed class FakeFocuser : IAsyncDisposable
+{
+    private readonly CommandSet _cmds;
+    private readonly StatePublisher<FocuserState> _pub;
+    private readonly string _id;
+    public int Position;
+    public List<int> Moves { get; } = new();
+    public FakeFocuser(TypeSafeEVentNode node, string id, int position)
+    {
+        _id = id; Position = position;
+        _cmds = new CommandSet(node);
+        _pub = new(node, EquipmentIds.State(DeviceKinds.Focuser, id), EquipmentIds.GetState(DeviceKinds.Focuser, id),
+            () => new FocuserState { Connected = true, Position = Position, CanMoveAbsolute = true, CanMoveRelative = true });
+    }
+    public async Task StartAsync()
+    {
+        await _cmds.AddAsync<BinaryConvertibleInt32, CommandResult>(EquipmentIds.Command(DeviceKinds.Focuser, _id, "MoveTo"), async p =>
+        {
+            lock (Moves) Moves.Add(p.Value);
+            Position = p.Value; await _pub.PublishAsync(); return CommandResult.Success();
+        }, "fake focuser");
+        await _pub.StartAsync();
+    }
+    public ValueTask DisposeAsync() { _cmds.Dispose(); _pub.Dispose(); return ValueTask.CompletedTask; }
+}

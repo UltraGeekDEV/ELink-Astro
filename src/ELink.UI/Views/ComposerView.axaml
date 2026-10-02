@@ -30,7 +30,7 @@
           <StackPanel><TextBlock Classes="label" Text="Focal length mm"/><NumericUpDown Value="{Binding FocalLength}" Minimum="0" Increment="10" FormatString="0.#" Width="140"/></StackPanel>
           <StackPanel><TextBlock Classes="label" Text="Aperture mm"/><NumericUpDown Value="{Binding Aperture}" Minimum="0" Increment="5" FormatString="0.#" Width="120"/></StackPanel>
         </StackPanel>
-        <TextBlock Classes="label" Text="Cameras: role, and for a DSLR its pixel size µm and sensor width × height px (0 = what the camera reports)"/>
+        <TextBlock Classes="label" TextWrapping="Wrap" Text="Cameras: role; for a DSLR its pixel size µm and sensor width × height px (0 = what the camera reports); gain and offset presets (empty = the camera's own); cooling set point °C and °C per minute (empty = no cooling: the train cools slowly once connected, the scope waits until cold)"/>
         <ItemsControl ItemsSource="{Binding TrainCameras}">
           <ItemsControl.ItemTemplate>
             <DataTemplate>
@@ -40,6 +40,10 @@
                 <NumericUpDown Value="{Binding PixelSize}" Minimum="0" Increment="0.1" FormatString="0.##" Width="110" ShowButtonSpinner="False" ToolTip.Tip="pixel size µm, for DSLRs (0 = the camera's own)"/>
                 <NumericUpDown Value="{Binding SensorWidth}" Minimum="0" FormatString="0" Width="100" ShowButtonSpinner="False" ToolTip.Tip="sensor width px (0 = the camera's own)"/>
                 <NumericUpDown Value="{Binding SensorHeight}" Minimum="0" FormatString="0" Width="100" ShowButtonSpinner="False" ToolTip.Tip="sensor height px (0 = the camera's own)"/>
+                <TextBox Text="{Binding Gain}" Width="70" Watermark="gain" ToolTip.Tip="gain preset (empty = the camera's own)"/>
+                <TextBox Text="{Binding Offset}" Width="70" Watermark="offset" ToolTip.Tip="offset preset (empty = the camera's own)"/>
+                <TextBox Text="{Binding CoolTo}" Width="70" Watermark="°C" ToolTip.Tip="cooling set point °C (empty = no cooling)"/>
+                <NumericUpDown Value="{Binding CoolRate}" Minimum="0.1" Maximum="30" Increment="0.5" FormatString="0.#" Width="80" ShowButtonSpinner="False" ToolTip.Tip="cooling and warming °C per minute"/>
               </StackPanel>
             </DataTemplate>
           </ItemsControl.ItemTemplate>
@@ -48,6 +52,7 @@
           <StackPanel><TextBlock Classes="label" Text="Filter wheel"/><ComboBox ItemsSource="{Binding Wheels}" SelectedItem="{Binding SelectedWheel}" Width="180"/></StackPanel>
           <StackPanel><TextBlock Classes="label" Text="Focuser"/><ComboBox ItemsSource="{Binding Focusers}" SelectedItem="{Binding SelectedFocuser}" Width="180"/></StackPanel>
           <StackPanel><TextBlock Classes="label" Text="Rotator"/><ComboBox ItemsSource="{Binding Rotators}" SelectedItem="{Binding SelectedRotator}" Width="180"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Focus offsets (steps per filter)"/><TextBox Text="{Binding FocusOffsets}" Width="220" Watermark="L=0, R=30, Ha=120"/></StackPanel>
           <Button Content="Define train" Command="{Binding DefineTrainCommand}" VerticalAlignment="Bottom"/>
         </StackPanel>
       </StackPanel>

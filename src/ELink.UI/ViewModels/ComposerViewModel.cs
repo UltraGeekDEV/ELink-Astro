@@ -31,6 +31,15 @@ public sealed partial class TrainCameraChoice : ObservableObject
     [ObservableProperty] private double _pixelSize;
     [ObservableProperty] private int _sensorWidth;
     [ObservableProperty] private int _sensorHeight;
+    // presets: empty = leave the camera's own
+    [ObservableProperty] private string _gain = "";
+    [ObservableProperty] private string _offset = "";
+    // cooling set point °C: empty = no cooling
+    [ObservableProperty] private string _coolTo = "";
+    [ObservableProperty] private double _coolRate = 3;
+
+    public static double Number(string text) =>
+        double.TryParse(text.Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : double.NaN;
 }
 
 /// <summary>Composes the rig: mounts into pointers, optics and cameras into imaging trains, and pointers and trains
@@ -73,6 +82,7 @@ public sealed partial class ComposerViewModel : ObservableObject
     [ObservableProperty] private string _trainLabel = "";
     [ObservableProperty] private double _focalLength = 400;
     [ObservableProperty] private double _aperture = 80;
+    [ObservableProperty] private string _focusOffsets = "";
     [ObservableProperty] private string _selectedWheel = "";
     [ObservableProperty] private string _selectedFocuser = "";
     [ObservableProperty] private string _selectedRotator = "";
@@ -185,7 +195,18 @@ public sealed partial class ComposerViewModel : ObservableObject
             FilterWheelId = SelectedWheel ?? "", FocuserId = SelectedFocuser ?? "", RotatorId = SelectedRotator ?? "",
         };
         foreach (var c in TrainCameras.Where(c => c.Role != NotInTrain))
-            t.Cameras.Add(new TrainCamera { CameraId = c.CameraId, Role = c.Role, PixelSizeUm = c.PixelSize, SensorWidth = c.SensorWidth, SensorHeight = c.SensorHeight });
+            t.Cameras.Add(new TrainCamera
+            {
+                CameraId = c.CameraId, Role = c.Role, PixelSizeUm = c.PixelSize, SensorWidth = c.SensorWidth, SensorHeight = c.SensorHeight,
+                Gain = TrainCameraChoice.Number(c.Gain), Offset = TrainCameraChoice.Number(c.Offset), CoolTo = TrainCameraChoice.Number(c.CoolTo), CoolDegreesPerMinute = Math.Clamp(c.CoolRate, 0.1, 30),
+            });
+        // "L=0, R=30, Ha=120": focuser steps per filter
+        foreach (var part in FocusOffsets.Split(',', ';').Select(p => p.Trim()).Where(p => p != ""))
+        {
+            var kv = part.Split('=', 2);
+            if (kv.Length != 2 || !int.TryParse(kv[1].Trim(), out int steps)) { Message = $"focus offsets are like L=0, R=30, Ha=120 (not '{part}')"; return Task.CompletedTask; }
+            t.FocusOffsets.Add(new FilterFocusOffset { Filter = kv[0].Trim(), Steps = steps });
+        }
         if (t.Cameras.Count == 0) { Message = "give at least one camera a role (Imaging, or Guiding for an off-axis guider)"; return Task.CompletedTask; }
         return Run(Commands.CallAsync(_mesh.Node, ScopeIds.DefineTrain, t), $"train '{NewTrainId}' defined");
     }

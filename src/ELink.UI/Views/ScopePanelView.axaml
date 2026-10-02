@@ -54,6 +54,16 @@
         <TextBlock Classes="error" Text="{Binding Message}" IsVisible="{Binding Message.Length}"/>
       </StackPanel>
     </Border>
+    <Border Classes="card" IsVisible="{Binding HasCoolers}">
+      <StackPanel Spacing="6">
+        <TextBlock Classes="section" Text="COOLING (THE TRAINS RAMP SLOWLY; THE SCOPE WAITS UNTIL COLD)"/>
+        <TextBlock Text="{Binding CoolerText}" TextWrapping="Wrap"/>
+        <StackPanel Classes="row">
+          <Button Content="Cool" Command="{Binding CoolCommand}"/>
+          <Button Content="Warm up" Command="{Binding WarmCommand}" ToolTip.Tip="ramp up slowly, then switch the coolers off (end of the night)"/>
+        </StackPanel>
+      </StackPanel>
+    </Border>
     <Border Classes="card" IsVisible="{Binding HasGuider}">
       <StackPanel Spacing="6">
         <Grid ColumnDefinitions="*,Auto">

@@ -113,6 +113,13 @@ flowchart TD
    measured or stacked) and sets the ISO you ask for (Image tab, *ISO*). Raw colour frames are debayered by the
    live stack. The train tells its
    cameras the focal length, so frames carry it and plate scales are known.
+   Per camera, **gain** and **offset** presets (e.g. unity gain) are used whenever an exposure does not ask for
+   others. A **cooling set point** (°C) makes the train cool that camera once it is connected, moving the set point a
+   few degrees a minute (the rate is yours) so the sensor is not shocked; a scope waits until its cameras are cold
+   before it exposes (up to 45 minutes, then it goes ahead and says so). The scope panel shows each camera's
+   temperature and has **Cool** and **Warm up** (ramps up to 10 °C, then switches the cooler off).
+   **Focus offsets** (`L=0, R=30, Ha=120`): focuser steps per filter, relative to each other. When the train changes
+   filter it moves the focuser by the difference, and such a train is not refocused on filter changes.
 3. **Smart scope**: id and name, tick the pointers and the trains: as many trains as ride on the mount (a main
    scope and a wide-field, say), each with its offset from the pointing axis in arcminutes (0 for the main one).
    **Guide with**: another train (a guide scope), a train's off-axis guider (`<train>-guide`), or no guiding.
@@ -130,7 +137,7 @@ flowchart TD
    that always lands a few arcminutes off) is learned and aimed off on later slews nearby.
    **Focus**: every train with a focuser is refocused by the scope (with its own camera, all trains at once) when a
    trigger fires: at the start, every N minutes, when the focuser's temperature has moved by N °C, on a filter
-   change, or when stars have grown by N % since the last focus. Without "at the start", the first exposure is the
+   change (not for trains with focus offsets), or when stars have grown by N % since the last focus. Without "at the start", the first exposure is the
    baseline (you focused by hand). A failed focus is noted and imaging carries on.
    **Meridian flip** (on by default, needs the Site): when the target passes the meridian by the set minutes, the
    scope finishes the running exposure (or waits for the flip point if the next exposure would cross it), slews to

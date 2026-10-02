@@ -121,6 +121,16 @@ public class TypedBridgeTests(IndiServerFixture server) : IAsyncLifetime
         Assert.StartsWith("SIMPLE", System.Text.Encoding.ASCII.GetString(frame.Data.Data, 0, 6));
         Assert.True(await Eventually(() => state()?.Phase.Text == "Idle"));
         Assert.False((await Cmd("Camera", "CCD_Simulator", "Expose", new ExposeRequest { Seconds = 1, FrameType = "Nonsense" })).Ok.Value);
+
+        // gain and offset go with an exposure; the cooler takes a set point
+        frame = null;
+        Assert.True((await Cmd("Camera", "CCD_Simulator", "Expose", new ExposeRequest { Seconds = 0.5, Gain = 33, Offset = 12 })).Ok.Value);
+        Assert.True(await Eventually(() => frame is not null, 30000));
+        Assert.True(await Eventually(() => state()?.Gain.Value == 33 && state()?.Offset.Value == 12), $"gain {state()?.Gain.Value} offset {state()?.Offset.Value}");
+        Assert.True(state()!.HasCooler.Value);
+        Assert.True((await Cmd("Camera", "CCD_Simulator", "SetCooler", (BinaryConvertibleBool)true)).Ok.Value);
+        Assert.True((await Cmd("Camera", "CCD_Simulator", "SetTemperature", (BinaryConvertibleDouble)(-5.0))).Ok.Value);
+        Assert.True(await Eventually(() => state()?.TemperatureTarget.Value == -5), $"{state()?.TemperatureTarget.Value}");   // (the simulator ignores its own cooler switch)
     }
 
     [Fact]

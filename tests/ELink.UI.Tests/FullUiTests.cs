@@ -123,8 +123,14 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         Assert.True(await Eventually(() => composer.TrainCameras.Any(c => c.CameraId == "CCD_Simulator")));
         composer.NewTrainId = "cam"; composer.TrainLabel = "sim 400 mm"; composer.FocalLength = 400; composer.SelectedWheel = "Filter_Simulator";
         foreach (var c in composer.TrainCameras) c.Role = c.CameraId == "CCD_Simulator" ? "Imaging" : ComposerViewModel.NotInTrain;
+        composer.TrainCameras.First(c => c.CameraId == "CCD_Simulator").Gain = "30";
+        composer.FocusOffsets = "Red=0, Green=nonsense";
+        await composer.DefineTrainCommand.ExecuteAsync(null);
+        Assert.Contains("focus offsets are like", composer.Message);
+        composer.FocusOffsets = "Red=0, Green=25";
         await composer.DefineTrainCommand.ExecuteAsync(null);
         Assert.Equal("train 'cam' defined", composer.Message);
+        Assert.True(await Eventually(() => vm.Catalog.Composition.Trains.FirstOrDefault(t => t.Id.Text == "cam") is { } t && t.FocusOffsets.Count == 2 && t.Cameras[0].Gain.Value == 30));
         Assert.True(await Eventually(() => composer.PointerChoices.Any(c => c.Id == "eq") && composer.ShooterChoices.Any(c => c.Id == "cam")));
         composer.ScopeId = "main"; composer.ScopeName = "Main scope";
         composer.PointerChoices.First(c => c.Id == "eq").IsSelected = true;

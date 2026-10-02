@@ -12,6 +12,11 @@ public class TrainCamera : IBinaryConvertible
     public BinaryConvertibleDouble PixelSizeUm { get; set; } = 0.0;
     public BinaryConvertibleInt32 SensorWidth { get; set; } = 0;
     public BinaryConvertibleInt32 SensorHeight { get; set; } = 0;
+    public BinaryConvertibleDouble Gain { get; set; } = double.NaN;
+    public BinaryConvertibleDouble Offset { get; set; } = double.NaN;
+    public BinaryConvertibleDouble CoolTo { get; set; } = double.NaN;
+    public BinaryConvertibleDouble CoolDegreesPerMinute { get; set; } = 3.0;
+    public BinaryConvertibleDouble WarmTo { get; set; } = 10.0;
 
     public override string Name => "TrainCamera";
     private static readonly NOTESDescriptor d = new();
@@ -23,6 +28,11 @@ public class TrainCamera : IBinaryConvertible
         d.RegisterField("PixelSizeUm", (TrainCamera x) => x.PixelSizeUm).Description("for cameras whose driver does not know its sensor (DSLRs): handed to the camera; 0 = the camera's own");
         d.RegisterField("SensorWidth", (TrainCamera x) => x.SensorWidth).Description("pixels; 0 = the camera's own");
         d.RegisterField("SensorHeight", (TrainCamera x) => x.SensorHeight);
+        d.RegisterField("Gain", (TrainCamera x) => x.Gain).Description("preset used when an exposure does not say (e.g. unity gain); NaN = leave the camera's");
+        d.RegisterField("Offset", (TrainCamera x) => x.Offset).Description("preset offset; NaN = leave the camera's");
+        d.RegisterField("CoolTo", (TrainCamera x) => x.CoolTo).Description("sensor set point in °C: the train cools to it, slowly, once the camera is connected; NaN = no cooling");
+        d.RegisterField("CoolDegreesPerMinute", (TrainCamera x) => x.CoolDegreesPerMinute).Description("how fast the set point moves while cooling and warming").Range(0.1m, 30m);
+        d.RegisterField("WarmTo", (TrainCamera x) => x.WarmTo).Description("Warm ramps up to this before switching the cooler off");
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();
@@ -41,6 +51,7 @@ public class ImagingTrainDefinition : IBinaryConvertible
     public BinaryConvertibleString FilterWheelId { get; set; } = "";
     public BinaryConvertibleString FocuserId { get; set; } = "";
     public BinaryConvertibleString RotatorId { get; set; } = "";
+    public BinaryConvertibleCollection<FilterFocusOffset> FocusOffsets { get; set; } = new();
 
     public override string Name => "ImagingTrainDefinition";
     private static readonly NOTESDescriptor d = new();
@@ -55,6 +66,7 @@ public class ImagingTrainDefinition : IBinaryConvertible
         d.RegisterField("FilterWheelId", (ImagingTrainDefinition x) => x.FilterWheelId).Description("in front of the first imaging camera; empty = none");
         d.RegisterField("FocuserId", (ImagingTrainDefinition x) => x.FocuserId);
         d.RegisterField("RotatorId", (ImagingTrainDefinition x) => x.RotatorId);
+        d.RegisterField("FocusOffsets", (ImagingTrainDefinition x) => x.FocusOffsets, maxCount: 16).Description("focuser steps per filter (relative to each other): changing filter moves the focuser by the difference");
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();
@@ -70,6 +82,9 @@ public class TrainCameraInfo : IBinaryConvertible
     public BinaryConvertibleDouble FieldWidthDegrees { get; set; } = double.NaN;
     public BinaryConvertibleDouble FieldHeightDegrees { get; set; } = double.NaN;
     public BinaryConvertibleDouble AngleDegrees { get; set; } = double.NaN;
+    public BinaryConvertibleString Cooler { get; set; } = "";
+    public BinaryConvertibleDouble Temperature { get; set; } = double.NaN;
+    public BinaryConvertibleDouble CoolerSetPoint { get; set; } = double.NaN;
 
     public override string Name => "TrainCameraInfo";
     private static readonly NOTESDescriptor d = new();
@@ -84,6 +99,9 @@ public class TrainCameraInfo : IBinaryConvertible
         d.RegisterField("FieldWidthDegrees", (TrainCameraInfo x) => x.FieldWidthDegrees);
         d.RegisterField("FieldHeightDegrees", (TrainCameraInfo x) => x.FieldHeightDegrees);
         d.RegisterField("AngleDegrees", (TrainCameraInfo x) => x.AngleDegrees).Description("where the camera's image up points on the sky, east of north, learned from its last plate solve; NaN = not known yet");
+        d.RegisterField("Cooler", (TrainCameraInfo x) => x.Cooler).Description("empty (no cooling asked) | Waiting (not connected) | Cooling | Cold | Warming | Off | Error");
+        d.RegisterField("Temperature", (TrainCameraInfo x) => x.Temperature);
+        d.RegisterField("CoolerSetPoint", (TrainCameraInfo x) => x.CoolerSetPoint).Description("where the ramp has got to");
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();
@@ -100,6 +118,7 @@ public class TrainState : IBinaryConvertible
     public BinaryConvertibleString FocuserId { get; set; } = "";
     public BinaryConvertibleString RotatorId { get; set; } = "";
     public BinaryConvertibleString GuideShooterId { get; set; } = "";
+    public BinaryConvertibleCollection<FilterFocusOffset> FocusOffsets { get; set; } = new();
     public BinaryConvertibleString Message { get; set; } = "";
 
     public override string Name => "TrainState";
@@ -116,7 +135,26 @@ public class TrainState : IBinaryConvertible
         d.RegisterField("FocuserId", (TrainState x) => x.FocuserId);
         d.RegisterField("RotatorId", (TrainState x) => x.RotatorId);
         d.RegisterField("GuideShooterId", (TrainState x) => x.GuideShooterId).Description("Shooter of its guiding camera; empty = none");
+        d.RegisterField("FocusOffsets", (TrainState x) => x.FocusOffsets, maxCount: 16);
         d.RegisterField("Message", (TrainState x) => x.Message);
+    }
+    public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
+    public override byte[] ToBytes() => d.ToBytes(this).ToArray();
+}
+
+/// <summary>A filter's focus position relative to the others (steps; only the differences matter).</summary>
+public class FilterFocusOffset : IBinaryConvertible
+{
+    public BinaryConvertibleString Filter { get; set; } = "";
+    public BinaryConvertibleInt32 Steps { get; set; } = 0;
+
+    public override string Name => "FilterFocusOffset";
+    private static readonly NOTESDescriptor d = new();
+    public override NOTESDescriptor Descriptor => d;
+    static FilterFocusOffset()
+    {
+        d.RegisterField("Filter", (FilterFocusOffset x) => x.Filter);
+        d.RegisterField("Steps", (FilterFocusOffset x) => x.Steps);
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();
@@ -149,6 +187,10 @@ public static class TrainIds
     public static string GuideShooter(string trainId) => trainId + "-guide";
     /// <summary>The Shooter id of one camera of a train.</summary>
     public static string CameraShooter(string trainId, string cameraId) => trainId + "-" + EquipmentIds.Segment(cameraId);
+    /// <summary>Void in: cool every camera of the train that has a CoolTo (again, after Warm).</summary>
+    public static string Cool(string trainId) => EquipmentIds.Command(Kind, trainId, "Cool");
+    /// <summary>Void in: ramp the cooled cameras up to their WarmTo, then switch the coolers off.</summary>
+    public static string Warm(string trainId) => EquipmentIds.Command(Kind, trainId, "Warm");
     /// <summary>Camera command taking CameraOptics.</summary>
     public const string CameraSetOptics = "SetOptics";
 }

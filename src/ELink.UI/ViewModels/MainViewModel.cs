@@ -133,7 +133,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         var def = Catalog.Composition.Scopes.FirstOrDefault(s => s.Id.Text == item.Id);
         // a named guider, or the one the scope owns through its own guide settings
         string guider = def is null ? "" : def.GuiderId.Text != "" ? def.GuiderId.Text : def.GuideShooterId.Text != "" ? def.Id.Text + "-guider" : "";
-        var panel = new ScopePanelViewModel(Mesh, item.Id, item.DisplayName, guider);
+        var trains = def is null ? new List<string>() : def.Shooters.Select(x => x.Id.Text).Where(id => Catalog.Composition.Trains.Any(t => t.Id.Text == id)).ToList();
+        var panel = new ScopePanelViewModel(Mesh, item.Id, item.DisplayName, guider, trains);
         await panel.StartAsync();
         var tab = new WorkspaceTab($"Scope: {item.DisplayName}", panel, true);
         Tabs.Add(tab); SelectedTab = tab;

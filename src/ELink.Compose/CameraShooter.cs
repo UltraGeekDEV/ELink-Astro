@@ -8,9 +8,14 @@ using EVent.Connections.Models.BaseBinaryConvertibles;
 
 namespace ELink.Compose;
 
+/// <summary>What a train sets for one of its cameras: gain/offset presets, and the focuser to move by the filters' focus offsets.</summary>
+public sealed record CameraShooterOptions(double Gain = double.NaN, double Offset = double.NaN, string FocuserId = "", IReadOnlyDictionary<string, int>? FocusOffsets = null);
+
 /// <summary>Makes a Camera, optionally with its filter wheel, usable as a Shooter.</summary>
 public sealed class CameraShooter : IAsyncDisposable
 {
+    private readonly CameraShooterOptions _options;
+    private readonly RemoteState<FocuserState>? _focuser;
     private readonly TypeSafeEVentNode _node;
     private readonly string _id, _cameraId, _wheelId;
     private readonly RemoteState<CameraState> _camera;
@@ -20,9 +25,12 @@ public sealed class CameraShooter : IAsyncDisposable
     private readonly Action<FrameEvent> _onFrame;
     private string _filterUsed = "";
 
-    public CameraShooter(TypeSafeEVentNode node, string shooterId, string cameraId, string? filterWheelId = null)
+    public CameraShooter(TypeSafeEVentNode node, string shooterId, string cameraId, string? filterWheelId = null, CameraShooterOptions? options = null)
     {
         _node = node; _id = shooterId; _cameraId = cameraId; _wheelId = filterWheelId ?? "";
+        _options = options ?? new();
+        if (_options.FocuserId != "" && _options.FocusOffsets is { Count: > 0 } && _wheelId != "")
+            _focuser = new(node, EquipmentIds.State(DeviceKinds.Focuser, _options.FocuserId), EquipmentIds.GetState(DeviceKinds.Focuser, _options.FocuserId));
         _camera = new(node, EquipmentIds.State(DeviceKinds.Camera, cameraId), EquipmentIds.GetState(DeviceKinds.Camera, cameraId));
         if (_wheelId != "")
             _wheel = new(node, EquipmentIds.State(DeviceKinds.FilterWheel, _wheelId), EquipmentIds.GetState(DeviceKinds.FilterWheel, _wheelId));
@@ -36,6 +44,7 @@ public sealed class CameraShooter : IAsyncDisposable
         await _camera.StartAsync();
         _camera.Changed += __ => { _ = _publisher.PublishAsync(); };
         if (_wheel is not null) { await _wheel.StartAsync(); _wheel.Changed += __ => { _ = _publisher.PublishAsync(); }; }
+        if (_focuser is not null) await _focuser.StartAsync();
         await _node.HookEventAsync(EquipmentIds.Command(DeviceKinds.Camera, _cameraId, "Frame"), _onFrame, "frame relay");
         await _commands.AddAsync<ShooterExposure, CommandResult>(ShooterIds.Expose(_id), ExposeAsync, $"take an exposure with camera {_cameraId}");
         await _commands.AddAsync<NOTESVoid, CommandResult>(ShooterIds.Abort(_id), _ =>
@@ -54,10 +63,13 @@ public sealed class CameraShooter : IAsyncDisposable
             if (slot == 0) return CommandResult.Fail($"no filter named {filter}");
             if (_wheel.Latest?.Slot.Value != slot)
             {
+                string before = CurrentFilter();
                 var r = await Commands.CallAsync(_node, EquipmentIds.Command(DeviceKinds.FilterWheel, _wheelId, "SelectSlot"), (BinaryConvertibleInt32)slot);
                 if (!r.Ok.Value) return r;
                 try { await _wheel.WaitAsync(s => s.Slot.Value == slot && !s.Moving.Value, TimeSpan.FromSeconds(90)); }
                 catch (TimeoutException) { return CommandResult.Fail("filter wheel did not arrive in time"); }
+                var refocus = await MoveFocusOffsetAsync(before, names[slot - 1]);
+                if (!refocus.Ok.Value) return refocus;
             }
             filter = names[slot - 1];
         }
@@ -73,8 +85,26 @@ public sealed class CameraShooter : IAsyncDisposable
 
         return await Commands.CallAsync(_node, EquipmentIds.Command(DeviceKinds.Camera, _cameraId, "Expose"), new ExposeRequest
         {
-            Seconds = e.Seconds, FrameType = e.FrameType, BinX = e.BinX, BinY = e.BinY, Gain = e.Gain, Iso = e.Iso,
+            Seconds = e.Seconds, FrameType = e.FrameType, BinX = e.BinX, BinY = e.BinY, Iso = e.Iso,
+            Gain = double.IsNaN(e.Gain.Value) ? _options.Gain : e.Gain.Value, Offset = double.IsNaN(e.Offset.Value) ? _options.Offset : e.Offset.Value,
         });
+    }
+
+    /// <summary>The focuser follows the filters' focus offsets: moved by the difference between the old and the new filter's.</summary>
+    private async Task<CommandResult> MoveFocusOffsetAsync(string from, string to)
+    {
+        if (_focuser is null || _options.FocusOffsets is not { } offsets) return CommandResult.Success();
+        int? Offset(string f) => offsets.FirstOrDefault(kv => string.Equals(kv.Key, f, StringComparison.OrdinalIgnoreCase)) is { Key: not null } kv ? kv.Value : null;
+        if (Offset(from) is not { } a || Offset(to) is not { } b || a == b) return CommandResult.Success();
+        var f = _focuser.Latest;
+        if (f is null || !f.Connected.Value) return CommandResult.Fail($"focuser {_options.FocuserId} is not connected (needed for the {to} focus offset)");
+        int target = f.Position.Value + (b - a);
+        string focuser = EquipmentIds.Command(DeviceKinds.Focuser, _options.FocuserId, f.CanMoveAbsolute.Value ? "MoveTo" : "MoveBy");
+        var r = await Commands.CallAsync(_node, focuser, (BinaryConvertibleInt32)(f.CanMoveAbsolute.Value ? target : b - a));
+        if (!r.Ok.Value) return CommandResult.Fail($"focus offset for {to}: {r.Error.Text}");
+        try { await _focuser.WaitAsync(x => !x.Moving.Value && x.Position.Value == target, TimeSpan.FromSeconds(120)); }
+        catch (TimeoutException) { return CommandResult.Fail($"focuser did not reach the {to} focus offset"); }
+        return CommandResult.Success();
     }
 
     private string CurrentFilter()
@@ -108,7 +138,7 @@ public sealed class CameraShooter : IAsyncDisposable
 
     public ValueTask DisposeAsync()
     {
-        _commands.Dispose(); _publisher.Dispose(); _camera.Dispose(); _wheel?.Dispose();
+        _commands.Dispose(); _publisher.Dispose(); _camera.Dispose(); _wheel?.Dispose(); _focuser?.Dispose();
         try { _node.UnhookEvent(EquipmentIds.Command(DeviceKinds.Camera, _cameraId, "Frame"), _onFrame); } catch (ObjectDisposedException) { }
         return ValueTask.CompletedTask;
     }

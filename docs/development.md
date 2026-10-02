@@ -168,6 +168,13 @@ The scope **refocuses its trains** itself: before an exposure round, each train 
 `AutofocusIds.RunAndWait` with its first imaging camera; runs on different focusers go on in parallel. Frames taken
 while a round is prepared (centring, focus) are not relayed as the scope's frames.
 
+A **train looks after its cameras**: gain/offset presets go with every exposure that does not set them; a camera with
+a `CoolTo` is cooled by a ramp (the set point moves `CoolDegreesPerMinute` per minute, one step per `CoolerTick`) and
+its phase (Waiting, Cooling, Cold, Warming, Off) is in `TrainCameraInfo.Cooler`; `TrainIds.Cool`/`Warm` restart or
+reverse it. A scope whose trains have cooled cameras treats every round as prepared and waits while any is Cooling.
+`FocusOffsets` make the leaf camera shooter move the train's focuser by the offset difference after a filter change;
+the scope skips the filter refocus trigger for such trains.
+
 The scope also does its own **meridian flip**: it follows its site's sidereal time for the target's hour angle and
 its pointer's pier side (ASCOM/INDI: West = looking east, before the flip). Before each exposure round it waits for
 the flip point if the round would cross it, then re-gotos the target and checks the pier side turned to East; a timer

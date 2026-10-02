@@ -3,6 +3,7 @@ using ELink.Contracts.Equipment;
 using ELink.Core;
 using Event.CoreFunctionality;
 using Event.Connections.Models.BaseBinaryConvertibles;
+using EVent.Connections.Models.BaseBinaryConvertibles;
 
 namespace ELink.Compose;
 
@@ -26,6 +27,19 @@ public sealed class ImagingTrain : IAsyncDisposable
     private readonly Dictionary<string, double> _angles = new();   // by camera id, learned from plate solves
     private Action<ELink.Contracts.Automation.SolveResult>? _onSolved;
 
+    /// <summary>A cooled camera's ramp: the set point walks towards the target a little every tick.</summary>
+    private sealed class Ramp
+    {
+        public string Mode = "Cool";           // Cool | Warm | Off
+        public double SetPoint = double.NaN;
+        public string Phase = "Waiting";
+    }
+    private readonly Dictionary<string, Ramp> _ramps = new();   // by camera id, for cameras with a CoolTo
+    private readonly CancellationTokenSource _stop = new();
+    private Task _cooling = Task.CompletedTask;
+    /// <summary>How often the cooling set points move (the rate is per minute either way).</summary>
+    public TimeSpan CoolerTick { get; set; } = TimeSpan.FromSeconds(15);
+
     public ImagingTrain(TypeSafeEVentNode node, ImagingTrainDefinition definition)
     {
         _node = node; _def = definition; _id = definition.Id.Text;
@@ -38,7 +52,9 @@ public sealed class ImagingTrain : IAsyncDisposable
             // the filter wheel sits in front of the first imaging camera
             string? wheel = !guiding && !wheelUsed && definition.FilterWheelId.Text != "" ? definition.FilterWheelId.Text : null;
             if (wheel is not null) wheelUsed = true;
-            var member = new Member(c, sid, new CameraShooter(node, sid, c.CameraId.Text, wheel),
+            var options = new CameraShooterOptions(c.Gain.Value, c.Offset.Value, wheel is not null ? definition.FocuserId.Text : "",
+                definition.FocusOffsets.GroupBy(o => o.Filter.Text, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First().Steps.Value, StringComparer.OrdinalIgnoreCase));
+            var member = new Member(c, sid, new CameraShooter(node, sid, c.CameraId.Text, wheel, options),
                 new RemoteState<CameraState>(node, EquipmentIds.State(DeviceKinds.Camera, c.CameraId.Text), EquipmentIds.GetState(DeviceKinds.Camera, c.CameraId.Text)),
                 new RemoteState<ShooterState>(node, ShooterIds.State(sid), ShooterIds.GetState(sid)),
                 shot => _ = RelayAsync(shot));
@@ -76,6 +92,13 @@ public sealed class ImagingTrain : IAsyncDisposable
         await _node.HookEventAsync(ELink.Contracts.Automation.SolveIds.Solved, _onSolved, $"train {_id}: camera angles");
         await _commands.AddAsync<ShooterExposure, CommandResult>(ShooterIds.Expose(_id), ExposeAsync, $"expose every imaging camera of train {_id}");
         await _commands.AddAsync<NOTESVoid, CommandResult>(ShooterIds.Abort(_id), _ => AbortAsync(), "abort the exposures");
+        foreach (var m in All.Where(m => !double.IsNaN(m.Camera.CoolTo.Value))) _ramps[m.Camera.CameraId.Text] = new Ramp();
+        if (_ramps.Count > 0)
+        {
+            await _commands.AddAsync<NOTESVoid, CommandResult>(TrainIds.Cool(_id), _ => SetRampsAsync("Cool"), $"cool the cameras of train {_id} to their set points");
+            await _commands.AddAsync<NOTESVoid, CommandResult>(TrainIds.Warm(_id), _ => SetRampsAsync("Warm"), $"warm the cameras of train {_id} up slowly and switch the coolers off");
+            _cooling = Task.Run(() => CoolLoopAsync(_stop.Token));
+        }
         await _shooterPub.StartAsync();
         await _trainPub.StartAsync();
     }
@@ -111,7 +134,7 @@ public sealed class ImagingTrain : IAsyncDisposable
         // the filter applies to the camera behind the wheel; the others take the same exposure unfiltered
         var results = await Task.WhenAll(_imaging.Select((m, i) => Commands.CallAsync(_node, ShooterIds.Expose(m.ShooterId), i == 0 ? e : new ShooterExposure
         {
-            Seconds = e.Seconds.Value, FrameType = e.FrameType.Text, BinX = e.BinX.Value, BinY = e.BinY.Value, Gain = e.Gain.Value, Iso = e.Iso.Text,
+            Seconds = e.Seconds.Value, FrameType = e.FrameType.Text, BinX = e.BinX.Value, BinY = e.BinY.Value, Gain = e.Gain.Value, Iso = e.Iso.Text, Offset = e.Offset.Value,
         })));
         return results.FirstOrDefault(r => !r.Ok.Value) ?? CommandResult.Success();
     }
@@ -125,6 +148,73 @@ public sealed class ImagingTrain : IAsyncDisposable
     private async Task RelayAsync(ShotEvent shot)
     {
         try { await _node.FireEventAsync(ShooterIds.Shot(_id), shot); } catch (ObjectDisposedException) { }
+    }
+
+    private async Task<CommandResult> SetRampsAsync(string mode)
+    {
+        lock (_ramps) foreach (var r in _ramps.Values) { r.Mode = mode; if (mode == "Cool" && r.Phase == "Off") r.SetPoint = double.NaN; }
+        await TickAsync();
+        return CommandResult.Success();
+    }
+
+    private async Task CoolLoopAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try { await TickAsync(); } catch (Exception ex) when (ex is not OperationCanceledException) { _message = "cooling: " + ex.Message; }
+            try { await Task.Delay(CoolerTick, ct); } catch (OperationCanceledException) { return; }
+        }
+    }
+
+    private readonly SemaphoreSlim _tick = new(1, 1);
+
+    /// <summary>One step of every ramp: cooling walks the set point down to CoolTo, warming up to WarmTo, then the cooler goes off.</summary>
+    private async Task TickAsync()
+    {
+        await _tick.WaitAsync();
+        try
+        {
+            foreach (var m in All)
+            {
+                string cam = m.Camera.CameraId.Text;
+                Ramp? r; lock (_ramps) _ramps.TryGetValue(cam, out r);
+                if (r is null) continue;
+                var c = m.State.Latest;
+                string cmd(string what) => EquipmentIds.Command(DeviceKinds.Camera, cam, what);
+                if (c is null || !c.Connected.Value) { r.SetPoint = double.NaN; if (r.Mode != "Off") r.Phase = "Waiting"; continue; }
+                if (!c.HasCooler.Value) { r.Phase = "Error"; _message = $"{cam} has no cooler"; continue; }
+                if (r.Mode == "Off") { r.Phase = "Off"; continue; }
+                double step = m.Camera.CoolDegreesPerMinute.Value * CoolerTick.TotalMinutes;
+                double target = r.Mode == "Cool" ? m.Camera.CoolTo.Value : m.Camera.WarmTo.Value;
+                double temp = c.Temperature.Value;
+                if (double.IsNaN(r.SetPoint))
+                {
+                    if (r.Mode == "Cool")
+                    {
+                        var on = await Commands.CallAsync(_node, cmd("SetCooler"), (BinaryConvertibleBool)true);
+                        if (!on.Ok.Value) { r.Phase = "Error"; _message = $"{cam}: {on.Error.Text}"; continue; }
+                    }
+                    r.SetPoint = double.IsNaN(temp) ? (r.Mode == "Cool" ? 20 : target) : temp;   // start from where the sensor is
+                }
+                double next = r.SetPoint > target ? Math.Max(target, r.SetPoint - step) : Math.Min(target, r.SetPoint + step);
+                if (next != r.SetPoint || c.TemperatureTarget.Value != next)
+                {
+                    var set = await Commands.CallAsync(_node, cmd("SetTemperature"), (BinaryConvertibleDouble)next);
+                    if (!set.Ok.Value) { r.Phase = "Error"; _message = $"{cam}: {set.Error.Text}"; continue; }
+                    r.SetPoint = next;
+                }
+                bool there = r.SetPoint == target && (double.IsNaN(temp) || Math.Abs(temp - target) <= 1);
+                if (r.Mode == "Cool") r.Phase = there ? "Cold" : "Cooling";
+                else if (there || r.SetPoint == target && temp >= target - 3)
+                {
+                    await Commands.CallAsync(_node, cmd("SetCooler"), (BinaryConvertibleBool)false);
+                    r.Mode = "Off"; r.Phase = "Off"; r.SetPoint = double.NaN;
+                }
+                else r.Phase = "Warming";
+            }
+        }
+        finally { _tick.Release(); }
+        await _trainPub.PublishAsync();
     }
 
     private ShooterState BuildShooter()
@@ -148,11 +238,14 @@ public sealed class ImagingTrain : IAsyncDisposable
             FilterWheelId = _def.FilterWheelId.Text, FocuserId = _def.FocuserId.Text, RotatorId = _def.RotatorId.Text,
             GuideShooterId = _guiding.Count > 0 ? _guiding[0].ShooterId : "", Message = _message,
         };
+        foreach (var o in _def.FocusOffsets) t.FocusOffsets.Add(new FilterFocusOffset { Filter = o.Filter.Text, Steps = o.Steps.Value });
         foreach (var m in All)
         {
             var c = m.State.Latest;
             var info = new TrainCameraInfo { CameraId = m.Camera.CameraId.Text, Role = m.Camera.Role.Text, ShooterId = m.ShooterId, Connected = c?.Connected.Value ?? false };
             lock (_angles) if (_angles.TryGetValue(m.Camera.CameraId.Text, out var angle)) info.AngleDegrees = angle;
+            info.Temperature = c?.Temperature.Value ?? double.NaN;
+            lock (_ramps) if (_ramps.TryGetValue(m.Camera.CameraId.Text, out var ramp)) { info.Cooler = ramp.Phase; info.CoolerSetPoint = ramp.SetPoint; }
             // the train's own sensor numbers win over a driver that does not know (a DSLR reporting zeros)
             double pixel = m.Camera.PixelSizeUm.Value > 0 ? m.Camera.PixelSizeUm.Value : c?.PixelSizeUm.Value ?? 0;
             int width = m.Camera.SensorWidth.Value > 0 ? m.Camera.SensorWidth.Value : c?.SensorWidth.Value ?? 0;
@@ -175,6 +268,8 @@ public sealed class ImagingTrain : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        _stop.Cancel();
+        try { await _cooling; } catch { }
         foreach (var m in _imaging) { try { _node.UnhookEvent(ShooterIds.Shot(m.ShooterId), m.OnShot); } catch (ObjectDisposedException) { } }
         if (_onSolved is not null) { try { _node.UnhookEvent(ELink.Contracts.Automation.SolveIds.Solved, _onSolved); } catch (ObjectDisposedException) { } }
         _commands.Dispose(); _shooterPub.Dispose(); _trainPub.Dispose();

@@ -54,8 +54,13 @@ public sealed class SmartScope : IAsyncDisposable
         public DateTime? LastFocus;
         public double LastTemperature = double.NaN, BaselineHfr = double.NaN;
         public string LastFilter = "";
+        public bool HasOffsets;
         public readonly List<double> RecentHfr = new();
     }
+    private List<RemoteState<TrainState>>? _trainStates;
+    private bool _hasCooling;
+    /// <summary>The longest a round waits for cameras to reach their cooling set points before it goes ahead anyway.</summary>
+    public TimeSpan CoolWait { get; set; } = TimeSpan.FromMinutes(45);
     private List<FocusTrain>? _focusTrains;
     private volatile bool _preparing;
     // the scope's own frame grading: a baseline per camera, reset when it moves to another part of the sky
@@ -251,7 +256,7 @@ public sealed class SmartScope : IAsyncDisposable
             if (answers?.FirstOrDefault() is not { } t || t.FocuserId.Text == "") continue;
             var cam = t.Cameras.FirstOrDefault(c => c.Role.Text == "Imaging");
             if (cam is null) continue;
-            var ft = new FocusTrain { TrainId = sh.Id, FocuserId = t.FocuserId.Text, CameraShooter = cam.ShooterId.Text };
+            var ft = new FocusTrain { TrainId = sh.Id, FocuserId = t.FocuserId.Text, CameraShooter = cam.ShooterId.Text, HasOffsets = t.FocusOffsets.Count > 0 };
             ft.Focuser = new RemoteState<FocuserState>(_node, EquipmentIds.State(DeviceKinds.Focuser, ft.FocuserId), EquipmentIds.GetState(DeviceKinds.Focuser, ft.FocuserId));
             await ft.Focuser.StartAsync();
             list.Add(ft);
@@ -267,7 +272,8 @@ public sealed class SmartScope : IAsyncDisposable
         double temp = t.Focuser?.Latest?.Temperature.Value ?? double.NaN;
         if (_def.RefocusTemperatureDelta.Value > 0 && !double.IsNaN(temp) && !double.IsNaN(t.LastTemperature) && Math.Abs(temp - t.LastTemperature) >= _def.RefocusTemperatureDelta.Value)
             return FormattableString.Invariant($"temperature moved {temp - t.LastTemperature:+0.0;-0.0}°C");
-        if (_def.RefocusOnFilterChange.Value && e.Filter.Text != "" && !string.Equals(e.Filter.Text, t.LastFilter, StringComparison.OrdinalIgnoreCase)) return $"filter {e.Filter.Text}";
+        // a train with per-filter focus offsets moves its focuser itself when the filter changes
+        if (_def.RefocusOnFilterChange.Value && !t.HasOffsets && e.Filter.Text != "" && !string.Equals(e.Filter.Text, t.LastFilter, StringComparison.OrdinalIgnoreCase)) return $"filter {e.Filter.Text}";
         lock (t.RecentHfr)
             if (_def.RefocusHfrIncreasePercent.Value > 0 && !double.IsNaN(t.BaselineHfr) && t.RecentHfr.Count >= 3)
             {
@@ -490,15 +496,48 @@ public sealed class SmartScope : IAsyncDisposable
     /// <summary>Before an exposure round: make sure the guider runs, then dither (every DitherEvery rounds) or just wait
     /// until settled. A guider that fails to start fails the round; one that is merely slow to settle is noted and the
     /// round goes ahead.</summary>
-    private bool Prepared => _guider is not null || _def.MeridianFlip.Value || _def.CenterAfterSlew.Value || FocusTriggers;
+    private bool Prepared => _hasCooling || _guider is not null || _def.MeridianFlip.Value || _def.CenterAfterSlew.Value || FocusTriggers;
     private bool FocusTriggers => _def.FocusOnStart.Value || _def.RefocusEveryMinutes.Value > 0 || _def.RefocusTemperatureDelta.Value > 0
                                   || _def.RefocusOnFilterChange.Value || _def.RefocusHfrIncreasePercent.Value > 0;
+
+    /// <summary>Finds the scope's trains (once) and whether any of their cameras is cooled.</summary>
+    private async Task LearnTrainsAsync()
+    {
+        if (_trainStates is not null) return;
+        var list = new List<RemoteState<TrainState>>();
+        foreach (var sh in _shooters)
+        {
+            var answers = await _node.CallFunctionAsync<NOTESVoid, TrainState>(TrainIds.GetState(sh.Id), NOTESVoid.Void, TimeSpan.FromSeconds(5));
+            if (answers?.FirstOrDefault() is null) continue;
+            var rs = new RemoteState<TrainState>(_node, TrainIds.State(sh.Id), TrainIds.GetState(sh.Id));
+            await rs.StartAsync();
+            list.Add(rs);
+        }
+        _hasCooling = list.Any(t => t.Latest?.Cameras.Any(c => c.Cooler.Text != "") == true);
+        _trainStates = list;
+    }
+
+    /// <summary>Before a round: cameras still cooling down are waited for (up to CoolWait), so frames match their darks.</summary>
+    private async Task WaitColdAsync(CancellationToken ct = default)
+    {
+        if (!_hasCooling || _trainStates is null) return;
+        var until = DateTime.UtcNow + CoolWait;
+        while (true)
+        {
+            var cooling = _trainStates.SelectMany(t => t.Latest?.Cameras.Where(c => c.Cooler.Text == "Cooling") ?? []).ToList();
+            if (cooling.Count == 0) return;
+            if (DateTime.UtcNow > until) { _guideNote = "went ahead before the cameras were cold"; return; }
+            await SetScope(s => { s.Phase = "Cooling"; s.Message = string.Join(", ", cooling.Select(c => FormattableString.Invariant($"{c.CameraId.Text} {c.Temperature.Value:0.0} °C (set point {c.CoolerSetPoint.Value:0.0})"))); });
+            await Task.Delay(1000, ct);
+        }
+    }
 
     private async Task<CommandResult> PrepareRoundAsync(ShooterExposure exposure)
     {
         _preparing = true;
         try
         {
+            await WaitColdAsync();
             var flip = await FlipIfDueAsync(exposure.Seconds.Value);
             if (!flip.Ok.Value) return flip;
             await CentreAsync();
@@ -531,6 +570,7 @@ public sealed class SmartScope : IAsyncDisposable
     private async Task<CommandResult> ExposeCommandAsync(ShooterExposure e)
     {
         if (_shooters.Count == 0) return CommandResult.Fail($"scope {_id} has no shooter");
+        await LearnTrainsAsync();
         if (!Prepared) return await ExposeAsync(e);
         _ = Task.Run(async () =>
         {
@@ -666,6 +706,7 @@ public sealed class SmartScope : IAsyncDisposable
             await SetScope(s => s.Phase = "OnTarget");
 
             int perRound = Math.Max(1, _shooters.Sum(s => s.State.Latest?.ShotsPerExposure.Value ?? 1));
+            await LearnTrainsAsync();
             for (int i = 0; i < r.Count.Value; i++)
             {
                 ct.ThrowIfCancellationRequested();
@@ -713,6 +754,7 @@ public sealed class SmartScope : IAsyncDisposable
         _commands.Dispose(); _pointerPub.Dispose(); _shooterPub.Dispose(); _scopePub.Dispose();
         _guider?.Dispose(); _site.Dispose();
         foreach (var t in _focusTrains ?? []) t.Focuser?.Dispose();
+        foreach (var t in _trainStates ?? []) t.Dispose();
         if (_flipTimer is not null) await _flipTimer.DisposeAsync();
         foreach (var p in _pointers) p.State.Dispose();
         foreach (var s in _shooters)

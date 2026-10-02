@@ -108,7 +108,9 @@ focus triggers/offsets -> live-stack rejection/calibration -> the rest.
 - [x] Guiding inside the scope: multi-star guider, PHD2-style calibration over INDI pulse guiding, dithering and settling driven by the scope itself; "goto guiding" output (GuideCorrection: you are here, should be here) for ELink-native devices
 - [x] Frame grading inside the scope (stars, HFR, elongation, sky vs the camera's recent good frames): rejected frames do not count toward depth, are not stacked, are filed apart; clouds make the scope wait
 - [x] Autofocus inside the scope: triggers (start, time, temperature, filter change, star growth) per train with a focuser; autofocus runs per focuser in parallel; RunAndWait
-- [ ] Focus: per-filter offsets instead of refocusing on every filter change; temperature compensation between runs
+- [x] Focus: per-filter offsets (the train moves its focuser on a filter change; no refocus for that)
+- [ ] Focus: temperature compensation between runs
+- [x] Cameras in trains: gain/offset presets (INDI CCD_GAIN/CCD_OFFSET or CCD_CONTROLS), cooling ramps to a set point and warm-up, the scope waits until cold
 - [ ] Guiding extras: PHD2 as an alternative guider behind the same contract, guide graph history, Dec backlash compensation, predictive PEC
 - [x] Centring inside the scope: solve after its own slews, aim-off re-goto until within tolerance, stale-frame check, learned pointing correction nearby
 - [x] Meridian flip inside the scope: hour angle from the site, pier side from the mount, waits for the flip point between exposures, verifies the turn-over, flips idle scopes too

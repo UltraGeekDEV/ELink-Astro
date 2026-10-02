@@ -19,6 +19,7 @@ public class ScopeFocusTests : IAsyncLifetime
     private CommandSet _fakes = null!;
     private StatePublisher<FocuserState> _focuser = null!;
     private double _temperature = 10;
+    private TrainState _ts = null!;
     private ScopeState? _state;
     private int _scopeShots;
 
@@ -32,7 +33,8 @@ public class ScopeFocusTests : IAsyncLifetime
         _fakes = new CommandSet(_node);
         var ts = new TrainState { Id = "t", FocuserId = "foc", FocalLengthMm = 400 };
         ts.Cameras.Add(new TrainCameraInfo { CameraId = "cam1", Role = "Imaging", ShooterId = "t-cam1", Connected = true });
-        await _fakes.AddAsync<NOTESVoid, TrainState>(TrainIds.GetState("t"), _ => Task.FromResult(ts), "fake train");
+        _ts = ts;
+        await _fakes.AddAsync<NOTESVoid, TrainState>(TrainIds.GetState("t"), _ => Task.FromResult(_ts), "fake train");
         _focuser = new StatePublisher<FocuserState>(_node, EquipmentIds.State(DeviceKinds.Focuser, "foc"), EquipmentIds.GetState(DeviceKinds.Focuser, "foc"),
             () => new FocuserState { Connected = true, Temperature = _temperature, CanMoveAbsolute = true });
         await _focuser.StartAsync();
@@ -108,5 +110,17 @@ public class ScopeFocusTests : IAsyncLifetime
         Assert.Contains("focus error", _state!.Message.Text);   // noted, and the frame was still taken
         await Observe(1, "Red");
         Assert.Equal(2, _af.Runs);                              // a failed focus is not retried every round
+    }
+
+    [Fact]
+    public async Task ATrainWithFocusOffsetsIsNotRefocusedOnFilterChanges()
+    {
+        _ts.FocusOffsets.Add(new FilterFocusOffset { Filter = "Red", Steps = 0 });
+        _ts.FocusOffsets.Add(new FilterFocusOffset { Filter = "Green", Steps = 40 });
+        await using var scope = await Scope(d => { d.RefocusOnFilterChange = true; });
+        await Observe(1, "Red");
+        await Observe(1, "Green");
+        await Observe(1, "Red");
+        Assert.Equal(0, _af.Runs);                              // the train moves its focuser by the offsets itself
     }
 }

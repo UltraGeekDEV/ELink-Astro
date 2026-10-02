@@ -14,6 +14,10 @@ public sealed class CameraAdapter(AdapterContext ctx) : IndiDeviceAdapter<Camera
     public override string Kind => DeviceKinds.Camera;
 
     private double _lastExposure;
+    private double _setPoint = double.NaN;
+
+    /// <summary>Older ZWO/QHY drivers put gain and offset into CCD_CONTROLS; the element named like this, if any.</summary>
+    private string? Control(string name) => P("CCD_CONTROLS")?.Elements.FirstOrDefault(e => string.Equals(e.Name, name, StringComparison.OrdinalIgnoreCase))?.Name;
     private string _lastFrameType = "Light";
     private bool _blobEnabled;
 
@@ -33,6 +37,13 @@ public sealed class CameraAdapter(AdapterContext ctx) : IndiDeviceAdapter<Camera
         }
         if (P("CCD_BINNING") is { } bin) { s.BinX = (int)bin.Number("HOR_BIN"); s.BinY = (int)bin.Number("VER_BIN"); }
         if (P("CCD_GAIN") is { } gain) s.Gain = gain.Number("GAIN");
+        else if (Control("Gain") is { } g) s.Gain = P("CCD_CONTROLS")!.Number(g);
+        if (P("CCD_OFFSET") is { } offset) s.Offset = offset.Number("OFFSET");
+        else if (Control("Offset") is { } o) s.Offset = P("CCD_CONTROLS")!.Number(o);
+        if (P("CCD_COOLER") is { } cooler) s.CoolerOn = cooler.OnSwitch == "COOLER_ON";
+        else s.CoolerOn = s.HasCooler.Value && !double.IsNaN(_setPoint);   // no switch: it cools while it has a set point
+        if (P("CCD_COOLER_POWER") is { } power) s.CoolerPower = power.Number("CCD_COOLER_VALUE");
+        s.TemperatureTarget = _setPoint;
         if (P("CCD_ISO") is { } iso)
         {
             foreach (var e in iso.Elements) s.IsoChoices.Add(IsoLabel(e.Label, e.Name));
@@ -48,6 +59,7 @@ public sealed class CameraAdapter(AdapterContext ctx) : IndiDeviceAdapter<Camera
         await RegisterCommandAsync<ExposeRequest, CommandResult>("Expose", ExposeAsync, "start an exposure; the finished frame arrives on the .Frame event");
         await RegisterCommandAsync<NOTESVoid, CommandResult>("AbortExposure", _ => AbortAsync(), "abort the running exposure");
         await RegisterCommandAsync<BinaryConvertibleDouble, CommandResult>("SetTemperature", SetTemperatureAsync, "cooling target in °C");
+        await RegisterCommandAsync<BinaryConvertibleBool, CommandResult>("SetCooler", SetCoolerAsync, "switch the cooler on or off");
         await RegisterCommandAsync<SensorInfo, CommandResult>("SetSensor", SetSensorAsync, "tell a driver that cannot know it (DSLRs) the sensor size and pixel size (CCD_INFO)");
         await RegisterCommandAsync<ELink.Contracts.Composition.CameraOptics, CommandResult>(ELink.Contracts.Composition.TrainIds.CameraSetOptics, SetOpticsAsync, "the telescope in front of the camera (SCOPE_INFO): frames then carry FOCALLEN");
     }
@@ -75,7 +87,16 @@ public sealed class CameraAdapter(AdapterContext ctx) : IndiDeviceAdapter<Camera
             if (P("CCD_FRAME_TYPE")?.Has(frameElement) == true) await SetSwitch("CCD_FRAME_TYPE", frameElement);
             if (r.BinX.Value > 0 && P("CCD_BINNING") is not null)
                 await Client.SetNumbersAsync(Device, "CCD_BINNING", new[] { ("HOR_BIN", (double)r.BinX.Value), ("VER_BIN", (double)(r.BinY.Value > 0 ? r.BinY.Value : r.BinX.Value)) });
-            if (!double.IsNaN(r.Gain.Value) && P("CCD_GAIN") is not null) await SetNumber("CCD_GAIN", "GAIN", r.Gain.Value);
+            if (!double.IsNaN(r.Gain.Value))
+            {
+                if (P("CCD_GAIN") is not null) await SetNumber("CCD_GAIN", "GAIN", r.Gain.Value);
+                else if (Control("Gain") is { } g) await SetNumber("CCD_CONTROLS", g, r.Gain.Value);
+            }
+            if (!double.IsNaN(r.Offset.Value))
+            {
+                if (P("CCD_OFFSET") is not null) await SetNumber("CCD_OFFSET", "OFFSET", r.Offset.Value);
+                else if (Control("Offset") is { } o) await SetNumber("CCD_CONTROLS", o, r.Offset.Value);
+            }
             // DSLRs: ISO, and frames as FITS (ELink reads FITS; a DSLR's native raw files cannot be measured or stacked)
             if (r.Iso.Text.Trim() != "" && P("CCD_ISO") is { } isoProp)
             {
@@ -107,7 +128,20 @@ public sealed class CameraAdapter(AdapterContext ctx) : IndiDeviceAdapter<Camera
     {
         if (Need("CCD_TEMPERATURE", "CCD_TEMPERATURE_VALUE") is { } missing) return missing;
         if (P("CCD_TEMPERATURE")!.Perm == IndiPerm.ReadOnly) return CommandResult.Fail("this camera cannot cool");
-        return await Send(() => SetNumber("CCD_TEMPERATURE", "CCD_TEMPERATURE_VALUE", t.Value));
+        _setPoint = t.Value;
+        var r = await Send(() => SetNumber("CCD_TEMPERATURE", "CCD_TEMPERATURE_VALUE", t.Value));
+        await PublishStateAsync();
+        return r;
+    }
+
+    private async Task<CommandResult> SetCoolerAsync(BinaryConvertibleBool on)
+    {
+        // cameras without a cooler switch cool whenever a set point is given
+        if (!on.Value) _setPoint = double.NaN;
+        if (P("CCD_COOLER") is not { } c) { await PublishStateAsync(); return CommandResult.Success(); }   // it cools while given a set point
+        string want = on.Value ? "COOLER_ON" : "COOLER_OFF";
+        if (c.OnSwitch == want) return CommandResult.Success();
+        return await Send(() => SetSwitch("CCD_COOLER", want));
     }
 
     protected override async Task OnPropertyChangedAsync(IndiChange change)

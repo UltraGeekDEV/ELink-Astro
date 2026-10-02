@@ -22,9 +22,34 @@ public partial class ScopePanelViewModel : ObservableObject, IDisposable
     private Action<GuideStep>? _stepHook;
     private readonly List<GuideStep> _steps = new();
 
-    public ScopePanelViewModel(MeshSession mesh, string scopeId, string displayName, string guiderId = "")
+    public ScopePanelViewModel(MeshSession mesh, string scopeId, string displayName, string guiderId = "", IReadOnlyList<string>? trainIds = null)
     {
-        _mesh = mesh; ScopeId = scopeId; DisplayName = displayName; GuiderId = guiderId;
+        _mesh = mesh; ScopeId = scopeId; DisplayName = displayName; GuiderId = guiderId; TrainIds = trainIds ?? [];
+    }
+
+    // its trains' cooled cameras
+    public IReadOnlyList<string> TrainIds { get; }
+    private readonly Dictionary<string, string> _coolerLines = new();
+    [ObservableProperty] private string _coolerText = "";
+    [ObservableProperty] private bool _hasCoolers;
+
+    private void ShowCoolers(TrainState t)
+    {
+        static string T(double v) => double.IsNaN(v) ? "--" : v.ToString("0.0", CultureInfo.InvariantCulture);
+        var lines = t.Cameras.Where(c => c.Cooler.Text != "").Select(c =>
+            $"{c.CameraId.Text}: {c.Cooler.Text}  {T(c.Temperature.Value)} °C" + (double.IsNaN(c.CoolerSetPoint.Value) ? "" : $"  (set point {T(c.CoolerSetPoint.Value)} °C)")).ToList();
+        lock (_coolerLines) { _coolerLines[t.Id.Text] = string.Join("\n", lines); CoolerText = string.Join("\n", _coolerLines.Values.Where(v => v != "")); HasCoolers = CoolerText != ""; }
+    }
+
+    [RelayCommand] private Task CoolAsync() => CoolerCommandAsync(true);
+    [RelayCommand] private Task WarmAsync() => CoolerCommandAsync(false);
+    private async Task CoolerCommandAsync(bool cool)
+    {
+        foreach (var t in TrainIds)
+        {
+            var r = await Commands.CallAsync(_mesh.Node, cool ? ELink.Contracts.Composition.TrainIds.Cool(t) : ELink.Contracts.Composition.TrainIds.Warm(t), Event.Connections.Models.BaseBinaryConvertibles.NOTESVoid.Void);
+            if (!r.Ok.Value && !r.Error.Text.StartsWith("nobody provides")) Message = r.Error.Text;
+        }
     }
 
     // its own guiding (when the scope has a guider)
@@ -104,6 +129,13 @@ public partial class ScopePanelViewModel : ObservableObject, IDisposable
             Preview.Show(shot.Data.Data, shot.Format.Text, text);
         };
         await node.HookEventAsync(ShooterIds.Shot(ScopeId), _shotHook, "scope preview");
+
+        foreach (var t in TrainIds)
+        {
+            var train = new Follower<TrainState>(node, ELink.Contracts.Composition.TrainIds.State(t), ELink.Contracts.Composition.TrainIds.GetState(t), ShowCoolers);
+            _disposables.Add(train);
+            await train.StartAsync();
+        }
 
         if (HasGuider)
         {
