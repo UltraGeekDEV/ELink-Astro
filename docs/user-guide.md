@@ -184,8 +184,11 @@ when it rises, culminates and sets above *your* horizon, how many dark hours it 
 *Scopes can centre themselves (Compose, "Centre after each slew"); this tab is the older mount-level service, which
 also catches slews made from a hand controller.*
 
-Needs astrometry.net's `solve-field`. A user-space copy in `~/.local/astrometry` is found automatically
-(or set `ELINK_SOLVE_FIELD`).
+Needs a plate solver: **ASTAP** (`astap_cli` or `astap`, with one of its star databases such as D50; found in
+`~/.local/astap`, `/opt/astap` or on the PATH, or set `ELINK_ASTAP`) and/or astrometry.net's `solve-field` (a
+user-space copy in `~/.local/astrometry` is found automatically, or set `ELINK_SOLVE_FIELD`). With both, ASTAP is tried
+first when ELink knows roughly where the scope points (almost always: it is much faster there) and astrometry.net
+first for blind solves; whichever fails hands over to the other. The station prints which it found.
 
 1. Pick the **mount**, the **guide camera** (it is solved) and the **primary camera**. Set exposure, tolerance (arcmin)
    and max tries. Tick *Sync the mount* and *Centre automatically after every slew*. **Apply**.

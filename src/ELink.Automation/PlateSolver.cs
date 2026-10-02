@@ -11,10 +11,20 @@ public sealed record SolveOutcome(bool Solved, double RaHours, double DecDegrees
     public ELink.Imaging.TanWcs? Wcs { get; init; }
 }
 
+/// <summary>A plate solver program behind the PlateSolve service.</summary>
+public interface IPlateSolver
+{
+    /// <summary>"ASTAP" or "astrometry.net".</summary>
+    string Name { get; }
+    Task<SolveOutcome> SolveAsync(byte[] fits, double hintRaHours, double hintDecDegrees, double hintRadiusDegrees,
+        double scaleLow, double scaleHigh, TimeSpan timeout, CancellationToken ct = default);
+}
+
 /// <summary>Plate solving with astrometry.net's <c>solve-field</c> (installed system-wide, or unpacked in user space; set
 /// ELINK_SOLVE_FIELD to point at a specific one).</summary>
-public sealed class PlateSolver
+public sealed class PlateSolver : IPlateSolver
 {
+    public string Name => "astrometry.net";
     public string Executable { get; }
     public int Downsample { get; set; } = 2;
 

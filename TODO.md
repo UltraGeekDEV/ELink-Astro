@@ -95,6 +95,7 @@ focus triggers/offsets -> live-stack rejection/calibration -> the rest.
 
 ### Phase 4 — Automation
 - [x] Plate solve service (astrometry.net, unpacked in user space; any FITS or a shot from any Shooter)
+- [x] ASTAP as a second plate solver (tried first with a position hint, fallback either way); not yet run against a real ASTAP install
 - [x] Automatic centring after every slew (also hand controller / other software): solve the guide camera, sync + reslew (aim off when syncs do not help), learned guide-to-primary offset per pier side
 - [x] Autofocus (HFR star measurement, hyperbola/parabola fit, coarse + fine sweeps) as a mesh service
 - [x] Live stacking into a fixed field (e.g. the mosaic's virtual FOV) at any pixel scale: WCS/solve/pointing registration, exact homography resampling, bicubic upscaling, area-averaged downscaling, sky-level matching, float FITS + WCS out

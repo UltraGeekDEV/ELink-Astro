@@ -15,6 +15,7 @@ public class SolveRequest : IBinaryConvertible
     public BinaryConvertibleDouble ScaleLowArcsecPerPixel { get; set; } = 0.0;
     public BinaryConvertibleDouble ScaleHighArcsecPerPixel { get; set; } = 0.0;
     public BinaryConvertibleDouble TimeoutSeconds { get; set; } = 60.0;
+    public BinaryConvertibleString Solver { get; set; } = "";
 
     public override string Name => "SolveRequest";
     private static readonly NOTESDescriptor d = new();
@@ -30,6 +31,7 @@ public class SolveRequest : IBinaryConvertible
         d.RegisterField("ScaleLowArcsecPerPixel", (SolveRequest x) => x.ScaleLowArcsecPerPixel).Description("0 = unknown");
         d.RegisterField("ScaleHighArcsecPerPixel", (SolveRequest x) => x.ScaleHighArcsecPerPixel).Description("0 = unknown");
         d.RegisterField("TimeoutSeconds", (SolveRequest x) => x.TimeoutSeconds);
+        d.RegisterField("Solver", (SolveRequest x) => x.Solver).Description("ASTAP | astrometry.net; empty = whichever are installed, ASTAP first when there is a hint, the other if it fails");
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();
@@ -56,6 +58,7 @@ public class SolveResult : IBinaryConvertible
     public BinaryConvertibleDouble WcsCd12 { get; set; } = double.NaN;
     public BinaryConvertibleDouble WcsCd21 { get; set; } = double.NaN;
     public BinaryConvertibleDouble WcsCd22 { get; set; } = double.NaN;
+    public BinaryConvertibleString Solver { get; set; } = "";
 
     public override string Name => "SolveResult";
     private static readonly NOTESDescriptor d = new();
@@ -81,6 +84,7 @@ public class SolveResult : IBinaryConvertible
         d.RegisterField("WcsCd12", (SolveResult x) => x.WcsCd12);
         d.RegisterField("WcsCd21", (SolveResult x) => x.WcsCd21);
         d.RegisterField("WcsCd22", (SolveResult x) => x.WcsCd22);
+        d.RegisterField("Solver", (SolveResult x) => x.Solver).Description("which solver answered");
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();
@@ -93,4 +97,6 @@ public static class SolveIds
     public const string Solve = Root + ".Solve";
     /// <summary>Event: SolveResult, after every solve (successful or not).</summary>
     public const string Solved = Root + ".Solved";
+    /// <summary>Void in, BinaryConvertibleString out: the installed solvers, comma separated, in the order tried.</summary>
+    public const string Solvers = Root + ".Solvers";
 }

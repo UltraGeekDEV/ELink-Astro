@@ -191,6 +191,10 @@ public class PlateSolveTests : IAsyncLifetime
         Assert.Equal(2.68, wcs.PixelScaleArcsec, 1);
         var (cra, cdec) = wcs.PixelToSky(639.5, 511.5);
         Assert.True(Sky.SeparationDegrees(cra / 15, cdec, r.RaHours.Value, r.DecDegrees.Value) * 60 < 0.2);
+        // the angle read from a WCS (as with ASTAP) is the one solve-field reports
+        double paDiff = Math.Abs(((AstapSolver.FromWcs(wcs, 1280, 1024, 0).PositionAngle - r.PositionAngle.Value) % 360 + 540) % 360 - 180);
+        Assert.True(paDiff < 0.5, $"WCS angle {AstapSolver.FromWcs(wcs, 1280, 1024, 0).PositionAngle:0.00} vs reported {r.PositionAngle.Value:0.00}");
+        Assert.Equal("astrometry.net", r.Solver.Text);
         // a request with a nonsense image says why instead of throwing
         var bad = Assert.Single((await bridge.CallFunctionAsync<SolveRequest, SolveResult>(SolveIds.Solve, new SolveRequest { Image = new ELink.Contracts.RawBytes(new byte[] { 1, 2, 3 }) }, TimeSpan.FromSeconds(60)))!);
         Assert.False(bad.Solved.Value); Assert.NotEqual("", bad.Message.Text);

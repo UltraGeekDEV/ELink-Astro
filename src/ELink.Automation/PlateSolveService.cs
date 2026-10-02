@@ -6,22 +6,39 @@ using Event.CoreFunctionality;
 
 namespace ELink.Automation;
 
-/// <summary>Plate solving on the mesh: solve a FITS that is sent, or take a shot with any Shooter and solve that.</summary>
+/// <summary>Plate solving on the mesh: solve a FITS that is sent, or take a shot with any Shooter and solve that. With
+/// more than one solver installed (ASTAP, astrometry.net), it tries ASTAP first when it has a hint of where to look
+/// (that is what ASTAP is quick at) and astrometry.net first for blind solves, and the other when the first fails.</summary>
 public sealed class PlateSolveService : IAsyncDisposable
 {
     private readonly TypeSafeEVentNode _node;
-    private readonly PlateSolver _solver;
+    private readonly IReadOnlyList<IPlateSolver> _solvers;
     private readonly CommandSet _commands;
     private readonly SemaphoreSlim _one = new(1, 1);
 
-    public PlateSolveService(TypeSafeEVentNode node, PlateSolver solver)
+    public PlateSolveService(TypeSafeEVentNode node, params IPlateSolver[] solvers)
     {
-        _node = node; _solver = solver;
+        if (solvers.Length == 0) throw new ArgumentException("no plate solver");
+        _node = node; _solvers = solvers;
         _commands = new CommandSet(node);
     }
 
-    public Task StartAsync() => _commands.AddAsync<SolveRequest, SolveResult>(SolveIds.Solve, SolveAsync,
-        "plate solve: a FITS image, or a fresh shot from a Shooter; returns the J2000 centre, rotation and scale");
+    public async Task StartAsync()
+    {
+        await _commands.AddAsync<SolveRequest, SolveResult>(SolveIds.Solve, SolveAsync,
+            "plate solve: a FITS image, or a fresh shot from a Shooter; returns the J2000 centre, rotation and scale");
+        await _commands.AddAsync<Event.Connections.Models.BaseBinaryConvertibles.NOTESVoid, EVent.Connections.Models.BaseBinaryConvertibles.BinaryConvertibleString>(SolveIds.Solvers,
+            _ => Task.FromResult((EVent.Connections.Models.BaseBinaryConvertibles.BinaryConvertibleString)string.Join(",", _solvers.Select(x => x.Name))), "the installed plate solvers");
+    }
+
+    /// <summary>The solvers to try, in order.</summary>
+    private List<IPlateSolver> Order(SolveRequest r)
+    {
+        if (r.Solver.Text.Trim() != "")
+            return _solvers.Where(x => string.Equals(x.Name, r.Solver.Text.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
+        bool hinted = !double.IsNaN(r.HintRaHours.Value) && !double.IsNaN(r.HintDecDegrees.Value);
+        return _solvers.OrderBy(x => (x.Name == "ASTAP") == hinted ? 0 : 1).ToList();
+    }
 
     public async Task<SolveResult> SolveAsync(SolveRequest r)
     {
@@ -38,8 +55,19 @@ public sealed class PlateSolveService : IAsyncDisposable
         await _one.WaitAsync();   // one solve at a time: it is CPU-bound
         try
         {
-            var o = await _solver.SolveAsync(image, r.HintRaHours.Value, r.HintDecDegrees.Value, r.HintRadiusDegrees.Value,
-                r.ScaleLowArcsecPerPixel.Value, r.ScaleHighArcsecPerPixel.Value, TimeSpan.FromSeconds(Math.Clamp(r.TimeoutSeconds.Value, 5, 600)));
+            var order = Order(r);
+            if (order.Count == 0) throw new InvalidOperationException($"no solver {r.Solver.Text} (installed: {string.Join(", ", _solvers.Select(x => x.Name))})");
+            SolveOutcome o = null!;
+            var failures = new List<string>();
+            foreach (var solver in order)
+            {
+                o = await solver.SolveAsync(image, r.HintRaHours.Value, r.HintDecDegrees.Value, r.HintRadiusDegrees.Value,
+                    r.ScaleLowArcsecPerPixel.Value, r.ScaleHighArcsecPerPixel.Value, TimeSpan.FromSeconds(Math.Clamp(r.TimeoutSeconds.Value, 5, 600)));
+                result.Solver = solver.Name;
+                if (o.Solved) break;
+                failures.Add($"{solver.Name}: {o.Message}");
+            }
+            if (!o.Solved && failures.Count > 1) o = o with { Message = string.Join("; ", failures) };
             result.Solved = o.Solved; result.RaHours = o.RaHours; result.DecDegrees = o.DecDegrees; result.PositionAngle = o.PositionAngle;
             result.PixelScale = o.PixelScale; result.FieldWidthDegrees = o.FieldWidthDegrees; result.FieldHeightDegrees = o.FieldHeightDegrees;
             result.Seconds = o.Seconds; result.Message = o.Message;

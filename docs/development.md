@@ -195,7 +195,7 @@ frame belongs to. Shooters have offsets (arcmin east/north of the pointing axis)
 | Scheduler | site (dark, Moon, altitudes) | the image request | best possible image now, stops what becomes impossible, night after night |
 | Storage | any shooter's shots | disk | night folders, FITS headers, JSON-lines log |
 | Imaging | scopes' trains | any number of scopes | one image of an area, work shared between scopes (below) |
-| PlateSolve | — | shooter (optional) | wraps `solve-field`, one solve at a time |
+| PlateSolve | — | shooter (optional) | ASTAP and/or `solve-field` behind `IPlateSolver`: ASTAP first with a hint, astrometry.net first blind, fallback; one solve at a time |
 | Centering | mount state (incl. hand-controller slews) | mount, PlateSolve | sync + reslew, aim-off fallback, guide→primary offset |
 | Guider (compose) | its guide camera's shots | GuidePort or GuideTarget | calibration, multi-star guiding, dithering, settle; owned by a scope |
 | LiveStack | any shooter's shots | PlateSolve, Calibration (optional) | calibrates raw frames, registers them, resamples into a fixed sky grid |
@@ -334,7 +334,7 @@ machine. Always build through it.
 - Integration tests start real `indiserver` simulators with a throwaway `HOME` and their own socket (`-u`); tests that
   move a mount or depend on its pointing start their own server rather than share the `indiserver` collection fixture.
 - Ports come from `ELink.Testing.TestPorts`.
-- Plate-solve tests run when `solve-field` is found (`ELINK_SOLVE_FIELD`, `~/.local/astrometry/bin/solve-field`, PATH).
+- Plate-solve tests run when `solve-field` is found (`ELINK_SOLVE_FIELD`, `~/.local/astrometry/bin/solve-field`, PATH). ASTAP is tested with a stand-in `astap_cli` that writes the `.ini`/`.wcs` answers the real one does.
 - Live Stellarium tests: `ELINK_LIVE_STELLARIUM=1`.
 - UI tests run Avalonia headless and assert on rendered pixels.
 

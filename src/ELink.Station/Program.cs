@@ -72,13 +72,15 @@ await autofocus.StartAsync();
 await using var scheduler = new SchedulerService(node, Path.Combine(Path.GetDirectoryName(compose)!, "schedule.bin"));
 await scheduler.StartAsync();
 PlateSolveService? solver = null;
-if (PlateSolver.Locate() is { } solveField)
+var solvers = new List<IPlateSolver>();
+if (AstapSolver.Locate() is { } astap) { solvers.Add(new AstapSolver(astap)); Console.WriteLine($"plate solving: ASTAP {astap}"); }
+if (PlateSolver.Locate() is { } solveField) { solvers.Add(new PlateSolver(solveField)); Console.WriteLine($"plate solving: astrometry.net {solveField}"); }
+if (solvers.Count > 0)
 {
-    solver = new PlateSolveService(node, new PlateSolver(solveField));
+    solver = new PlateSolveService(node, solvers.ToArray());
     await solver.StartAsync();
-    Console.WriteLine($"plate solving: {solveField}");
 }
-else Console.WriteLine("plate solving: solve-field not found (install astrometry.net, or set ELINK_SOLVE_FIELD)");
+else Console.WriteLine("plate solving: no solver found (install ASTAP with a star database, or astrometry.net; or set ELINK_ASTAP / ELINK_SOLVE_FIELD)");
 await using var site = new SiteService(node, Path.Combine(Path.GetDirectoryName(compose)!, "site.json"));
 await site.StartAsync();
 await using var centering = new CenteringService(node, Path.Combine(Path.GetDirectoryName(compose)!, "centering.json"));
