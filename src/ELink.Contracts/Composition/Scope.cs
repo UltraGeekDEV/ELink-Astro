@@ -38,6 +38,11 @@ public class ScopeDefinition : IBinaryConvertible
     public BinaryConvertibleString GuidePortId { get; set; } = "";
     public BinaryConvertibleString GuideTargetId { get; set; } = "";
     public BinaryConvertibleDouble GuideExposureSeconds { get; set; } = 2.0;
+    public BinaryConvertibleBool CenterAfterSlew { get; set; } = false;
+    public BinaryConvertibleString CenterShooterId { get; set; } = "";
+    public BinaryConvertibleDouble CenterToleranceArcmin { get; set; } = 1.0;
+    public BinaryConvertibleDouble CenterExposureSeconds { get; set; } = 3.0;
+    public BinaryConvertibleInt32 CenterMaxTries { get; set; } = 4;
     public BinaryConvertibleBool MeridianFlip { get; set; } = true;
     public BinaryConvertibleDouble FlipAfterHours { get; set; } = 0.1;
     public BinaryConvertibleString SiteId { get; set; } = "home";
@@ -62,6 +67,11 @@ public class ScopeDefinition : IBinaryConvertible
         d.RegisterField("GuidePortId", (ScopeDefinition x) => x.GuidePortId).Description("GuidePort for Pulse; empty = the first pointer's mount");
         d.RegisterField("GuideTargetId", (ScopeDefinition x) => x.GuideTargetId).Description("GuideTarget for Correction");
         d.RegisterField("GuideExposureSeconds", (ScopeDefinition x) => x.GuideExposureSeconds);
+        d.RegisterField("CenterAfterSlew", (ScopeDefinition x) => x.CenterAfterSlew).Description("after each of its slews: plate solve, re-aim by the error until within tolerance, learn the pointing correction for later slews");
+        d.RegisterField("CenterShooterId", (ScopeDefinition x) => x.CenterShooterId).Description("the shooter to solve with; empty = the primary (first) shooter");
+        d.RegisterField("CenterToleranceArcmin", (ScopeDefinition x) => x.CenterToleranceArcmin);
+        d.RegisterField("CenterExposureSeconds", (ScopeDefinition x) => x.CenterExposureSeconds);
+        d.RegisterField("CenterMaxTries", (ScopeDefinition x) => x.CenterMaxTries);
         d.RegisterField("MeridianFlip", (ScopeDefinition x) => x.MeridianFlip).Description("flip by itself when the target passes the meridian (German equatorial mounts)");
         d.RegisterField("FlipAfterHours", (ScopeDefinition x) => x.FlipAfterHours).Description("how far past the meridian (hour angle) to flip; never in the middle of an exposure");
         d.RegisterField("SiteId", (ScopeDefinition x) => x.SiteId).Description("the site whose sidereal time gives the hour angle");
@@ -114,7 +124,7 @@ public class ScopeState : IBinaryConvertible
     public override NOTESDescriptor Descriptor => d;
     static ScopeState()
     {
-        d.RegisterField("Phase", (ScopeState x) => x.Phase).Description("Idle | Pointing | OnTarget | Guiding (starting, settling) | Exposing | Dithering | WaitingForFlip | Flipping | Error");
+        d.RegisterField("Phase", (ScopeState x) => x.Phase).Description("Idle | Pointing | OnTarget | Guiding (starting, settling) | Exposing | Dithering | Centering | WaitingForFlip | Flipping | Error");
         d.RegisterField("Message", (ScopeState x) => x.Message);
         d.RegisterField("ShotsDone", (ScopeState x) => x.ShotsDone).Description("exposure rounds finished in the current/last Observe");
         d.RegisterField("ShotsPlanned", (ScopeState x) => x.ShotsPlanned);

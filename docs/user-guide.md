@@ -107,6 +107,9 @@ flowchart TD
    exposure rounds) and by how many guide-camera pixels. A guided scope does everything itself: it stops guiding
    before any slew, starts (and calibrates the first time) once on target, waits until guiding has settled before
    each exposure, and dithers between them.
+   **Centre after each slew** (needs a plate solver): after its own slews the scope solves a frame of its primary
+   train and re-aims by the error until it is within the tolerance (no syncs needed). A consistent error (a mount
+   that always lands a few arcminutes off) is learned and aimed off on later slews nearby.
    **Meridian flip** (on by default, needs the Site): when the target passes the meridian by the set minutes, the
    scope finishes the running exposure (or waits for the flip point if the next exposure would cross it), slews to
    the target again so the mount turns over, checks the pier side changed, recalibrates guiding and carries on.
@@ -148,6 +151,9 @@ dusk and dawn, the Moon (phase, altitude, rise and set) and where the planets ar
 when it rises, culminates and sets above *your* horizon, how many dark hours it is up, and how far it is from the Moon.
 
 ## Centring (plate solving)
+
+*Scopes can centre themselves (Compose, "Centre after each slew"); this tab is the older mount-level service, which
+also catches slews made from a hand controller.*
 
 Needs astrometry.net's `solve-field`. A user-space copy in `~/.local/astrometry` is found automatically
 (or set `ELINK_SOLVE_FIELD`).

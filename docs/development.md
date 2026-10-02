@@ -159,6 +159,10 @@ flowchart TD
     Rig -.->|guides with one of| OAGS["main-guide (the OAG)"] & GS
 ```
 
+The scope **centres itself** when asked (`CenterAfterSlew`): before its first exposure round after a slew it solves a
+frame of its primary (or chosen) shooter and re-aims by the error (aim-off, no sync), detects frames taken before a
+move showed, and learns a pointing correction applied to later slews within 15°.
+
 The scope also does its own **meridian flip**: it follows its site's sidereal time for the target's hour angle and
 its pointer's pier side (ASCOM/INDI: West = looking east, before the flip). Before each exposure round it waits for
 the flip point if the round would cross it, then re-gotos the target and checks the pier side turned to East; a timer

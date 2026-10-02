@@ -64,6 +64,13 @@ public sealed class CameraShooter : IAsyncDisposable
         else filter = CurrentFilter();
         _filterUsed = filter;
 
+        // the last frame can arrive a moment before the camera says it is idle again: wait for that rather than fail
+        if (_camera.Latest is { Phase.Text: "Exposing" })
+        {
+            try { await _camera.WaitAsync(c => c.Phase.Text != "Exposing", TimeSpan.FromSeconds(Math.Max(10, e.Seconds.Value))); }
+            catch (TimeoutException) { return CommandResult.Fail($"camera {_cameraId} is still busy with another exposure"); }
+        }
+
         return await Commands.CallAsync(_node, EquipmentIds.Command(DeviceKinds.Camera, _cameraId, "Expose"), new ExposeRequest
         {
             Seconds = e.Seconds, FrameType = e.FrameType, BinX = e.BinX, BinY = e.BinY, Gain = e.Gain,

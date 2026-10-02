@@ -1,4 +1,5 @@
 using System.Globalization;
+using ELink.Contracts.Automation;
 using ELink.Contracts.Composition;
 using ELink.Contracts.Equipment;
 using ELink.Contracts.Site;
@@ -45,6 +46,10 @@ public sealed class SmartScope : IAsyncDisposable
     private bool _flippedForTarget;
     private double _haAtGoto = double.NaN;
     private Timer? _flipTimer;
+    // the scope's own centring
+    private bool _centred;
+    private (double East, double North) _correction;      // degrees: where frames land relative to where it aims, learned from solves
+    private (double Ra, double Dec)? _correctionAt;
 
     /// <param name="guiderId">the guider this scope drives; null = the definition's GuiderId</param>
     public SmartScope(TypeSafeEVentNode node, ScopeDefinition definition, string? guiderId = null)
@@ -100,9 +105,11 @@ public sealed class SmartScope : IAsyncDisposable
 
     private Task<CommandResult> GotoAsync(SkyTarget target) => GotoAsync(target, flipping: false);
 
+    /// <param name="flipping">a re-goto of the current target (flip, centring): keep the target and what is known about it</param>
     private async Task<CommandResult> GotoAsync(SkyTarget target, bool flipping)
     {
         if (_pointers.Count == 0) return CommandResult.Fail($"scope {_id} has no pointer");
+        lock (_scopeGate) _centred = false;
         if (!flipping)
         {
             var (tra, tdec) = target.Epoch.Text == "JNow" ? Precession.DateToJ2000(target.RaHours.Value, target.DecDegrees.Value, DateTime.UtcNow) : (target.RaHours.Value, target.DecDegrees.Value);
@@ -116,6 +123,15 @@ public sealed class SmartScope : IAsyncDisposable
         // Put the primary shooter's centre, not the pointing axis, on the target.
         if (_shooters.Count > 0 && (_shooters[0].East != 0 || _shooters[0].North != 0))
             (ra, dec) = Sky.Offset(ra, dec, -_shooters[0].East, -_shooters[0].North);
+        // aim off by the pointing correction learned nearby (a mount that lands a few arcminutes off, a guide-scope
+        // misalignment, ...): the frames then land where they were asked to
+        (double E, double N) corr; (double Ra, double Dec)? at;
+        lock (_scopeGate) { corr = _correction; at = _correctionAt; }
+        if (at is { } c && (corr.E != 0 || corr.N != 0))
+        {
+            var (j2Ra, j2Dec) = epoch == "JNow" ? Precession.DateToJ2000(ra, dec, DateTime.UtcNow) : (ra, dec);
+            if (Sky.SeparationDegrees(j2Ra, j2Dec, c.Ra, c.Dec) < 15) (ra, dec) = Gnomonic.ToSky(ra, dec, -corr.E, -corr.N);
+        }
         var adjusted = new SkyTarget { RaHours = ra, DecDegrees = dec, Epoch = epoch };
         var results = await Task.WhenAll(_pointers.Select(p => Commands.CallAsync(_node, PointerIds.Goto(p.Id), adjusted)));
         return results.FirstOrDefault(r => !r.Ok.Value) ?? CommandResult.Success();
@@ -202,9 +218,91 @@ public sealed class SmartScope : IAsyncDisposable
         catch (TimeoutException) { return CommandResult.Fail("meridian flip: the mount did not settle"); }
         string after = BuildPointer().PierSide.Text;
         if (before == "West" && after == "West") return CommandResult.Fail("meridian flip: the mount did not turn over (check its meridian limits)");
-        lock (_scopeGate) _flippedForTarget = true;
+        lock (_scopeGate) { _flippedForTarget = true; _correction = (0, 0); _correctionAt = null; }   // pointing errors change on the other side of the pier
         await SetScope(s => s.Message = $"meridian flip done (pier {after})");
         return CommandResult.Success();
+    }
+
+    // ---- the scope's own centring ------------------------------------------------------------------------------
+
+    /// <summary>After a slew: solve a frame, and while it is off by more than the tolerance re-aim by the error (no sync
+    /// needed: it works on mounts that ignore syncs, and corrects guide-scope or flexure offsets too). What it learns is
+    /// applied to later slews nearby. A failed solve is noted, not fatal: the round goes ahead.</summary>
+    private async Task CentreAsync(CancellationToken ct = default)
+    {
+        if (!_def.CenterAfterSlew.Value || _shooters.Count == 0) return;
+        SkyTarget? target; bool centred;
+        lock (_scopeGate) { target = _target; centred = _centred; }
+        if (target is null || centred) return;
+        string shooter = _def.CenterShooterId.Text != "" ? _def.CenterShooterId.Text : _shooters[0].Id;
+        // where that shooter's centre should be: the target, moved by its offset from the primary shooter
+        var sref = _shooters.FirstOrDefault(s => s.Id == shooter);
+        double offE = sref is null ? 0 : (sref.East - _shooters[0].East) / 60, offN = sref is null ? 0 : (sref.North - _shooters[0].North) / 60;
+        var (wantRa, wantDec) = Gnomonic.ToSky(target.RaHours.Value, target.DecDegrees.Value, offE, offN);
+        double tol = Math.Max(0.05, _def.CenterToleranceArcmin.Value);
+        await StopGuidingAsync();
+        (double Ra, double Dec)? lastSolved = null;
+        double lastMove = 0;   // degrees the last re-aim moved the pointing
+        for (int attempt = 1; attempt <= Math.Max(1, _def.CenterMaxTries.Value); attempt++)
+        {
+            await SetScope(s => { s.Phase = "Centering"; s.Message = attempt == 1 ? "plate solving" : $"plate solving (try {attempt})"; });
+            var answers = await _node.CallFunctionAsync<SolveRequest, SolveResult>(SolveIds.Solve, new SolveRequest
+            {
+                ShooterId = shooter, ExposureSeconds = _def.CenterExposureSeconds.Value, HintRaHours = wantRa, HintDecDegrees = wantDec, HintRadiusDegrees = 5, TimeoutSeconds = 90,
+            }, TimeSpan.FromSeconds(_def.CenterExposureSeconds.Value + 200), ct);
+            var solved = answers?.FirstOrDefault();
+            if (solved is not { Solved.Value: true })
+            {
+                _guideNote = "centring: " + (solved is null ? "no plate solver on the mesh" : "no solution: " + solved.Message.Text);
+                return;
+            }
+            var (e, n) = Gnomonic.FromSky(wantRa, wantDec, solved.RaHours.Value, solved.DecDegrees.Value);
+            double err = Math.Sqrt(e * e + n * n) * 60;
+            // a re-aim that did not move the field: the frame was taken before the move showed; look again rather than
+            // correcting twice for the same error
+            if (lastSolved is { } prev && lastMove * 60 > tol && Sky.SeparationDegrees(prev.Ra, prev.Dec, solved.RaHours.Value, solved.DecDegrees.Value) < 0.3 * lastMove)
+            {
+                lastMove = 0;
+                await SetScope(s => s.Message = "the field has not moved yet: solving again");
+                await Task.Delay(2000, ct);
+                continue;
+            }
+            lastSolved = (solved.RaHours.Value, solved.DecDegrees.Value);
+            if (err <= tol)
+            {
+                lock (_scopeGate) _centred = true;
+                await SetScope(s => s.Message = FormattableString.Invariant($"centred to {err:0.00}'"));
+                return;
+            }
+            // frames land (e, n) from where they should: aim that much the other way, and remember it
+            lock (_scopeGate)
+            {
+                // add to the correction this slew used; one learned far from here was not used, so start afresh
+                bool used = _correctionAt is { } at && Sky.SeparationDegrees(at.Ra, at.Dec, target.RaHours.Value, target.DecDegrees.Value) < 15;
+                _correction = used ? (_correction.East + e, _correction.North + n) : (e, n);
+                _correctionAt = (target.RaHours.Value, target.DecDegrees.Value);
+            }
+            lastMove = Math.Sqrt(e * e + n * n);
+            await SetScope(s => s.Message = FormattableString.Invariant($"off by {err:0.0}', re-aiming"));
+            var go = await GotoAsync(target, flipping: true);
+            if (!go.Ok.Value) { _guideNote = "centring: " + go.Error.Text; return; }
+            await WaitSettledAfterGotoAsync(ct);
+        }
+        _guideNote = FormattableString.Invariant($"centring: still off after {_def.CenterMaxTries.Value} tries");
+    }
+
+    /// <summary>After a re-goto of the same spot: let the pointers start moving (they may still say "on target" for a
+    /// moment), then wait until they settle.</summary>
+    private async Task WaitSettledAfterGotoAsync(CancellationToken ct)
+    {
+        var moving = DateTime.UtcNow.AddSeconds(5);
+        while (DateTime.UtcNow < moving && BuildPointer().Phase.Text != "Slewing") await Task.Delay(100, ct);
+        try
+        {
+            await Task.WhenAll(_pointers.Select(x => x.State.WaitAsync(s => s.OnTarget.Value || s.Phase.Text is "Error" or "Parked" or "Disconnected", TimeSpan.FromMinutes(5), ct)));
+        }
+        catch (TimeoutException) { }
+        await Task.Delay(2500, ct);   // let the mount settle and the camera's view catch up
     }
 
     /// <summary>Tracking on target with nothing to expose: flip when due rather than track into the pier.</summary>
@@ -240,7 +338,8 @@ public sealed class SmartScope : IAsyncDisposable
         lock (_scopeGate)
         {
             if (p.Phase.Text != "OnTarget") _awaitSlew = false;
-            if (p.Phase.Text == "OnTarget" && !_guideRequested && !_awaitSlew) { _guideRequested = true; _roundsSinceDither = 0; start = true; }
+            // with centring on, guiding starts after it (the exposure round does both, in order)
+            if (p.Phase.Text == "OnTarget" && !_guideRequested && !_awaitSlew && (!_def.CenterAfterSlew.Value || _centred)) { _guideRequested = true; _roundsSinceDither = 0; start = true; }
             else if (p.Phase.Text is "Slewing" or "Parked" or "Disconnected" && _guideRequested) { _guideRequested = false; stop = true; }
         }
         if (start) await Commands.CallAsync(_node, GuiderIds.Start(_guiderId), new GuideStartRequest());
@@ -254,6 +353,7 @@ public sealed class SmartScope : IAsyncDisposable
     {
         var flip = await FlipIfDueAsync(exposureSeconds);
         if (!flip.Ok.Value) return flip;
+        await CentreAsync();
         if (_guider is null) return CommandResult.Success();
         // starting is idempotent: a running guider just says yes
         lock (_scopeGate) _guideRequested = true;
@@ -280,7 +380,7 @@ public sealed class SmartScope : IAsyncDisposable
     private async Task<CommandResult> ExposeCommandAsync(ShooterExposure e)
     {
         if (_shooters.Count == 0) return CommandResult.Fail($"scope {_id} has no shooter");
-        if (_guider is null && !_def.MeridianFlip.Value) return await ExposeAsync(e);
+        if (_guider is null && !_def.MeridianFlip.Value && !_def.CenterAfterSlew.Value) return await ExposeAsync(e);
         _ = Task.Run(async () =>
         {
             var r = await ExposePreparedAsync(e);
@@ -413,7 +513,7 @@ public sealed class SmartScope : IAsyncDisposable
             {
                 ct.ThrowIfCancellationRequested();
                 while (_shots.CurrentCount > 0) _shots.Wait(0); // forget frames from before this round
-                var ex = _guider is null && !_def.MeridianFlip.Value ? await ExposeAsync(r.Exposure) : await ExposePreparedAsync(r.Exposure);
+                var ex = _guider is null && !_def.MeridianFlip.Value && !_def.CenterAfterSlew.Value ? await ExposeAsync(r.Exposure) : await ExposePreparedAsync(r.Exposure);
                 if (!ex.Ok.Value) throw new InvalidOperationException(ex.Error.Text);
                 await SetScope(s => { s.Phase = "Exposing"; s.Message = _guideNote; });
                 var roundTimeout = TimeSpan.FromSeconds(r.Exposure.Seconds.Value + 180);
