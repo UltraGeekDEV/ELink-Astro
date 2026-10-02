@@ -15,31 +15,41 @@ public sealed class LiveStacker
     public int Height { get; }
     public Interpolation Interpolation { get; set; } = Interpolation.Bicubic;
     public int Frames { get; private set; }
+    /// <summary>1 (mono) or 3 (RGB). Set by the first frame: a colour first frame makes a colour stack. Later mono frames
+    /// go into all three channels; later colour frames into a mono stack go in as their luminance.</summary>
+    public int Channels { get; private set; } = 1;
 
-    private readonly float[] _sum, _weight;
+    private float[][] _sum;
+    private readonly float[] _weight;
     private readonly object _gate = new();
 
     public LiveStacker(TanWcs wcs, int width, int height)
     {
         if (width <= 0 || height <= 0) throw new ArgumentOutOfRangeException(nameof(width));
         Wcs = wcs; Width = width; Height = height;
-        _sum = new float[(long)width * height];
-        _weight = new float[_sum.Length];
+        _sum = [new float[(long)width * height]];
+        _weight = new float[(long)width * height];
     }
 
     public void Reset()
     {
-        lock (_gate) { Array.Clear(_sum); Array.Clear(_weight); Frames = 0; }
+        lock (_gate) { foreach (var s in _sum) Array.Clear(s); Array.Clear(_weight); Frames = 0; }
     }
 
     /// <summary>Adds one mono frame (row-major in file order, as <see cref="FitsImage.Data"/>) whose sky position is
     /// <paramref name="frameWcs"/>. <paramref name="background"/> is subtracted first.</summary>
-    public StackAddResult Add(float[] data, int width, int height, TanWcs frameWcs, float background = 0, float weight = 1)
+    public StackAddResult Add(float[] data, int width, int height, TanWcs frameWcs, float background = 0, float weight = 1) =>
+        Add(data, width, height, 1, frameWcs, [background], weight);
+
+    /// <summary>Adds a frame of 1 or 3 planar channels; <paramref name="backgrounds"/> has one level per channel.</summary>
+    public StackAddResult Add(float[] data, int width, int height, int channels, TanWcs frameWcs, float[] backgrounds, float weight = 1)
     {
-        if (data.Length < (long)width * height) throw new ArgumentException("data is smaller than width x height");
+        if (channels is not (1 or 3)) throw new ArgumentException("1 or 3 channels", nameof(channels));
+        if (data.Length < (long)width * height * channels) throw new ArgumentException("data is smaller than width x height x channels");
+        if (backgrounds.Length < channels) throw new ArgumentException("one background per channel", nameof(backgrounds));
         double ratio = Wcs.PixelScaleArcsec / frameWcs.PixelScaleArcsec;
         int bin = ratio >= 2 ? (int)Math.Floor(ratio) : 1;
-        if (bin > 1) (data, width, height, frameWcs) = Bin(data, width, height, frameWcs, bin);
+        if (bin > 1) (data, width, height, frameWcs) = Bin(data, width, height, frameWcs, bin, channels);
         double rest = ratio / bin;
         int k = rest > 1.0001 ? (int)Math.Ceiling(rest) : 1;    // samples per axis inside one output pixel
 
@@ -60,15 +70,24 @@ public sealed class LiveStacker
         var interp = k > 1 ? Interpolation.Bilinear : Interpolation;
         float invK2 = 1f / (k * k);
         int touched = 0;
-        var src = data; int sw = width, sh = height;
+        var src = data; int sw = width, sh = height, fc = channels;
+        long plane = (long)sw * sh;
+        var bg = backgrounds;
         lock (_gate)
         {
+            if (Frames == 0 && Channels != channels)
+            {
+                Channels = channels;
+                _sum = Enumerable.Range(0, channels).Select(_ => new float[_weight.Length]).ToArray();
+            }
+            var sums = _sum; int sc = Channels;
             Parallel.For(y0, y1 + 1, () => 0, (y, _, count) =>
             {
+                Span<float> acc = stackalloc float[3];
                 long row = (long)y * Width;
                 for (int x = x0; x <= x1; x++)
                 {
-                    float acc = 0; int n = 0;
+                    acc.Clear(); int n = 0;
                     for (int v = 0; v < k; v++)
                     {
                         double py = y + (v + 0.5) / k - 0.5;
@@ -79,11 +98,15 @@ public sealed class LiveStacker
                             if (w <= 0) continue;
                             double sx = (h[0] * px + h[1] * py + h[2]) / w, sy = (h[3] * px + h[4] * py + h[5]) / w;
                             if (sx < -0.5 || sy < -0.5 || sx > sw - 0.5 || sy > sh - 0.5) continue;
-                            acc += Sample(src, sw, sh, sx, sy, interp) - background; n++;
+                            for (int c = 0; c < fc; c++) acc[c] += Sample(src, c * plane, sw, sh, sx, sy, interp) - bg[c];
+                            n++;
                         }
                     }
                     if (n == 0) continue;
-                    _sum[row + x] += weight * acc * invK2;
+                    float f = weight * invK2;
+                    if (sc == fc) for (int c = 0; c < sc; c++) sums[c][row + x] += f * acc[c];
+                    else if (sc == 3) for (int c = 0; c < 3; c++) sums[c][row + x] += f * acc[0];      // mono into colour: grey
+                    else sums[0][row + x] += f * (acc[0] + acc[1] + acc[2]) / 3;                       // colour into mono: luminance
                     _weight[row + x] += weight * n * invK2;
                     count++;
                 }
@@ -94,13 +117,20 @@ public sealed class LiveStacker
         return touched > 0 ? new(true, touched, bin, k, "") : new(false, 0, bin, k, "the frame does not overlap the stack's field");
     }
 
-    /// <summary>The stack: weighted mean per pixel, NaN where nothing has landed.</summary>
+    /// <summary>The stack: weighted mean per pixel, planar (<see cref="Channels"/> planes), NaN where nothing has landed.</summary>
     public float[] Mean()
     {
-        var r = new float[_sum.Length];
         lock (_gate)
-            for (int i = 0; i < r.Length; i++) r[i] = _weight[i] > 1e-6f ? _sum[i] / _weight[i] : float.NaN;
-        return r;
+        {
+            long plane = _weight.Length;
+            var r = new float[plane * Channels];
+            for (int c = 0; c < Channels; c++)
+            {
+                var s = _sum[c];
+                for (long i = 0; i < plane; i++) r[c * plane + i] = _weight[i] > 1e-6f ? s[i] / _weight[i] : float.NaN;
+            }
+            return r;
+        }
     }
 
     /// <summary>Share of the grid that has received any data.</summary>
@@ -111,28 +141,33 @@ public sealed class LiveStacker
         return (double)n / _weight.Length;
     }
 
-    /// <summary>The stack area-averaged down to fit in maxWidth x maxHeight (never up), with its WCS.</summary>
+    /// <summary>The stack area-averaged down to fit in maxWidth x maxHeight (never up), planar, with its WCS.</summary>
     public (float[] Data, int Width, int Height, TanWcs Wcs) Reduced(int maxWidth, int maxHeight)
     {
         int f = Math.Max(1, Math.Max((int)Math.Ceiling(Width / (double)Math.Max(1, maxWidth)), (int)Math.Ceiling(Height / (double)Math.Max(1, maxHeight))));
         if (f == 1) return (Mean(), Width, Height, Wcs);
         int w = Width / f, hgt = Height / f;
-        var r = new float[(long)w * hgt];
         lock (_gate)
+        {
+            int channels = Channels;
+            long plane = (long)w * hgt;
+            var r = new float[plane * channels];
             Parallel.For(0, hgt, y =>
             {
                 for (int x = 0; x < w; x++)
-                {
-                    double s = 0, wt = 0;
-                    for (int dy = 0; dy < f; dy++)
+                    for (int c = 0; c < channels; c++)
                     {
-                        long row = (long)(y * f + dy) * Width + x * f;
-                        for (int dx = 0; dx < f; dx++) { s += _sum[row + dx]; wt += _weight[row + dx]; }
+                        double s = 0, wt = 0;
+                        for (int dy = 0; dy < f; dy++)
+                        {
+                            long row = (long)(y * f + dy) * Width + x * f;
+                            for (int dx = 0; dx < f; dx++) { s += _sum[c][row + dx]; wt += _weight[row + dx]; }
+                        }
+                        r[c * plane + (long)y * w + x] = wt > 1e-6 ? (float)(s / wt) : float.NaN;
                     }
-                    r[(long)y * w + x] = wt > 1e-6 ? (float)(s / wt) : float.NaN;
-                }
             });
-        return (r, w, hgt, Binned(Wcs, f));
+            return (r, w, hgt, Binned(Wcs, f));
+        }
     }
 
     /// <summary>Median of a sample of the pixels: the sky background level.</summary>
@@ -146,23 +181,25 @@ public sealed class LiveStacker
         return sample[sample.Count / 2];
     }
 
-    /// <summary>Box-bins by an integer factor (area average); the WCS follows.</summary>
-    public static (float[] Data, int Width, int Height, TanWcs Wcs) Bin(float[] data, int width, int height, TanWcs wcs, int f)
+    /// <summary>Box-bins every channel by an integer factor (area average); the WCS follows.</summary>
+    public static (float[] Data, int Width, int Height, TanWcs Wcs) Bin(float[] data, int width, int height, TanWcs wcs, int f, int channels = 1)
     {
         int w = width / f, h = height / f;
-        var r = new float[(long)w * h];
+        long srcPlane = (long)width * height, plane = (long)w * h;
+        var r = new float[plane * channels];
         float inv = 1f / (f * f);
-        Parallel.For(0, h, y =>
+        Parallel.For(0, h * channels, yc =>
         {
+            int y = yc % h, c = yc / h;
             for (int x = 0; x < w; x++)
             {
                 float s = 0;
                 for (int dy = 0; dy < f; dy++)
                 {
-                    long row = (long)(y * f + dy) * width + x * f;
+                    long row = c * srcPlane + (long)(y * f + dy) * width + x * f;
                     for (int dx = 0; dx < f; dx++) s += data[row + dx];
                 }
-                r[(long)y * w + x] = s * inv;
+                r[c * plane + (long)y * w + x] = s * inv;
             }
         });
         return (r, w, h, Binned(wcs, f));
@@ -182,19 +219,20 @@ public sealed class LiveStacker
         return ((h[0] * x + h[1] * y + h[2]) / w, (h[3] * x + h[4] * y + h[5]) / w);
     }
 
-    private static float Sample(float[] d, int w, int h, double x, double y, Interpolation mode)
+    private static float Sample(float[] all, long offset, int w, int h, double x, double y, Interpolation mode)
     {
+        var d = all.AsSpan((int)offset, w * h);
         switch (mode)
         {
             case Interpolation.Nearest:
-                return d[Math.Clamp((int)Math.Round(y), 0, h - 1) * (long)w + Math.Clamp((int)Math.Round(x), 0, w - 1)];
+                return d[Math.Clamp((int)Math.Round(y), 0, h - 1) * w + Math.Clamp((int)Math.Round(x), 0, w - 1)];
             case Interpolation.Bilinear:
             {
                 int ix = (int)Math.Floor(x), iy = (int)Math.Floor(y);
                 float fx = (float)(x - ix), fy = (float)(y - iy);
                 int xa = Math.Clamp(ix, 0, w - 1), xb = Math.Clamp(ix + 1, 0, w - 1), ya = Math.Clamp(iy, 0, h - 1), yb = Math.Clamp(iy + 1, 0, h - 1);
-                float top = d[ya * (long)w + xa] * (1 - fx) + d[ya * (long)w + xb] * fx;
-                float bot = d[yb * (long)w + xa] * (1 - fx) + d[yb * (long)w + xb] * fx;
+                float top = d[ya * w + xa] * (1 - fx) + d[ya * w + xb] * fx;
+                float bot = d[yb * w + xa] * (1 - fx) + d[yb * w + xb] * fx;
                 return top * (1 - fy) + bot * fy;
             }
             default:
@@ -206,7 +244,7 @@ public sealed class LiveStacker
                 float s = 0;
                 for (int j = 0; j < 4; j++)
                 {
-                    long row = Math.Clamp(iy - 1 + j, 0, h - 1) * (long)w;
+                    int row = Math.Clamp(iy - 1 + j, 0, h - 1) * w;
                     float r = 0;
                     for (int i = 0; i < 4; i++) r += wx[i] * d[row + Math.Clamp(ix - 1 + i, 0, w - 1)];
                     s += wy[j] * r;

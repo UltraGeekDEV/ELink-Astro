@@ -17,6 +17,7 @@ public sealed class MountPointer : IAsyncDisposable
     private readonly CommandSet _commands;
     private readonly StatePublisher<PointerState> _publisher;
     private (double Ra, double Dec)? _target; // J2000
+    private volatile bool _slewSeen;          // the mount has slewed since our last goto
 
     public MountPointer(TypeSafeEVentNode node, string pointerId, string mountId, double toleranceDegrees = 0.05)
     {
@@ -29,7 +30,7 @@ public sealed class MountPointer : IAsyncDisposable
     public async Task StartAsync()
     {
         await _mount.StartAsync();
-        _mount.Changed += __ => { _ = _publisher.PublishAsync(); };
+        _mount.Changed += m => { if (m.Phase.Text == "Slewing") _slewSeen = true; _ = _publisher.PublishAsync(); };
         await _commands.AddAsync<SkyTarget, CommandResult>(PointerIds.Goto(_id), GotoAsync, $"slew the mount {_mountId} to a sky position and track it");
         await _commands.AddAsync<NOTESVoid, CommandResult>(PointerIds.Abort(_id), _ =>
             Commands.CallAsync(_node, EquipmentIds.Command(DeviceKinds.Mount, _mountId, "Abort"), NOTESVoid.Void), "stop the slew");
@@ -38,6 +39,7 @@ public sealed class MountPointer : IAsyncDisposable
 
     private async Task<CommandResult> GotoAsync(SkyTarget target)
     {
+        _slewSeen = false;   // before the call: the mount may report Slewing before it answers
         var result = await Commands.CallAsync(_node, EquipmentIds.Command(DeviceKinds.Mount, _mountId, "Goto"), target);
         if (!result.Ok.Value) return result;
         _target = ToJ2000(target.RaHours.Value, target.DecDegrees.Value, target.Epoch.Text);
@@ -58,8 +60,12 @@ public sealed class MountPointer : IAsyncDisposable
         s.RaHours = ra; s.DecDegrees = dec;
         s.Message = m.Message.Text;
         bool slewing = m.Phase.Text is "Slewing" or "Parking";
+        // settled: the reported position is on the target, or (as Ekos takes it) the mount finished a slew to this very
+        // target; some mounts and simulators report a few arcminutes off where they were sent, which centring then fixes
+        bool finishedOurSlew = _slewSeen && !double.IsNaN(m.TargetRaHours.Value) && _target is { } tt
+                               && Sky.SeparationDegrees(Target(m).Ra, Target(m).Dec, tt.Ra, tt.Dec) <= _toleranceDegrees;
         s.OnTarget = _target is { } t && !slewing && m.Phase.Text is "Tracking" or "Idle"
-                     && Sky.SeparationDegrees(ra, dec, t.Ra, t.Dec) <= _toleranceDegrees;
+                     && (Sky.SeparationDegrees(ra, dec, t.Ra, t.Dec) <= _toleranceDegrees || finishedOurSlew);
         s.Phase = m.Phase.Text switch
         {
             "Slewing" or "Parking" => "Slewing",
@@ -69,6 +75,9 @@ public sealed class MountPointer : IAsyncDisposable
         };
         return s;
     }
+
+    /// <summary>The mount's own goto target, J2000 (mount targets are JNow like its position).</summary>
+    private static (double Ra, double Dec) Target(MountState m) => ToJ2000(m.TargetRaHours.Value, m.TargetDecDegrees.Value, m.Epoch.Text);
 
     public async ValueTask DisposeAsync()
     {

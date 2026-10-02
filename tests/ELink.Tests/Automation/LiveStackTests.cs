@@ -215,6 +215,77 @@ public class LiveStackTests : IAsyncLifetime
         Assert.True(await Eventually(() => _last is { FramesStacked.Value: 1, LastFrame.Text: "disk" }), _last?.Message.Text);
     }
 
+    /// <summary>A raw one-shot-colour frame: the sky with R = sky, G = 0.6 sky, B = 0.3 sky, through a Bayer filter.</summary>
+    private static byte[] BayerFrame(TanWcs wcs, int w, int h, string pattern, bool writePattern = true)
+    {
+        var px = new ushort[w * h];
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+            {
+                var (ra, dec) = wcs.PixelToSky(x, y);
+                double k = pattern[(y % 2) * 2 + x % 2] switch { 'R' => 1.0, 'G' => 0.6, _ => 0.3 };
+                px[y * w + x] = (ushort)Math.Round(Sky(ra, dec) * k);
+            }
+        var cards = new Dictionary<string, string> { ["EXPTIME"] = "30" };
+        if (writePattern) cards["BAYERPAT"] = $"'{pattern}'";
+        foreach (var (k, v) in wcs.Cards()) cards[k] = v;
+        return FitsImage.Write16(w, h, px, cards);
+    }
+
+    [Theory]
+    [InlineData("Interpolated", 4.0)]
+    [InlineData("SuperPixel", 8.0)]    // half the resolution: the stack takes the doubled scale
+    public async Task RawColourFramesAreDebayeredIntoAColourStack(string mode, double expectedScale)
+    {
+        var req = Request(0); req.Debayer = mode;
+        Assert.True((await Commands.CallAsync(_node, LiveStackIds.Start, req)).Ok.Value);
+        int w = 360, h = 270;
+        var at = TanWcs.Centered(RA, DEC, 25, 4, w, h);
+        await Shoot("cam", BayerFrame(at, w, h, "GBRG"));
+        Assert.True(await Eventually(() => _last is { FramesStacked.Value: 1 }), _last?.Message.Text);
+        Assert.Equal(3, _last!.Channels.Value);
+        Assert.Equal(expectedScale, _last.PixelScaleArcsec.Value, 6);
+        Assert.Contains("GBRG", _last.Message.Text);
+
+        var (img, wcs) = await Image();
+        Assert.Equal(3, img.Channels);
+        int plane = img.Width * img.Height;
+        // colour ratios at the bright centre survive, and the picture is where it should be
+        var (cx, cy) = wcs.SkyToPixel(RA, DEC);
+        int i = (int)Math.Round(cy) * img.Width + (int)Math.Round(cx);
+        double r = img.Data[i], g = img.Data[plane + i], b = img.Data[2 * plane + i];
+        Assert.InRange(r, Sky(RA, DEC) * 0.97, Sky(RA, DEC) * 1.03);
+        Assert.Equal(0.6, g / r, 2); Assert.Equal(0.3, b / r, 2);
+    }
+
+    [Fact]
+    public async Task APatternCanBeGivenAndDebayeringSwitchedOff()
+    {
+        int w = 200, h = 150;
+        var at = TanWcs.Centered(RA, DEC, 0, 4, w, h);
+        var req = Request(4); req.BayerPattern = "BGGR";                       // the frames do not say
+        Assert.True((await Commands.CallAsync(_node, LiveStackIds.Start, req)).Ok.Value);
+        await Shoot("cam", BayerFrame(at, w, h, "BGGR", writePattern: false));
+        Assert.True(await Eventually(() => _last is { FramesStacked.Value: 1 }), _last?.Message.Text);
+        Assert.Equal(3, _last!.Channels.Value);
+        var (img, wcs) = await Image();
+        var (cx, cy) = wcs.SkyToPixel(RA, DEC);
+        int i = (int)Math.Round(cy) * img.Width + (int)Math.Round(cx), plane = img.Width * img.Height;
+        Assert.Equal(0.3, img.Data[2 * plane + i] / img.Data[i], 2);           // blue really is blue
+
+        var off = Request(4); off.Debayer = "None";
+        Assert.True((await Commands.CallAsync(_node, LiveStackIds.Start, off)).Ok.Value);
+        await Shoot("cam", BayerFrame(at, w, h, "RGGB"));
+        Assert.True(await Eventually(() => _last is { FramesStacked.Value: 1 }), _last?.Message.Text);
+        Assert.Equal(1, _last!.Channels.Value);
+        Assert.Contains("kept raw", _last.Message.Text);
+
+        var bad = Request(4); bad.Debayer = "Fancy";
+        Assert.False((await Commands.CallAsync(_node, LiveStackIds.Start, bad)).Ok.Value);
+        bad = Request(4); bad.BayerPattern = "RGBG";
+        Assert.False((await Commands.CallAsync(_node, LiveStackIds.Start, bad)).Ok.Value);
+    }
+
     [Fact]
     public async Task AFrameRelayedByAScopeIsStackedOnce()
     {

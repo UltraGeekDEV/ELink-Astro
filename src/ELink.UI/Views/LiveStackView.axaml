@@ -49,6 +49,11 @@
           <StackPanel><TextBlock Classes="label" Text="Frame scale &quot;/px (hint)"/><NumericUpDown Value="{Binding FramePixelScale}" Minimum="0" Increment="0.1" FormatString="0.###" Width="160"/></StackPanel>
           <StackPanel><TextBlock Classes="label" Text="Frame angle ° (pointing)"/><NumericUpDown Value="{Binding FramePositionAngle}" Minimum="-180" Maximum="180" FormatString="0.#" Width="160"/></StackPanel>
         </StackPanel>
+        <StackPanel Classes="row">
+          <StackPanel><TextBlock Classes="label" Text="Colour (Bayer) frames"/><ComboBox ItemsSource="{Binding DebayerModes}" SelectedItem="{Binding Debayer}" Width="150"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Bayer pattern"/><ComboBox ItemsSource="{Binding BayerPatterns}" SelectedItem="{Binding BayerPattern}" Width="140"/></StackPanel>
+          <TextBlock Classes="label" VerticalAlignment="Bottom" TextWrapping="Wrap" MaxWidth="420" Text="Interpolated keeps full resolution; Super pixel turns each 2x2 cell into one RGB pixel (half resolution, no interpolation artefacts)."/>
+        </StackPanel>
 
         <StackPanel Classes="row">
           <Button Content="Start" Classes="primary" Command="{Binding StartStackCommand}"/>

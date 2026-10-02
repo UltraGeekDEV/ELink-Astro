@@ -198,8 +198,14 @@ gnomonic projections of one sphere are related by a plane homography), so there 
 | 1 ≤ r < 2 | average ⌈r⌉² bilinear samples spread over each output pixel |
 | r ≥ 2 | box-bin the frame by ⌊r⌋ first (exact area average, WCS follows), then as above |
 
+Raw one-shot-colour frames go through `Debayer` (`ELink.Imaging`) before resampling: *SuperPixel* turns each 2×2
+cell into one RGB pixel and the frame's WCS follows with `LiveStacker.Binned(wcs, 2)`; *Interpolated* is a bilinear
+demosaic on the same grid (the mean of same-colour pixels in the 3×3 neighbourhood, exact for linear data). The raw
+frame is what gets plate solved. The stacker is planar with 1 or 3 channels, fixed by its first frame; mono frames
+go into a colour stack as grey and colour frames into a mono stack as luminance.
+
 Partial edge pixels add a fractional weight, the mean is sum/weight, and each frame's background median is matched
-to the first frame's. Memory is 8 bytes per output pixel, capped by `MaxMegapixels`.
+to the first frame's, per channel. Memory is 8 bytes per output pixel (16 in colour), capped by `MaxMegapixels`.
 
 ## Coordinates
 

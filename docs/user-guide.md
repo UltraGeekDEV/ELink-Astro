@@ -167,7 +167,11 @@ flowchart LR
     R -->|FITS has a WCS| W[use it]
     R -->|else| S[plate solve]
     R -->|Pointing| P[shot's pointing + frame scale/angle]
-    W & S & P --> X[resample into the field]
+    W & S & P --> C{colour camera?}
+    C -->|Interpolated| CI[full-res RGB]
+    C -->|Super pixel| CS[half-res RGB]
+    C -->|mono / None| CM[as is]
+    CI & CS & CM --> X[resample into the field]
     X -->|output finer| U[interpolate]
     X -->|output coarser| D[area-average]
     U & D --> A[add, sky levels matched] --> V[stack shown on the tab]
@@ -182,9 +186,17 @@ flowchart LR
 3. **Frames**: tick the shooters or scopes to stack. **Registration**: *Auto* uses a WCS already in the FITS, else
    plate solves (give the frame scale as a hint to speed it up); *Solve* always solves; *Pointing* needs no solver
    but only the frame scale and angle, and is as accurate as your mount.
-4. **Start**. Every new frame updates the picture. *Stop* stops listening (the stack stays), *Empty* clears it.
+4. **Colour (Bayer) frames**: raw frames from a one-shot-colour camera are debayered before stacking.
+   - *Interpolated*: full resolution; each missing colour is averaged from its nearest neighbours.
+   - *Super pixel*: each 2×2 cell (R, two G, B) becomes one RGB pixel. Half the resolution (the pixel scale
+     doubles) but no interpolation artefacts, and it is faster. A good match when the output scale is coarser anyway.
+   - *None*: stack the raw mosaic as mono.
 
-Only Light frames are used; colour frames are stacked as luminance. The stack can be fetched as a 32-bit FITS with a
+   The pattern comes from the frame's `BAYERPAT` (with `XBAYROFF`/`YBAYROFF`); pick one under *Bayer pattern* if
+   the camera does not write it. The stack becomes colour when its first frame is colour.
+5. **Start**. Every new frame updates the picture. *Stop* stops listening (the stack stays), *Empty* clears it.
+
+Only Light frames are used. Raw colour frames also show in colour in the camera and scope previews. The stack can be fetched as a 32-bit FITS with a
 WCS (it plate-solves on its own) through `ELink.Automation.LiveStack.GetImage`.
 
 ## Storage

@@ -79,7 +79,8 @@ ID scheme: `ELink.<Kind>.<DeviceName>.<Thing>` e.g. `ELink.Camera.CCD_Simulator.
 - [x] Automatic centring after every slew (also hand controller / other software): solve the guide camera, sync + reslew (aim off when syncs do not help), learned guide-to-primary offset per pier side
 - [x] Autofocus (HFR star measurement, hyperbola/parabola fit, coarse + fine sweeps) as a mesh service
 - [x] Live stacking into a fixed field (e.g. the mosaic's virtual FOV) at any pixel scale: WCS/solve/pointing registration, exact homography resampling, bicubic upscaling, area-averaged downscaling, sky-level matching, float FITS + WCS out
-- [ ] Live stack: outlier rejection (sigma clip), darks/flats, debayering colour frames
+- [x] Debayering of one-shot-colour frames (BAYERPAT + offsets or a given pattern): interpolated and super pixel; colour stacks and colour previews
+- [ ] Live stack: outlier rejection (sigma clip), darks/flats, colour balance
 - [x] Mosaic painter: virtual FOV as a coverage map of exposure seconds; heterogeneous rotated frames, rotator passes, small-stepover raster passes + greedy top-up, producer/executor/recorder pipeline, live dRPC control
 - [ ] Meridian flip (deferred), dithering, guiding (PHD2/INDI guider) as modules
 - [x] Sequencer (plans of blocks, autofocus, pause/resume, weather interlock); [ ] scheduler/priorities, dome interlock

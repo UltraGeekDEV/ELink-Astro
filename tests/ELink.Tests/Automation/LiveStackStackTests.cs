@@ -38,9 +38,11 @@ public class LiveStackStackTests(ITestOutputHelper log) : IAsyncLifetime
     }
 
     [Theory]
-    [InlineData(4.0)]   // coarser than the 2.68"/px frames
-    [InlineData(1.5)]   // finer
-    public async Task StacksSolvedSimulatorFramesIntoTheField(double scale)
+    [InlineData(4.0, "")]               // coarser than the 2.68"/px frames
+    [InlineData(1.5, "")]               // finer
+    [InlineData(4.0, "Interpolated")]   // the simulator as a one-shot-colour camera
+    [InlineData(6.0, "SuperPixel")]
+    public async Task StacksSolvedSimulatorFramesIntoTheField(double scale, string debayer)
     {
         if (_indi is null || PlateSolver.Locate() is not { } solveField) return;
         using var bridge = ElinkNode.Create("LSS-Bridge", ELink.Testing.TestPorts.Next());
@@ -61,6 +63,11 @@ public class LiveStackStackTests(ITestOutputHelper log) : IAsyncLifetime
         await c.SetSwitchAsync("Telescope Simulator", "ON_COORD_SET", "TRACK");
         await c.WaitForAsync("CCD Simulator", "SCOPE_INFO", _ => true, T);
         await c.SetNumbersAsync("CCD Simulator", "SCOPE_INFO", new[] { ("FOCAL_LENGTH", 400.0), ("APERTURE", 80.0) });
+        if (debayer != "")
+        {
+            await c.WaitForAsync("CCD Simulator", "SIMULATE_BAYER", _ => true, T);
+            await c.SetSwitchAsync("CCD Simulator", "SIMULATE_BAYER", "INDI_ENABLED");
+        }
         Assert.True((await Commands.CallAsync(bridge, ScopeIds.DefineCameraShooter, new CameraShooterDefinition { Id = "cam", CameraId = "CCD_Simulator" })).Ok.Value);
         Assert.True((await Commands.CallAsync(bridge, EquipmentIds.Command("Camera", "CCD_Simulator", "Connect"), (BinaryConvertibleBool)true)).Ok.Value);
 
@@ -76,6 +83,7 @@ public class LiveStackStackTests(ITestOutputHelper log) : IAsyncLifetime
         {
             Label = "sim", Center = new SkyTarget { RaHours = 5.58, DecDegrees = -1.2, Epoch = "J2000" },
             FovWidthDegrees = 1.4, FovHeightDegrees = 1.0, PixelScaleArcsec = scale, Registration = "Solve", FramePixelScaleArcsec = 2.68,
+            Debayer = debayer == "" ? "Interpolated" : debayer,
         };
         req.ShooterIds.Add("cam");
         Assert.True((await Commands.CallAsync(bridge, LiveStackIds.Start, req)).Ok.Value);
@@ -95,6 +103,7 @@ public class LiveStackStackTests(ITestOutputHelper log) : IAsyncLifetime
         Assert.Equal(0, last.FramesRejected.Value);
         Assert.Equal(scale, last.PixelScaleArcsec.Value, 6);
         Assert.InRange(last.CoveragePercent.Value, 40, 100);   // two 57'x46' footprints in a 84'x60' field
+        Assert.Equal(debayer == "" ? 1 : 3, last.Channels.Value);
 
         var img = Assert.Single((await bridge.CallFunctionAsync<LiveStackImageRequest, LiveStackImage>(LiveStackIds.GetImage, new LiveStackImageRequest(), TimeSpan.FromSeconds(30)))!);
         Assert.True(img.Ok.Value, img.Message.Text);
@@ -107,6 +116,7 @@ public class LiveStackStackTests(ITestOutputHelper log) : IAsyncLifetime
         // registered frames keep stars sharp: misregistered ones would double or smear them
         Assert.InRange(hfr * scale, 1.0, 12.0);
 
+        if (debayer != "") return;   // solve-field takes mono images; the mono stacks below check the geometry
         // the stack is solvable on its own and lands where it was asked to be
         var again = Assert.Single((await bridge.CallFunctionAsync<SolveRequest, SolveResult>(SolveIds.Solve,
             new SolveRequest { Image = img.Image, HintRaHours = 5.58, HintDecDegrees = -1.2, HintRadiusDegrees = 3, ScaleLowArcsecPerPixel = scale * 0.9, ScaleHighArcsecPerPixel = scale * 1.1 }, TimeSpan.FromSeconds(120)))!);

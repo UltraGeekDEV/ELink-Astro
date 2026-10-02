@@ -87,7 +87,8 @@ public class FullStackTests : IAsyncLifetime
         });
         Assert.True(r.Ok.Value, r.Error.Text);
 
-        Assert.True(await Eventually(() => state is { Observing.Value: false, ShotsDone.Value: 1 }, 120000), $"phase {state?.Phase.Text} {state?.Message.Text}");
+        Assert.True(await Eventually(() => state is { Observing.Value: false, ShotsDone.Value: 1 }, 120000),
+            $"phase {state?.Phase.Text} {state?.Message.Text} | mount {mountState.Latest?.Phase.Text} {mountState.Latest?.RaHours.Value:0.000} {mountState.Latest?.DecDegrees.Value:0.000} parked {mountState.Latest?.Parked.Value} tracking {mountState.Latest?.Tracking.Value} target {mountState.Latest?.TargetRaHours.Value:0.000} {mountState.Latest?.TargetDecDegrees.Value:0.000} {mountState.Latest?.Message.Text}");
         Assert.Equal("", state!.Message.Text);
         Assert.True(await Eventually(() => shot is not null));
         Assert.StartsWith("SIMPLE", System.Text.Encoding.ASCII.GetString(shot!.Data.Data, 0, 6));

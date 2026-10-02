@@ -29,7 +29,8 @@ public sealed class LiveStackService : IAsyncDisposable
     private LiveStacker? _stack;
     private string _phase = "Idle", _message = "", _last = "";
     private int _rejected, _pending, _generation;
-    private double _exposure, _pedestal = double.NaN, _lastScale = double.NaN;
+    private double _exposure, _lastScale = double.NaN;
+    private float[]? _pedestal;   // sky level per channel of the first frame
 
     private sealed record Item(byte[] Fits, string Source, double RaHours, double DecDegrees, double Seconds, int Generation);
 
@@ -58,7 +59,7 @@ public sealed class LiveStackService : IAsyncDisposable
             {
                 Phase = _phase, Label = _request?.Label.Text ?? "", Message = _message, FramesStacked = _stack?.Frames ?? 0,
                 FramesRejected = _rejected, FramesPending = _pending, Width = _stack?.Width ?? 0, Height = _stack?.Height ?? 0,
-                PixelScaleArcsec = _stack?.Wcs.PixelScaleArcsec ?? 0, CoveragePercent = _stack is null ? 0 : Math.Round(_stack.Coverage() * 100, 2),
+                PixelScaleArcsec = _stack?.Wcs.PixelScaleArcsec ?? 0, Channels = _stack?.Channels ?? 0, CoveragePercent = _stack is null ? 0 : Math.Round(_stack.Coverage() * 100, 2),
                 TotalExposureSeconds = _exposure, LastFrame = _last,
             };
             return s;
@@ -77,6 +78,8 @@ public sealed class LiveStackService : IAsyncDisposable
         if (r.PixelScaleArcsec.Value < 0 || double.IsNaN(r.PixelScaleArcsec.Value)) return CommandResult.Fail("the pixel scale must be positive (or 0 for the frames' own)");
         if (!Interpolations.Contains(r.Interpolation.Text)) return CommandResult.Fail("Interpolation is Bicubic, Bilinear or Nearest");
         if (!Registrations.Contains(r.Registration.Text)) return CommandResult.Fail("Registration is Auto, Solve or Pointing");
+        if (!Enum.TryParse<DebayerMode>(r.Debayer.Text, out _) || int.TryParse(r.Debayer.Text, out _)) return CommandResult.Fail("Debayer is Interpolated, SuperPixel or None");
+        if (r.BayerPattern.Text.Trim() != "" && Debayer.Normalize(r.BayerPattern.Text) is null) return CommandResult.Fail("BayerPattern is RGGB, BGGR, GRBG, GBRG, or empty for the frame's own BAYERPAT");
         if (r.Registration.Text == "Pointing" && !(r.FramePixelScaleArcsec.Value > 0)) return CommandResult.Fail("Pointing registration needs the frames' pixel scale");
         if (r.Center.Epoch.Text is not ("J2000" or "")) return CommandResult.Fail("the field centre must be J2000");
         if (r.PixelScaleArcsec.Value > 0 && Size(r, r.PixelScaleArcsec.Value) is { Error: { } err }) return CommandResult.Fail(err);
@@ -85,7 +88,7 @@ public sealed class LiveStackService : IAsyncDisposable
         lock (_gate)
         {
             _request = r; _stack = r.PixelScaleArcsec.Value > 0 ? Create(r, r.PixelScaleArcsec.Value) : null;
-            _rejected = 0; _pending = 0; _exposure = 0; _pedestal = double.NaN; _lastScale = double.NaN; _last = ""; _seen.Clear();
+            _rejected = 0; _pending = 0; _exposure = 0; _pedestal = null; _lastScale = double.NaN; _last = ""; _seen.Clear();
             _generation++;
             _phase = "Stacking"; _message = _stack is null ? "waiting for the first frame to set the scale" : "waiting for frames";
             _queue = Channel.CreateBounded<Item>(new BoundedChannelOptions(16) { FullMode = BoundedChannelFullMode.Wait });
@@ -194,13 +197,14 @@ public sealed class LiveStackService : IAsyncDisposable
         LiveStackRequest r;
         lock (_gate) { if (_request is null || item.Generation != _generation) return "!stack was replaced"; r = _request; }
         var img = FitsImage.Parse(item.Fits);
-        float[] mono = img.Channels == 1 ? img.Data : Luminance(img);
+        var (data, width, height, channels, bin, colour) = Prepare(img, r);
 
-        var (wcs, how) = await RegisterAsync(r, img, item, ct);
-        if (wcs is null) return "!" + how;
+        var (rawWcs, how) = await RegisterAsync(r, img, item, ct);   // the raw frame is what gets solved
+        if (rawWcs is null) return "!" + how;
+        var wcs = bin > 1 ? LiveStacker.Binned(rawWcs, bin) : rawWcs;
 
         LiveStacker stack;
-        float background;
+        var background = new float[channels];
         lock (_gate)
         {
             if (item.Generation != _generation) return "!stack was replaced";
@@ -210,18 +214,19 @@ public sealed class LiveStackService : IAsyncDisposable
                 _stack = Create(r, wcs.PixelScaleArcsec);
             }
             stack = _stack;
-            float bg = LiveStacker.Background(mono);
-            if (double.IsNaN(_pedestal)) _pedestal = bg;
-            background = r.NormalizeBackground.Value ? (float)(bg - _pedestal) : 0;
-            _lastScale = wcs.PixelScaleArcsec;
+            int plane = width * height;
+            var bg = Enumerable.Range(0, channels).Select(c => LiveStacker.Background(data.AsSpan(c * plane, plane).ToArray())).ToArray();
+            _pedestal ??= channels == 3 ? bg : [bg[0], bg[0], bg[0]];
+            for (int c = 0; c < channels; c++) background[c] = r.NormalizeBackground.Value ? bg[c] - _pedestal[c] : 0;
+            _lastScale = rawWcs.PixelScaleArcsec;
         }
-        var added = stack.Add(mono, img.Width, img.Height, wcs, background);
+        var added = stack.Add(data, width, height, channels, wcs, background);
         if (!added.Added) return "!" + added.Message;
         double seconds = !double.IsNaN(item.Seconds) && item.Seconds > 0 ? item.Seconds : img.GetDouble("EXPTIME", img.GetDouble("EXPOSURE", 0));
         lock (_gate) _exposure += seconds;
         string resample = added.BinFactor > 1 ? $"binned {added.BinFactor}x, " : "";
         resample += added.Subsamples > 1 ? $"area-averaged {added.Subsamples}x{added.Subsamples}" : stack.Wcs.PixelScaleArcsec < wcs.PixelScaleArcsec * 0.999 ? $"interpolated ({stack.Interpolation})" : "resampled";
-        return $"{item.Source}: stacked ({how}, {wcs.PixelScaleArcsec:0.##}\"/px → {stack.Wcs.PixelScaleArcsec:0.##}\"/px, {resample})";
+        return $"{item.Source}: stacked ({how}{colour}, {wcs.PixelScaleArcsec:0.##}\"/px → {stack.Wcs.PixelScaleArcsec:0.##}\"/px, {resample})";
     }
 
     private async Task<(TanWcs? Wcs, string How)> RegisterAsync(LiveStackRequest r, FitsImage img, Item item, CancellationToken ct)
@@ -270,6 +275,23 @@ public sealed class LiveStackService : IAsyncDisposable
         return TanWcs.Centered(s.RaHours.Value * 15, s.DecDegrees.Value, pa, s.PixelScale.Value, width, height);
     }
 
+    /// <summary>The frame as it goes into the stack: raw Bayer frames debayered as asked (super pixel halves the grid),
+    /// RGB kept, anything else as mono.</summary>
+    private static (float[] Data, int Width, int Height, int Channels, int Bin, string Note) Prepare(FitsImage img, LiveStackRequest r)
+    {
+        var mode = Enum.Parse<DebayerMode>(r.Debayer.Text);
+        if (img.Channels == 1)
+        {
+            string? pattern = Debayer.Normalize(r.BayerPattern.Text) ?? Debayer.PatternOf(img);
+            if (pattern is null || mode == DebayerMode.None || img.Width < 2 || img.Height < 2)
+                return (img.Data, img.Width, img.Height, 1, 1, pattern is null ? "" : $", {pattern} kept raw");
+            var c = Debayer.Apply(img.Data, img.Width, img.Height, pattern, mode);
+            return (c.Data, c.Width, c.Height, 3, c.Bin, mode == DebayerMode.SuperPixel ? $", {pattern} super pixel" : $", {pattern} debayered");
+        }
+        if (img.Channels == 3) return (img.Data, img.Width, img.Height, 3, 1, ", RGB");
+        return (Luminance(img), img.Width, img.Height, 1, 1, "");
+    }
+
     private static float[] Luminance(FitsImage img)
     {
         int n = img.Width * img.Height;
@@ -285,7 +307,7 @@ public sealed class LiveStackService : IAsyncDisposable
         {
             if (_request is null) return CommandResult.Fail("no stack");
             _stack = _request.PixelScaleArcsec.Value > 0 ? Create(_request, _request.PixelScaleArcsec.Value) : null;
-            _rejected = 0; _exposure = 0; _pedestal = double.NaN; _message = "emptied";
+            _rejected = 0; _exposure = 0; _pedestal = null; _message = "emptied";
         }
         await Publish();
         return CommandResult.Success();
@@ -293,7 +315,7 @@ public sealed class LiveStackService : IAsyncDisposable
 
     private LiveStackImage GetImage(LiveStackImageRequest q)
     {
-        LiveStacker? stack; string label; double exposure, pedestal;
+        LiveStacker? stack; string label; double exposure; float[]? pedestal;
         lock (_gate) { stack = _stack; label = _request?.Label.Text ?? ""; exposure = _exposure; pedestal = _pedestal; }
         if (stack is null || stack.Frames == 0) return new LiveStackImage { Message = "nothing stacked yet" };
         var (data, w, h, wcs) = stack.Reduced(q.MaxWidth.Value > 0 ? q.MaxWidth.Value : int.MaxValue, q.MaxHeight.Value > 0 ? q.MaxHeight.Value : int.MaxValue);
@@ -303,11 +325,17 @@ public sealed class LiveStackService : IAsyncDisposable
         cards.Add(("NCOMBINE", stack.Frames.ToString(CultureInfo.InvariantCulture)));
         cards.Add(("EXPTIME", exposure.ToString("0.###", CultureInfo.InvariantCulture)));
         cards.Add(("CREATOR", Q("ELink live stack")));
-        float blank = double.IsNaN(pedestal) ? 0 : (float)pedestal;
+        // where nothing has landed yet: the sky level of that channel, so viewers see an even background
+        int channels = data.Length / (w * h), plane = w * h;
+        for (int c = 0; c < channels; c++)
+        {
+            float blank = pedestal is null ? 0 : pedestal[channels == 3 ? c : 0];
+            for (int i = c * plane; i < (c + 1) * plane; i++) if (float.IsNaN(data[i])) data[i] = blank;
+        }
         return new LiveStackImage
         {
-            Ok = true, Width = w, Height = h, PixelScaleArcsec = wcs.PixelScaleArcsec, Frames = stack.Frames,
-            Image = new ELink.Contracts.RawBytes { Data = FitsImage.WriteFloat32(w, h, data, cards, blank) },
+            Ok = true, Width = w, Height = h, Channels = channels, PixelScaleArcsec = wcs.PixelScaleArcsec, Frames = stack.Frames,
+            Image = new ELink.Contracts.RawBytes { Data = FitsImage.WriteFloat32(w, h, data, cards, channels: channels) },
         };
     }
 

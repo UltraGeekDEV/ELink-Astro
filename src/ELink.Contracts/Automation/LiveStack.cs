@@ -22,6 +22,8 @@ public class LiveStackRequest : IBinaryConvertible
     public BinaryConvertibleBool NormalizeBackground { get; set; } = true;
     public BinaryConvertibleDouble SolveTimeoutSeconds { get; set; } = 60.0;
     public BinaryConvertibleDouble MaxMegapixels { get; set; } = 40.0;
+    public BinaryConvertibleString Debayer { get; set; } = "Interpolated";
+    public BinaryConvertibleString BayerPattern { get; set; } = "";
 
     public override string Name => "LiveStackRequest";
     private static readonly NOTESDescriptor d = new();
@@ -41,7 +43,9 @@ public class LiveStackRequest : IBinaryConvertible
         d.RegisterField("FramePositionAngleDegrees", (LiveStackRequest x) => x.FramePositionAngleDegrees).Description("the frames' up, east of north, for Pointing");
         d.RegisterField("NormalizeBackground", (LiveStackRequest x) => x.NormalizeBackground).Description("match every frame's sky level to the first one before adding it");
         d.RegisterField("SolveTimeoutSeconds", (LiveStackRequest x) => x.SolveTimeoutSeconds);
-        d.RegisterField("MaxMegapixels", (LiveStackRequest x) => x.MaxMegapixels).Description("refuse fields larger than this at the requested scale (8 bytes of memory per pixel)");
+        d.RegisterField("MaxMegapixels", (LiveStackRequest x) => x.MaxMegapixels).Description("refuse fields larger than this at the requested scale (8 bytes of memory per pixel, 16 in colour)");
+        d.RegisterField("Debayer", (LiveStackRequest x) => x.Debayer).Description("raw colour (Bayer) frames: Interpolated (full resolution) | SuperPixel (each 2x2 cell is one RGB pixel, half resolution) | None (stack the raw mosaic as mono)");
+        d.RegisterField("BayerPattern", (LiveStackRequest x) => x.BayerPattern).Description("RGGB | BGGR | GRBG | GBRG as seen from the first pixel of the file; empty = the frame's BAYERPAT (and X/YBAYROFF)");
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();
@@ -83,6 +87,7 @@ public class LiveStackState : IBinaryConvertible
     public BinaryConvertibleDouble CoveragePercent { get; set; } = 0.0;
     public BinaryConvertibleDouble TotalExposureSeconds { get; set; } = 0.0;
     public BinaryConvertibleString LastFrame { get; set; } = "";
+    public BinaryConvertibleInt32 Channels { get; set; } = 0;
 
     public override string Name => "LiveStackState";
     private static readonly NOTESDescriptor d = new();
@@ -101,6 +106,7 @@ public class LiveStackState : IBinaryConvertible
         d.RegisterField("CoveragePercent", (LiveStackState x) => x.CoveragePercent).Description("share of the field that has data");
         d.RegisterField("TotalExposureSeconds", (LiveStackState x) => x.TotalExposureSeconds);
         d.RegisterField("LastFrame", (LiveStackState x) => x.LastFrame);
+        d.RegisterField("Channels", (LiveStackState x) => x.Channels).Description("1 = mono, 3 = RGB; 0 until the stack exists");
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();
@@ -131,6 +137,7 @@ public class LiveStackImage : IBinaryConvertible
     public BinaryConvertibleInt32 Height { get; set; } = 0;
     public BinaryConvertibleDouble PixelScaleArcsec { get; set; } = 0.0;
     public BinaryConvertibleInt32 Frames { get; set; } = 0;
+    public BinaryConvertibleInt32 Channels { get; set; } = 0;
     public RawBytes Image { get; set; } = new();
 
     public override string Name => "LiveStackImage";
@@ -144,6 +151,7 @@ public class LiveStackImage : IBinaryConvertible
         d.RegisterField("Height", (LiveStackImage x) => x.Height);
         d.RegisterField("PixelScaleArcsec", (LiveStackImage x) => x.PixelScaleArcsec);
         d.RegisterField("Frames", (LiveStackImage x) => x.Frames);
+        d.RegisterField("Channels", (LiveStackImage x) => x.Channels).Description("1 = mono, 3 = RGB planes (NAXIS3)");
         d.RegisterField("Image", (LiveStackImage x) => x.Image).Description("32-bit float FITS with the stack's WCS");
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);

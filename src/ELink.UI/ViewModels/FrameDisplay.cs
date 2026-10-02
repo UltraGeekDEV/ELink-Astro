@@ -23,7 +23,7 @@ public sealed partial class FrameDisplay : ObservableObject
             {
                 if (!format.Equals(".fits", StringComparison.OrdinalIgnoreCase) && !format.Equals(".fit", StringComparison.OrdinalIgnoreCase))
                 { UiThread.Post(() => Info = $"{caption} ({format}, {data.Length / 1024} KiB: not displayable here)"); return; }
-                var fits = FitsImage.Parse(data);
+                var fits = Debayer.ForDisplay(FitsImage.Parse(data));   // raw colour frames shown in colour
                 var bgra = AutoStretch.ToBgra(fits);
                 UiThread.Post(() =>
                 {

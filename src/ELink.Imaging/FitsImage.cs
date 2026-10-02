@@ -21,6 +21,13 @@ public sealed class FitsImage
     private FitsImage(int w, int h, int c, float[] data, Dictionary<string, string> header, double range)
     { Width = w; Height = h; Channels = c; Data = data; Header = header; Range = range; }
 
+    /// <summary>An image made in memory (planar channels, row 0 first), e.g. a debayered frame.</summary>
+    public static FitsImage FromPlanar(int width, int height, int channels, float[] data, IReadOnlyDictionary<string, string> header, double range)
+    {
+        if (data.Length < (long)width * height * channels) throw new ArgumentException("data is smaller than width x height x channels");
+        return new FitsImage(width, height, channels, data, new Dictionary<string, string>(header), range);
+    }
+
     public string? Get(string key) => Header.TryGetValue(key, out var v) ? v : null;
     public double GetDouble(string key, double fallback = double.NaN) =>
         Get(key) is { } s && double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var d) ? d : fallback;
@@ -118,17 +125,18 @@ public sealed class FitsImage
         return Encoding.ASCII.GetBytes(header).Concat(data).ToArray();
     }
 
-    /// <summary>Builds a 32-bit float mono FITS file (BITPIX -32); NaN pixels are written as <paramref name="blank"/>.</summary>
-    public static byte[] WriteFloat32(int width, int height, float[] pixels, IEnumerable<(string Key, string Value)>? extra = null, float blank = float.NaN)
+    /// <summary>Builds a 32-bit float FITS file (BITPIX -32), mono or planar colour (NAXIS3 = channels); NaN pixels are written as <paramref name="blank"/>.</summary>
+    public static byte[] WriteFloat32(int width, int height, float[] pixels, IEnumerable<(string Key, string Value)>? extra = null, float blank = float.NaN, int channels = 1)
     {
         var cards = new List<string>
         {
-            Card("SIMPLE", "T"), Card("BITPIX", "-32"), Card("NAXIS", "2"), Card("NAXIS1", width.ToString()), Card("NAXIS2", height.ToString()),
+            Card("SIMPLE", "T"), Card("BITPIX", "-32"), Card("NAXIS", channels > 1 ? "3" : "2"), Card("NAXIS1", width.ToString()), Card("NAXIS2", height.ToString()),
         };
+        if (channels > 1) cards.Add(Card("NAXIS3", channels.ToString()));
         if (extra is not null) foreach (var (k, v) in extra) cards.Add(Card(k, v));
         cards.Add("END".PadRight(80));
         var header = Encoding.ASCII.GetBytes(string.Concat(cards).PadRight((cards.Count * 80 + 2879) / 2880 * 2880));
-        long n = (long)width * height;
+        long n = (long)width * height * Math.Max(1, channels);
         var bytes = new byte[header.Length + (n * 4 + 2879) / 2880 * 2880];
         header.CopyTo(bytes, 0);
         for (long i = 0; i < n; i++)

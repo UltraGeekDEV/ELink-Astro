@@ -38,6 +38,8 @@ public sealed partial class LiveStackViewModel : ObservableObject, IDisposable
     public ObservableCollection<ShooterChoice> Shooters { get; } = new();
     public string[] Interpolations { get; } = ["Bicubic", "Bilinear", "Nearest"];
     public string[] Registrations { get; } = ["Auto", "Solve", "Pointing"];
+    public string[] DebayerModes { get; } = ["Interpolated", "SuperPixel", "None"];
+    public string[] BayerPatterns { get; } = ["From frame", "RGGB", "BGGR", "GRBG", "GBRG"];
     public FrameDisplay Preview { get; } = new();
 
     [ObservableProperty] private string _label = "Live stack";
@@ -53,6 +55,8 @@ public sealed partial class LiveStackViewModel : ObservableObject, IDisposable
     [ObservableProperty] private double _framePositionAngle;
     [ObservableProperty] private bool _normalizeBackground = true;
     [ObservableProperty] private double _maxMegapixels = 40;
+    [ObservableProperty] private string _debayer = "Interpolated";
+    [ObservableProperty] private string _bayerPattern = "From frame";
 
     [ObservableProperty] private string _phase = "Idle";
     [ObservableProperty] private string _summary = "";
@@ -85,7 +89,7 @@ public sealed partial class LiveStackViewModel : ObservableObject, IDisposable
             Summary = s.Width.Value == 0 && s.FramesStacked.Value == 0
                 ? (s.Phase.Text == "Idle" ? "" : "waiting for frames")
                 : $"{s.FramesStacked.Value} frames ({s.TotalExposureSeconds.Value / 60:0.#} min)   ·   {s.FramesRejected.Value} rejected   ·   {s.FramesPending.Value} queued   ·   " +
-                  $"{s.Width.Value}×{s.Height.Value} at {s.PixelScaleArcsec.Value:0.##}\"/px   ·   {s.CoveragePercent.Value:0}% covered";
+                  $"{s.Width.Value}×{s.Height.Value} {(s.Channels.Value == 3 ? "RGB" : "mono")} at {s.PixelScaleArcsec.Value:0.##}\"/px   ·   {s.CoveragePercent.Value:0}% covered";
             if (s.FramesStacked.Value != _shownFrames) { _shownFrames = s.FramesStacked.Value; _ = RefreshAsync(); }
         });
         await _follower.StartAsync();
@@ -113,6 +117,7 @@ public sealed partial class LiveStackViewModel : ObservableObject, IDisposable
             FovWidthDegrees = FovWidth, FovHeightDegrees = FovHeight, PositionAngleDegrees = PositionAngle, PixelScaleArcsec = PixelScale,
             Interpolation = Interpolation, Registration = Registration, FramePixelScaleArcsec = FramePixelScale, FramePositionAngleDegrees = FramePositionAngle,
             NormalizeBackground = NormalizeBackground, MaxMegapixels = MaxMegapixels,
+            Debayer = Debayer, BayerPattern = BayerPattern == "From frame" ? "" : BayerPattern,
         };
         foreach (var s in Shooters.Where(s => s.Selected)) r.ShooterIds.Add(s.Id);
         if (r.ShooterIds.Count == 0) { Message = "tick at least one shooter or scope"; return; }
