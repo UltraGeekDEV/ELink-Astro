@@ -70,6 +70,12 @@ public class ShotEvent : IBinaryConvertible
     public BinaryConvertibleString ObjectName { get; set; } = "";
     public BinaryConvertibleString PlanId { get; set; } = "";
     public RawBytes Data { get; set; } = new();
+    public BinaryConvertibleString Quality { get; set; } = "";
+    public BinaryConvertibleString QualityNote { get; set; } = "";
+    public BinaryConvertibleInt32 Stars { get; set; } = -1;
+    public BinaryConvertibleDouble Hfr { get; set; } = double.NaN;
+    public BinaryConvertibleDouble Elongation { get; set; } = double.NaN;
+    public BinaryConvertibleDouble Background { get; set; } = double.NaN;
 
     public override string Name => "ShotEvent";
     private static readonly NOTESDescriptor d = new();
@@ -87,6 +93,12 @@ public class ShotEvent : IBinaryConvertible
         d.RegisterField("ObjectName", (ShotEvent x) => x.ObjectName).Description("what was being observed, as named by the Observe request; empty for manual exposures");
         d.RegisterField("PlanId", (ShotEvent x) => x.PlanId).Description("sequence plan the frame belongs to, if any");
         d.RegisterField("Data", (ShotEvent x) => x.Data);
+        d.RegisterField("Quality", (ShotEvent x) => x.Quality).Description("Good | Rejected | empty (not graded); graded by the scope against its recent good frames");
+        d.RegisterField("QualityNote", (ShotEvent x) => x.QualityNote).Description("why it was rejected");
+        d.RegisterField("Stars", (ShotEvent x) => x.Stars).Description("stars found; -1 = not measured");
+        d.RegisterField("Hfr", (ShotEvent x) => x.Hfr).Description("median half-flux radius, pixels");
+        d.RegisterField("Elongation", (ShotEvent x) => x.Elongation).Description("median star elongation, 1 = round");
+        d.RegisterField("Background", (ShotEvent x) => x.Background).Description("sky level, ADU");
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();

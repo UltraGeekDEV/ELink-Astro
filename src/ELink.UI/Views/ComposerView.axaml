@@ -98,6 +98,7 @@
           <StackPanel><TextBlock Classes="label" Text="Settled below px"/><NumericUpDown Value="{Binding SettlePixels}" Minimum="0.1" Increment="0.5" FormatString="0.#" Width="130"/></StackPanel>
         </StackPanel>
         <StackPanel Classes="row">
+          <CheckBox IsChecked="{Binding GradeFrames}" Content="Grade frames (reject clouds, trailing, soft, bright sky)" VerticalAlignment="Bottom"/>
           <CheckBox IsChecked="{Binding CenterAfterSlew}" Content="Centre after each slew (plate solve, re-aim)" VerticalAlignment="Bottom"/>
           <StackPanel><TextBlock Classes="label" Text="Within arcmin"/><NumericUpDown Value="{Binding CenterTolerance}" Minimum="0.05" Increment="0.25" FormatString="0.##" Width="120"/></StackPanel>
         </StackPanel>

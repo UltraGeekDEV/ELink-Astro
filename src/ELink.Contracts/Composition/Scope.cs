@@ -43,6 +43,7 @@ public class ScopeDefinition : IBinaryConvertible
     public BinaryConvertibleDouble CenterToleranceArcmin { get; set; } = 1.0;
     public BinaryConvertibleDouble CenterExposureSeconds { get; set; } = 3.0;
     public BinaryConvertibleInt32 CenterMaxTries { get; set; } = 4;
+    public BinaryConvertibleBool GradeFrames { get; set; } = true;
     public BinaryConvertibleBool FocusOnStart { get; set; } = false;
     public BinaryConvertibleDouble RefocusEveryMinutes { get; set; } = 0.0;
     public BinaryConvertibleDouble RefocusTemperatureDelta { get; set; } = 0.0;
@@ -80,6 +81,7 @@ public class ScopeDefinition : IBinaryConvertible
         d.RegisterField("CenterToleranceArcmin", (ScopeDefinition x) => x.CenterToleranceArcmin);
         d.RegisterField("CenterExposureSeconds", (ScopeDefinition x) => x.CenterExposureSeconds);
         d.RegisterField("CenterMaxTries", (ScopeDefinition x) => x.CenterMaxTries);
+        d.RegisterField("GradeFrames", (ScopeDefinition x) => x.GradeFrames).Description("measure every Light frame and mark the bad ones (clouds, trailing, soft, bright sky) Rejected: they do not count toward an image's depth and are not stacked");
         d.RegisterField("FocusOnStart", (ScopeDefinition x) => x.FocusOnStart).Description("autofocus every train with a focuser before the scope's first exposure");
         d.RegisterField("RefocusEveryMinutes", (ScopeDefinition x) => x.RefocusEveryMinutes).Description("0 = never by time");
         d.RegisterField("RefocusTemperatureDelta", (ScopeDefinition x) => x.RefocusTemperatureDelta).Description("refocus when the focuser's temperature has moved this many °C since the last focus; 0 = never");

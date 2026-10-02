@@ -26,6 +26,7 @@ public class ImagingRequest : IBinaryConvertible
     public BinaryConvertibleBool LiveStack { get; set; } = true;
     public BinaryConvertibleDouble OutputPixelScaleArcsec { get; set; } = 0.0;
     public BinaryConvertibleDouble SlewTimeoutSeconds { get; set; } = 300.0;
+    public BinaryConvertibleDouble SkyWaitSeconds { get; set; } = 120.0;
 
     public override string Name => "ImagingRequest";
     private static readonly NOTESDescriptor d = new();
@@ -47,6 +48,7 @@ public class ImagingRequest : IBinaryConvertible
         d.RegisterField("LiveStack", (ImagingRequest x) => x.LiveStack).Description("build the image as it is taken (live stack of all the scopes' frames)");
         d.RegisterField("OutputPixelScaleArcsec", (ImagingRequest x) => x.OutputPixelScaleArcsec).Description("the image's pixel scale; 0 = the finest train's");
         d.RegisterField("SlewTimeoutSeconds", (ImagingRequest x) => x.SlewTimeoutSeconds);
+        d.RegisterField("SkyWaitSeconds", (ImagingRequest x) => x.SkyWaitSeconds).Description("after 3 rejected shots in a row, a scope waits this long before the next (clouds passing)");
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();
@@ -88,6 +90,7 @@ public class ImagingWorker : IBinaryConvertible
     public BinaryConvertibleString Phase { get; set; } = "Idle";
     public BinaryConvertibleString Message { get; set; } = "";
     public BinaryConvertibleInt32 Visits { get; set; } = 0;
+    public BinaryConvertibleInt32 Rejected { get; set; } = 0;
     public BinaryConvertibleDouble PoseX { get; set; } = double.NaN;
     public BinaryConvertibleDouble PoseY { get; set; } = double.NaN;
     public BinaryConvertibleCollection<FrameFootprint> Frames { get; set; } = new();
@@ -98,9 +101,10 @@ public class ImagingWorker : IBinaryConvertible
     static ImagingWorker()
     {
         d.RegisterField("ScopeId", (ImagingWorker x) => x.ScopeId);
-        d.RegisterField("Phase", (ImagingWorker x) => x.Phase).Description("Waiting | Shooting | Done | Failed");
+        d.RegisterField("Phase", (ImagingWorker x) => x.Phase).Description("Waiting | Shooting | WaitingForSky | Done | Failed");
         d.RegisterField("Message", (ImagingWorker x) => x.Message);
-        d.RegisterField("Visits", (ImagingWorker x) => x.Visits).Description("shots this scope finished");
+        d.RegisterField("Visits", (ImagingWorker x) => x.Visits).Description("good shots this scope finished");
+        d.RegisterField("Rejected", (ImagingWorker x) => x.Rejected).Description("shots its scope rejected (clouds, trailing, ...): their spots went back to the plan");
         d.RegisterField("PoseX", (ImagingWorker x) => x.PoseX).Description("where it is shooting, degrees along the area's width from its centre");
         d.RegisterField("PoseY", (ImagingWorker x) => x.PoseY);
         d.RegisterField("Frames", (ImagingWorker x) => x.Frames, maxCount: 16).Description("its frames, from its imaging trains");

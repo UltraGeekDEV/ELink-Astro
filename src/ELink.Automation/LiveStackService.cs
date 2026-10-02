@@ -124,6 +124,7 @@ public sealed class LiveStackService : IAsyncDisposable
     private void OnShot(ShotEvent shot)
     {
         if (shot.FrameType.Text is not ("Light" or "")) return;
+        if (shot.Quality.Text == "Rejected") { Reject($"{shot.Shooter.Text}: rejected by its scope ({shot.QualityNote.Text})"); return; }
         if (!shot.Format.Text.StartsWith(".fit", StringComparison.OrdinalIgnoreCase)) { Reject($"{shot.Shooter.Text}: not FITS ({shot.Format.Text})"); return; }
         Channel<Item> queue; int gen;
         lock (_gate)

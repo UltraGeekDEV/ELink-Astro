@@ -287,6 +287,20 @@ public class LiveStackTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task FramesTheScopeRejectedAreNotStacked()
+    {
+        Assert.True((await Commands.CallAsync(_node, LiveStackIds.Start, Request(8))).Ok.Value);
+        var fits = Frame(TanWcs.Centered(RA, DEC, 0, 4, 200, 150), 200, 150);
+        await _node.FireEventAsync(ShooterIds.Shot("cam"), new ShotEvent
+        {
+            Shooter = "cam", Format = ".fits", FrameType = "Light", Timestamp = "t-bad", Data = new RawBytes(fits), Quality = "Rejected", QualityNote = "clouds",
+        });
+        Assert.True(await Eventually(() => _last is { FramesRejected.Value: 1 }), _last?.Message.Text);
+        Assert.Equal(0, _last!.FramesStacked.Value);
+        Assert.Contains("clouds", _last.Message.Text);
+    }
+
+    [Fact]
     public async Task AFrameRelayedByAScopeIsStackedOnce()
     {
         Assert.True((await Commands.CallAsync(_node, LiveStackIds.Start, Request(8, "Auto", 0, "cam", "scope"))).Ok.Value);

@@ -57,7 +57,10 @@ public sealed class SmartScope : IAsyncDisposable
         public readonly List<double> RecentHfr = new();
     }
     private List<FocusTrain>? _focusTrains;
-    private volatile bool _preparing;   // centring and focus frames are the scope's own business: not relayed, not counted
+    private volatile bool _preparing;
+    // the scope's own frame grading: a baseline per camera, reset when it moves to another part of the sky
+    private readonly Dictionary<string, ELink.Imaging.FrameGrader> _graders = new();
+    private (double Ra, double Dec)? _gradedAt;   // centring and focus frames are the scope's own business: not relayed, not counted
     // the scope's own centring
     private bool _centred;
     private (double East, double North) _correction;      // degrees: where frames land relative to where it aims, learned from solves
@@ -308,6 +311,33 @@ public sealed class SmartScope : IAsyncDisposable
             else if (st.Phase.Text != "Done") notes.Add($"{t.TrainId}: focus {st.Phase.Text.ToLowerInvariant()}: {st.Message.Text}");
         }
         if (notes.Count > 0) _guideNote = string.Join("; ", notes);
+    }
+
+    private sealed record Grade(string Quality, string Note, int Stars, double Hfr, double Elongation, double Background);
+
+    /// <summary>Measures a Light frame and grades it against this camera's recent good frames (see FrameGrader).
+    /// Frames already graded by a child scope, non-FITS frames and calibration frames pass as they are.</summary>
+    private async Task<Grade> GradeAsync(ShotEvent shot)
+    {
+        var none = new Grade(shot.Quality.Text, shot.QualityNote.Text, shot.Stars.Value, shot.Hfr.Value, shot.Elongation.Value, shot.Background.Value);
+        if (!_def.GradeFrames.Value || shot.Quality.Text != "" || shot.FrameType.Text is not ("Light" or "") || !shot.Format.Text.StartsWith(".fit", StringComparison.OrdinalIgnoreCase)) return none;
+        ELink.Imaging.FrameMetrics m;
+        try { m = await Task.Run(() => ELink.Imaging.FrameMetrics.Measure(ELink.Imaging.FitsImage.Parse(shot.Data.Data))); }
+        catch (Exception) { return none; }
+        ELink.Imaging.FrameGrader grader;
+        lock (_scopeGate)
+        {
+            // another part of the sky has other stars and another sky: start the baseline again
+            if (_target is { } t && (_gradedAt is not { } at || Sky.SeparationDegrees(at.Ra, at.Dec, t.RaHours.Value, t.DecDegrees.Value) > 1))
+            {
+                foreach (var g in _graders.Values) g.Reset();
+                _gradedAt = (t.RaHours.Value, t.DecDegrees.Value);
+            }
+            if (!_graders.TryGetValue(shot.Shooter.Text, out grader!)) _graders[shot.Shooter.Text] = grader = new ELink.Imaging.FrameGrader();
+        }
+        (bool ok, string why) result;
+        lock (grader) result = grader.Grade(m);
+        return new Grade(result.ok ? "Good" : "Rejected", result.why, m.Stars, m.Hfr, m.Elongation, m.Background);
     }
 
     /// <summary>Star size of the frames a focusing train takes, for the HFR trigger: the first frame after a focus is the
@@ -561,8 +591,10 @@ public sealed class SmartScope : IAsyncDisposable
         (string obj, string plan) tag;
         lock (_scopeGate) tag = _tag;
         var p = _pointers.Count > 0 ? _pointers[0].State.Latest : null;
+        var grade = await GradeAsync(shot);
         var relayed = new ShotEvent
         {
+            Quality = grade.Quality, QualityNote = grade.Note, Stars = grade.Stars, Hfr = grade.Hfr, Elongation = grade.Elongation, Background = grade.Background,
             Shooter = shot.Shooter, Format = shot.Format, ExposureSeconds = shot.ExposureSeconds, FrameType = shot.FrameType,
             Filter = shot.Filter, Timestamp = shot.Timestamp, Data = shot.Data,
             ObjectName = shot.ObjectName.Text != "" ? shot.ObjectName.Text : tag.obj,
@@ -570,8 +602,9 @@ public sealed class SmartScope : IAsyncDisposable
             PointingRaHours = double.IsNaN(shot.PointingRaHours.Value) ? (p?.RaHours.Value ?? double.NaN) : shot.PointingRaHours.Value,
             PointingDecDegrees = double.IsNaN(shot.PointingDecDegrees.Value) ? (p?.DecDegrees.Value ?? double.NaN) : shot.PointingDecDegrees.Value,
         };
-        _shots.Release();
+        // fire first, count second: whoever waits for the round to end must already have the frame (and its grade)
         try { await _node.FireEventAsync(ShooterIds.Shot(_id), relayed); } catch (ObjectDisposedException) { }
+        _shots.Release();
     }
 
     // ---- Scope: the whole job --------------------------------------------------------------------------------

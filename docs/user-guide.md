@@ -111,6 +111,10 @@ flowchart TD
    exposure rounds) and by how many guide-camera pixels. A guided scope does everything itself: it stops guiding
    before any slew, starts (and calibrates the first time) once on target, waits until guiding has settled before
    each exposure, and dithers between them.
+   **Grade frames** (on by default): every Light frame is measured (stars, their size and roundness, the sky level)
+   against the camera's recent good frames. Clouds, trailing, soft focus or a bright sky mark it *Rejected*: it does
+   not count toward an image's depth (the spot is shot again), is not stacked, and storage files it under
+   `rejected/`. After three rejected frames in a row a scope waits a little for the sky.
    **Centre after each slew** (needs a plate solver): after its own slews the scope solves a frame of its primary
    train and re-aims by the error until it is within the tolerance (no syncs needed). A consistent error (a mount
    that always lands a few arcminutes off) is learned and aimed off on later slews nearby.

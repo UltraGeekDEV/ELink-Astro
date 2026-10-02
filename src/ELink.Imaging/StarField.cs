@@ -1,6 +1,7 @@
 namespace ELink.Imaging;
 
-public readonly record struct Star(double X, double Y, double Flux, double Hfr, double Peak);
+/// <param name="Elongation">major over minor axis of the star's light (second moments): 1 = round, larger = trailed</param>
+public readonly record struct Star(double X, double Y, double Flux, double Hfr, double Peak, double Elongation = 1.0);
 
 /// <summary>Finds stars in a linear frame and measures them. Meant for focusing and for guiding-style checks: it
 /// favours robustness over completeness (isolated, unsaturated, reasonably round stars).</summary>
@@ -17,6 +18,17 @@ public static class StarField
                 if (Stars.Count == 0) return double.NaN;
                 var h = Stars.Select(s => s.Hfr).Order().ToArray();
                 return h.Length % 2 == 1 ? h[h.Length / 2] : (h[h.Length / 2 - 1] + h[h.Length / 2]) / 2;
+            }
+        }
+
+        /// <summary>Median elongation: about 1 for round stars, well above for trailing (wind, a mount that slipped).</summary>
+        public double MedianElongation
+        {
+            get
+            {
+                if (Stars.Count == 0) return double.NaN;
+                var e = Stars.Select(s => s.Elongation).Order().ToArray();
+                return e.Length % 2 == 1 ? e[e.Length / 2] : (e[e.Length / 2 - 1] + e[e.Length / 2]) / 2;
             }
         }
     }
@@ -104,6 +116,23 @@ public static class StarField
             }
         if (sum <= 0) return null;
         double cx = sx / sum, cy = sy / sum;
+        // shape: second moments of the light within the blob (the background-only margin would only add noise)
+        double mxx = 0, myy = 0, mxy = 0, ms = 0;
+        foreach (int i in blob)
+        {
+            double v = data[i] - bg;
+            if (v <= 0) continue;
+            double dx = i % w - cx, dy = i / w - cy;
+            mxx += v * dx * dx; myy += v * dy * dy; mxy += v * dx * dy; ms += v;
+        }
+        double elongation = 1;
+        if (ms > 0)
+        {
+            mxx /= ms; myy /= ms; mxy /= ms;
+            double tr = mxx + myy, det = mxx * myy - mxy * mxy, disc = Math.Sqrt(Math.Max(0, tr * tr / 4 - det));
+            double l1 = tr / 2 + disc, l2 = tr / 2 - disc;
+            elongation = l2 > 1e-9 ? Math.Sqrt(l1 / l2) : 1;
+        }
 
         // half-flux radius: radius containing half of the flux, from the radial cumulative sum
         var radial = new List<(double r, double v)>();
@@ -131,6 +160,6 @@ public static class StarField
         }
         // Single hot pixels and cosmic rays have an HFR near zero: not stars.
         if (hfr < 0.4) return null;
-        return new Star(cx, cy, sum, hfr, peak - bg);
+        return new Star(cx, cy, sum, hfr, peak - bg, elongation);
     }
 }

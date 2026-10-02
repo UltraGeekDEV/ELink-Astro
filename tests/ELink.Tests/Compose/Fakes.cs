@@ -64,6 +64,8 @@ public sealed class FakeShooter : IAsyncDisposable
     public List<ShooterExposure> Requests { get; } = new();
     /// <summary>Deliver real FITS frames instead of three dummy bytes.</summary>
     public bool Fits { get; set; }
+    /// <summary>Makes the frame for exposure number n (from 1): e.g. a synthetic star field; overrides Fits.</summary>
+    public Func<int, byte[]>? FrameMaker { get; set; }
 
     public FakeShooter(TypeSafeEVentNode node, string id)
     {
@@ -83,8 +85,9 @@ public sealed class FakeShooter : IAsyncDisposable
                 await Task.Delay((int)(e.Seconds.Value * 1000));
                 await _node.FireEventAsync(ShooterIds.Shot(_id), new ShotEvent
                 {
-                    Shooter = _id, Format = Fits ? ".fits" : ".fake", ExposureSeconds = e.Seconds, FrameType = e.FrameType, Filter = e.Filter,
-                    Data = new RawBytes(Fits ? ELink.Imaging.FitsImage.Write16(16, 16, new ushort[256]) : new byte[] { 1, 2, 3 }),
+                    Shooter = _id, Format = Fits || FrameMaker is not null ? ".fits" : ".fake", ExposureSeconds = e.Seconds, FrameType = e.FrameType, Filter = e.Filter,
+                    Timestamp = DateTime.UtcNow.ToString("o"),
+                    Data = new RawBytes(FrameMaker is { } make ? make(Exposures) : Fits ? ELink.Imaging.FitsImage.Write16(16, 16, new ushort[256]) : new byte[] { 1, 2, 3 }),
                 });
                 _phase = "Idle"; await _pub.PublishAsync();
             });

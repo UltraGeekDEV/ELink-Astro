@@ -97,6 +97,8 @@ public sealed class StorageService : IAsyncDisposable
             var now = LocalNow();
             string night = now.AddHours(-12).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
             string nightDir = Path.Combine(dir, night);
+            bool rejected = shot.Quality.Text == "Rejected";
+            if (rejected) nightDir = Path.Combine(nightDir, "rejected");   // kept, but out of the way of stacking software
             Directory.CreateDirectory(nightDir);
 
             string obj = shot.ObjectName.Text, planId = shot.PlanId.Text;   // stamped by the scope that ran the observation
@@ -127,6 +129,9 @@ public sealed class StorageService : IAsyncDisposable
                 if (filter != "") cards["FILTER"] = FitsHeader.StringCard("FILTER", filter);
                 if (!double.IsNaN(shot.PointingRaHours.Value)) cards["RA"] = FitsHeader.NumberCard("RA", shot.PointingRaHours.Value * 15, "pointing, degrees, J2000");
                 if (!double.IsNaN(shot.PointingDecDegrees.Value)) cards["DEC"] = FitsHeader.NumberCard("DEC", shot.PointingDecDegrees.Value, "pointing, degrees, J2000");
+                if (shot.Quality.Text != "") cards["ELQUAL"] = FitsHeader.StringCard("ELQUAL", shot.Quality.Text, shot.QualityNote.Text == "" ? "frame grade" : shot.QualityNote.Text);
+                if (shot.Stars.Value >= 0) cards["ELSTARS"] = FitsHeader.NumberCard("ELSTARS", shot.Stars.Value, "stars found");
+                if (!double.IsNaN(shot.Hfr.Value)) cards["ELHFR"] = FitsHeader.NumberCard("ELHFR", shot.Hfr.Value, "median half-flux radius, px");
                 try { bytes = FitsHeader.Set(bytes, cards); }
                 catch (FormatException) { /* not a parsable FITS: store as received */ }
             }
@@ -139,6 +144,7 @@ public sealed class StorageService : IAsyncDisposable
                 time = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture), file = Path.GetRelativePath(dir, file), shooter = shot.Shooter.Text,
                 watched = watchId, frame, filter, exposure = shot.ExposureSeconds.Value, @object = obj, plan = planId,
                 raHours = Finite(shot.PointingRaHours.Value), decDegrees = Finite(shot.PointingDecDegrees.Value), bytes = bytes.Length,
+                quality = shot.Quality.Text, qualityNote = shot.QualityNote.Text, stars = shot.Stars.Value, hfr = Finite(shot.Hfr.Value),
             };
             File.AppendAllText(Path.Combine(nightDir, "session.jsonl"), JsonSerializer.Serialize(log) + "\n", Encoding.UTF8);
 

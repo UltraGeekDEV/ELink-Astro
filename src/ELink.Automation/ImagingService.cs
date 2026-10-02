@@ -262,6 +262,7 @@ public sealed class ImagingService : IAsyncDisposable
         using var state = new RemoteState<ScopeState>(_node, ScopeIds.State(id), ScopeIds.GetState(id));
         await state.StartAsync();
         double dither = r.DitherArcsec.Value / 3600;
+        int rejectedInARow = 0;
         while (!ct.IsCancellationRequested)
         {
             await WaitUntilAllowedAsync(weather, ct);
@@ -284,6 +285,21 @@ public sealed class ImagingService : IAsyncDisposable
             await SetWorker(id, w => { w.Phase = "Shooting"; w.PoseX = at.X; w.PoseY = at.Y; w.Message = ""; });
             string error = await ShootAsync(r, id, state, at, ct);
             double exp = r.Exposure.Seconds.Value, pa = r.PositionAngleDegrees.Value;
+            if (error.StartsWith(RejectedMark))
+            {
+                // the scope judged the frame bad: it does not count; the spot goes back to the plan
+                lock (_gate) { plan.Map.Paint(CoverageMap.Footprints(planned, scope.Frames, pa), -exp); _visitsStarted--; }
+                string why = error[RejectedMark.Length..];
+                rejectedInARow++;
+                await SetWorker(id, w => { w.Rejected = w.Rejected.Value + 1; w.Message = "rejected: " + why; });
+                if (rejectedInARow >= 3)
+                {
+                    await SetWorker(id, w => { w.Phase = "WaitingForSky"; w.Message = $"{rejectedInARow} bad frames in a row ({why}): waiting {r.SkyWaitSeconds.Value:0} s"; });
+                    await Task.Delay(TimeSpan.FromSeconds(Math.Max(1, r.SkyWaitSeconds.Value)), ct);
+                }
+                continue;
+            }
+            rejectedInARow = 0;
             if (error != "")
             {
                 // give the spot back to the plan: another scope may take it
@@ -305,7 +321,20 @@ public sealed class ImagingService : IAsyncDisposable
         if (!ct.IsCancellationRequested) await SetWorker(id, w => { w.Phase = "Done"; w.Message = ""; });
     }
 
+    private const string RejectedMark = "!rejected:";
+
+    /// <summary>One shot through the scope. "" when done and good; RejectedMark + why when every frame of it was rejected by
+    /// the scope's grading; anything else is an error.</summary>
     private async Task<string> ShootAsync(ImagingRequest r, string scope, RemoteState<ScopeState> state, Pose at, CancellationToken ct)
+    {
+        var frames = new List<ShotEvent>();
+        Action<ShotEvent> onShot = s => { lock (frames) frames.Add(s); };
+        await _node.HookEventAsync(ShooterIds.Shot(scope), onShot, "image request: frame grades");
+        try { return await ShootOnceAsync(r, scope, state, at, frames, ct); }
+        finally { try { _node.UnhookEvent(ShooterIds.Shot(scope), onShot); } catch (ObjectDisposedException) { } }
+    }
+
+    private async Task<string> ShootOnceAsync(ImagingRequest r, string scope, RemoteState<ScopeState> state, Pose at, List<ShotEvent> frames, CancellationToken ct)
     {
         var (east, north) = ToSkyOffsets(at.X, at.Y, r.PositionAngleDegrees.Value);
         var (ra, dec) = Gnomonic.ToSky(r.Center.RaHours.Value, r.Center.DecDegrees.Value, east, north);
@@ -317,7 +346,10 @@ public sealed class ImagingService : IAsyncDisposable
         if (!start.Ok.Value) return start.Error.Text;
         var end = await state.WaitAsync(s => !s.Observing.Value, TimeSpan.FromHours(6), ct);
         if (end.Phase.Text == "Error") return end.Message.Text != "" ? end.Message.Text : "the scope reported an error";
-        return end.ShotsDone.Value >= 1 ? "" : "the shot was not taken";
+        if (end.ShotsDone.Value < 1) return "the shot was not taken";
+        List<ShotEvent> got; lock (frames) got = frames.ToList();
+        if (got.Count > 0 && got.All(f => f.Quality.Text == "Rejected")) return RejectedMark + got[0].QualityNote.Text;
+        return "";
     }
 
     /// <summary>The area's own axes (x along its width, y along its height) to sky east/north offsets.</summary>
@@ -387,7 +419,7 @@ public sealed class ImagingService : IAsyncDisposable
             };
             foreach (var w in _workers.Values)
             {
-                var c = new ImagingWorker { ScopeId = w.ScopeId.Text, Phase = w.Phase.Text, Message = w.Message.Text, Visits = w.Visits.Value, PoseX = w.PoseX.Value, PoseY = w.PoseY.Value };
+                var c = new ImagingWorker { ScopeId = w.ScopeId.Text, Phase = w.Phase.Text, Message = w.Message.Text, Visits = w.Visits.Value, Rejected = w.Rejected.Value, PoseX = w.PoseX.Value, PoseY = w.PoseY.Value };
                 foreach (var f in w.Frames) c.Frames.Add(f);
                 s.Workers.Add(c);
             }

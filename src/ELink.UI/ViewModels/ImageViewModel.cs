@@ -116,7 +116,7 @@ public sealed partial class ImageViewModel : ObservableObject, IDisposable
             ? $"coverage  min {Fmt(s.MinSeconds.Value)} · mean {Fmt(s.MeanSeconds.Value)} · max {Fmt(s.MaxSeconds.Value)}" +
               (s.TargetSeconds.Value > 0 ? $"   of {Fmt(s.TargetSeconds.Value)}   ({Math.Min(100, 100 * s.MinSeconds.Value / s.TargetSeconds.Value):0}% complete)" : "")
             : "";
-        var lines = s.Workers.Select(w => $"{w.ScopeId.Text}: {w.Phase.Text}, {w.Visits.Value} shots" + (w.Message.Text != "" ? $" — {w.Message.Text}" : "")).ToList();
+        var lines = s.Workers.Select(w => $"{w.ScopeId.Text}: {w.Phase.Text}, {w.Visits.Value} shots" + (w.Rejected.Value > 0 ? $" ({w.Rejected.Value} rejected)" : "") + (w.Message.Text != "" ? $" — {w.Message.Text}" : "")).ToList();
         if (!Workers.SequenceEqual(lines)) { Workers.Clear(); foreach (var l in lines) Workers.Add(l); }
         if (s.WidthDegrees.Value > 0) { _areaW = s.WidthDegrees.Value; _areaH = s.HeightDegrees.Value; }
         ShowMap(s);

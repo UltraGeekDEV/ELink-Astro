@@ -137,6 +137,28 @@ public class ImagingTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task RejectedFramesDoNotCountAndCloudsMakeTheScopeWait()
+    {
+        await AddScopeAsync("solo", 0.5, 0.35);
+        // shots 4, 5 and 6 come through clouds (after three good ones: the baseline); the scope grades its frames and rejects them
+        _shooters["solo"].FrameMaker = n => SyntheticSky.Frame(visible: n is >= 4 and <= 6 ? 0.1 : 1, frame: n);
+        var r = Request(0, 0, 0.25, "solo"); r.SkyWaitSeconds = 1;
+        var states = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        await _node.HookEventAsync(ImagingIds.State, (ImagingState s) => { foreach (var w in s.Workers) states.Enqueue(w.Phase.Text); });
+        var grades = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        await _node.HookEventAsync(ShooterIds.Shot("solo"), (ShotEvent s) => grades.Enqueue($"{s.Quality.Text}/{s.Stars.Value}/{s.QualityNote.Text}"));
+        Assert.True((await Commands.CallAsync(_node, ImagingIds.Start, r, TimeSpan.FromSeconds(60))).Ok.Value);
+        Assert.True(await Eventually(() => _last is { Phase.Text: "Done" or "Error" }), $"{_last?.Phase.Text} {_last?.Message.Text}");
+        var w = _last!.Workers.Single();
+        Assert.True(w.Rejected.Value == 3, string.Join(" | ", grades));
+        Assert.Equal(5, w.Visits.Value);                         // 0.25 s of 0.05 s shots: five good ones
+        Assert.Equal(3, w.Rejected.Value);
+        Assert.Equal(8, _shooters["solo"].Exposures);            // the three bad ones were taken again
+        Assert.Contains("WaitingForSky", states);                // three bad in a row: it waited for the clouds to pass
+        Assert.True(_last.MinSeconds.Value >= 0.25 - 1e-6);
+    }
+
+    [Fact]
     public async Task RequestsThatCannotWorkAreRefused()
     {
         await AddScopeAsync("plain", 0.5, 0.35, withTrain: false);

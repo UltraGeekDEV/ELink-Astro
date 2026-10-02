@@ -91,6 +91,7 @@ public sealed partial class ComposerViewModel : ObservableObject
     [ObservableProperty] private bool _centerAfterSlew;
     [ObservableProperty] private double _centerTolerance = 1;
     [ObservableProperty] private bool _focusOnStart;
+    [ObservableProperty] private bool _gradeFrames = true;
     [ObservableProperty] private double _refocusEveryMinutes;
     [ObservableProperty] private double _refocusTemperature;
     [ObservableProperty] private bool _refocusOnFilter;
@@ -195,7 +196,7 @@ public sealed partial class ComposerViewModel : ObservableObject
         var def = new ScopeDefinition
         {
             Id = ScopeId.Trim(), DisplayName = ScopeName.Trim(), MeridianFlip = MeridianFlip, FlipAfterHours = FlipAfterMinutes / 60, CenterAfterSlew = CenterAfterSlew, CenterToleranceArcmin = CenterTolerance,
-            FocusOnStart = FocusOnStart, RefocusEveryMinutes = RefocusEveryMinutes, RefocusTemperatureDelta = RefocusTemperature,
+            GradeFrames = GradeFrames, FocusOnStart = FocusOnStart, RefocusEveryMinutes = RefocusEveryMinutes, RefocusTemperatureDelta = RefocusTemperature,
             RefocusOnFilterChange = RefocusOnFilter, RefocusHfrIncreasePercent = RefocusHfrPercent, DitherEvery = DitherEvery, DitherPixels = DitherPixels, SettlePixels = SettlePixels,
             GuideShooterId = Guided ? SelectedGuideWith : "", GuideOutput = SelectedGuideOutput, GuideExposureSeconds = GuideExposure,
             GuidePortId = SelectedGuidePort == MountPort ? "" : SelectedGuidePort, GuideTargetId = PulseOutput ? "" : GuideTargetId.Trim(),
