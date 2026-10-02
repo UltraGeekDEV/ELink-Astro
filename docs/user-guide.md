@@ -1,0 +1,174 @@
+# ELink — user guide
+
+How to run ELink and use each part of it. For how it is built, see the [developer guide](development.md).
+
+## The idea in one picture
+
+```mermaid
+flowchart LR
+    Mount[(Mount)] --> Pointer[Pointer<br/>'where it points']
+    Cam1[(Main camera)] --> Shooter1[Shooter 'main']
+    Wheel[(Filter wheel)] --> Shooter1
+    Cam2[(Guide camera)] --> Shooter2[Shooter 'guide']
+    Pointer --> Scope[Smart scope<br/>point to · shoot at]
+    Shooter1 --> Scope
+    Shooter2 --> Scope
+    Scope --> Jobs[Sequences · Mosaics · Autofocus · Centring]
+```
+
+You turn equipment into **pointers** (a mount) and **shooters** (a camera, optionally with a filter wheel), then combine
+them into **smart scopes**. Everything else (sequences, mosaics) works on scopes. A scope can contain other scopes, so a
+dual-rig or a two-mount setup is just another scope.
+
+## Starting
+
+You need `indiserver` with your drivers (or the simulators), and the EVent package in `nuget/`.
+
+```bash
+indiserver indi_simulator_telescope indi_simulator_ccd indi_simulator_wheel indi_simulator_focus
+```
+
+```bash
+dotnet run --project src/ELink.Station -- --indi localhost:7624
+```
+
+That starts everything (INDI bridge, scopes, services, sky atlas, Stellarium link) and opens the window.
+
+| option | meaning | default |
+|---|---|---|
+| `--indi host[:port][=name]` | an indiserver to bridge; repeat for several | `localhost:7624` |
+| `--port N` / `--listen IP` | mesh port and interface for other ELink processes | `5698`, loopback |
+| `--compose file.json` | where scope definitions (and the centring offset, next to it) are kept | `~/.config/elink/compose.json` |
+| `--save-dir DIR` / `--save SHOOTER` | save frames of a shooter from the start | — |
+| `--stellarium-port N` | telescope port Stellarium connects to | `10001` |
+| `--stellarium-remote URL` | Stellarium Remote Control | `http://127.0.0.1:8090` |
+| `--sky-data DIR` | KStars sky data | `/usr/share/kstars` |
+| `--no-ui` | headless; connect a UI later | — |
+
+**UI on another machine**: run the station with `--no-ui --listen 0.0.0.0`, then on the other machine:
+
+```bash
+dotnet run --project src/ELink.App -- --host <station-ip> --port 5698
+```
+
+## The window
+
+```mermaid
+flowchart LR
+    subgraph Left[Left column]
+        E[Equipment<br/>click to open a panel]
+        S[Smart scopes<br/>click to open, ✕ to close]
+    end
+    subgraph Tabs
+        T1[Compose] --- T2[Sky atlas] --- T3[Centring] --- T4[Mosaic]
+        T4 --- T5[Sequence] --- T6[Autofocus] --- T7[Storage] --- T8[INDI]
+    end
+    Left --- Tabs
+```
+
+The top bar shows the mesh you are on (**Connect** joins another). **↻** asks the mesh for equipment again.
+
+### Equipment panels
+
+Each device has a panel: mount (go to, park, tracking, abort), camera (expose, cooler, binning, latest frame),
+focuser, filter wheel, rotator, dome, weather, GPS. They show what the driver supports. The focuser panel covers what
+Ekos does: absolute and relative moves, timed moves, abort, sync, reverse, backlash, max travel, speed and temperature.
+
+## Typical night
+
+```mermaid
+flowchart TD
+    A[Compose a scope] --> B[Pick a target in the Sky atlas]
+    B --> C[Go to selection]
+    C --> D[Centring corrects automatically]
+    D --> E[Autofocus]
+    E --> F{What to shoot}
+    F -->|one target, a list of targets| G[Sequence]
+    F -->|an area bigger than the frame| H[Mosaic]
+    G --> I[Storage saves every frame]
+    H --> I
+```
+
+## Compose
+
+1. **Pointer from a mount**: give it an id (`eq6`), pick the mount, *Define pointer*.
+2. **Shooter from a camera**: id (`main`), camera, optional filter wheel, *Define shooter*. Do the same for the guide
+   camera.
+3. **Smart scope**: id and name, tick the pointers and shooters. For each shooter you can give its offset from the
+   pointing axis (arcmin east/north); leave 0 for the main camera. *Define scope*.
+
+Definitions are saved and come back on the next start. A defined scope appears under *Smart scopes* on the left; its
+panel has **Observe** (go to, wait until settled, take *Count* frames), *Go to only*, *Expose only* and *Abort*.
+Coordinates are typed as `5:35:17` / `-5:23:28` or decimal; pick the epoch (J2000 or JNow).
+
+## Sky atlas
+
+- Drag to pan, wheel to zoom, click a star or object to select it.
+- Search: `M42`, `NGC 7000`, `Vega`, `andromeda`.
+- Mounts are drawn as reticles where they point. *Centre on mount* jumps there.
+- **Go to selection** sends the chosen pointer or scope there. **Use as mosaic centre** fills the Mosaic tab.
+- **Stellarium**: *Show selection in Stellarium*, *Take Stellarium's selection*, and *Stellarium follows this pointer*.
+
+### Stellarium setup
+
+1. Telescope Control → add telescope → **External software or a remote computer**, host `localhost`, port `10001`,
+   equinox **J2000**. Stellarium now shows the pointer, and Ctrl+1 slews it to Stellarium's selection.
+2. For the show/take buttons, enable the **Remote Control** plugin (port 8090).
+
+## Centring (plate solving)
+
+Needs astrometry.net's `solve-field`. A user-space copy in `~/.local/astrometry` is found automatically
+(or set `ELINK_SOLVE_FIELD`).
+
+1. Pick the **mount**, the **guide camera** (it is solved) and the **primary camera**. Set exposure, tolerance (arcmin)
+   and max tries. Tick *Sync the mount* and *Centre automatically after every slew*. **Apply**.
+2. From now on, every slew to a new target is centred, also slews from a hand controller or other software.
+3. **Learn offset** (once, pointing anywhere with stars): both cameras are solved, and the guide-to-primary offset is
+   stored. Tick *Centre the primary*: the guide scope is then aimed so that the **primary** lands on the target.
+   The guide scope and the primary do not need to be aligned. The offset is turned over after a meridian flip.
+4. *Centre now* re-centres on the current target; *Solve guide frame* just reports where you are.
+
+If the mount's syncs do not move its pointing, centring notices and aims off by the measured error instead.
+
+## Autofocus
+
+Pick the shooter and the focuser, exposure, step size and number of samples, **Run**. It sweeps the focuser, measures
+star size (HFR), fits the curve and moves to the best position. The focus curve is drawn as it goes.
+
+## Sequence
+
+A plan is a list of blocks: target, exposure seconds, count, filter, frame type, and *Refocus before*. Pick the scope,
+optionally a weather device (unsafe weather pauses, and the plan resumes with only the missing frames) and the
+autofocus shooter/focuser for refocus blocks. **Start**, **Pause**, **Resume**, **Abort**.
+
+## Mosaic
+
+Paints an area bigger than one frame, Seestar style: many single shots in small steps, each one aimed at the least
+covered part, until every spot has received the target exposure.
+
+1. **Area to paint**: centre (or *Use as mosaic centre* from the atlas), width, height, angle.
+2. **Frames**: one row per camera on the scope: size, rotation and offset in degrees. *Frame 1 from camera* fills
+   it from a camera and a focal length. Frames may differ (different OTAs, rotations).
+3. **Painting**: scope, seconds per shot, target minutes per spot, stepover (degrees per step; smaller is smoother),
+   max shots, optional weather guard and rotator with field angles to cycle (e.g. `0, 60, 120`).
+4. **Preview** draws the plan, **Start** runs it. The heat map shows exposure received; yellow means done.
+   *Apply target now* and *Apply stepover now* change a running mosaic.
+
+## Storage
+
+Pick a directory (**Use**), then tick *Save its frames* for each shooter to save. Frames go to one folder per night,
+with FITS headers filled in (object, pointing, filter, exposure) and a session log. *Recent* lists the last saves.
+
+## INDI tab
+
+Every property of every INDI device, raw: browse and edit anything the typed panels do not cover.
+
+## Troubleshooting
+
+| symptom | check |
+|---|---|
+| no equipment on the left | Is `indiserver` running and given with `--indi`? Press ↻. |
+| centring says "no solver" | `~/.local/astrometry/bin/solve-field` exists, or set `ELINK_SOLVE_FIELD`. |
+| solves fail | Exposure long enough for stars? Focus? Camera focal length / pixel size set in the driver? |
+| scope stays "Pointing" | The mount is parked or not tracking; unpark it on the mount panel. |
+| Stellarium shows no telescope | Equinox must be J2000; port must match `--stellarium-port`. |

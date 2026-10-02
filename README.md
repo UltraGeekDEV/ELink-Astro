@@ -11,6 +11,11 @@ C# / .NET 8, Avalonia UI.
 - **MVVM over EVent.** View models mirror device state events and send commands as function calls. The UI runs in its own
   process, joined to the mesh, or inside the all-in-one station on the node's local loopback.
 
+## Documentation
+
+- [User guide](docs/user-guide.md): running ELink and using every tab.
+- [Developer guide](docs/development.md): architecture, patterns, IDs, adding devices and services, testing.
+
 ## Layout
 
 | project | what |
