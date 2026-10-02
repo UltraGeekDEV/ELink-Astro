@@ -1,76 +1,109 @@
 # ELink
 
-An event-driven astronomy control stack (think Ekos / N.I.N.A.) built on **EVent**, a distributed event/dRPC mesh.
-C# / .NET 8, Avalonia UI.
+An astronomy control stack in the spirit of Ekos and N.I.N.A., built differently: every piece of equipment, every
+smart scope and the UI is an endpoint on **EVent**, a distributed event/dRPC mesh. C# / .NET 8, Avalonia UI, INDI for
+the hardware.
 
-- **Everything is an EVent endpoint.** Equipment, smart scopes, the UI: no module references another; they share only
-  the contract types and EVent IDs (`src/ELink.Contracts`). A test enforces that the UI never references a backend.
-- **Imaging trains.** A train is one optical path: optics, cameras (imaging, or an off-axis guider), filter wheel, focuser, rotator. A scope carries any number of trains on a mount and guides with whichever train (or OAG camera) you assign.
-- **Not tied to a mount or one OTA.** A *Pointer* is anything that can be pointed at the sky, a *Shooter* is anything that
-  takes frames. A **smart scope** is `pointers[] + shooters[]` ("point to, shoot at") and is itself a Pointer and a Shooter,
-  so scopes compose into scopes: several OTAs on a mount, several mounts on a target, wide + narrow rigs, ...
-- **MVVM over EVent.** View models mirror device state events and send commands as function calls. The UI runs in its own
-  process, joined to the mesh, or inside the all-in-one station on the node's local loopback.
+![Sky atlas](docs/images/atlas.png)
 
-## Design
+> **Status:** early. Everything below runs and is tested against the INDI simulators (240 automated tests, including a
+> headless run of the whole UI), but it has not yet had a night on real hardware. Expect rough edges.
 
-Every smart scope (imaging train) is autonomous: guiding, dithering, centring, focus triggers and flips live inside it. The only top-level request is "this image of this part of the sky"; scopes pull work from it and fill the frame. See [the developer guide](docs/development.md#design-spec-autonomous-imaging-trains).
+## The idea
+
+- **One request: "this image of this part of the sky."** An area (a single frame is just a small one), a depth and an
+  output pixel scale. Any number of scopes pull work from it, each with its own cameras, and a live stack of all their
+  frames is the image. There is no separate mosaic mode and no keeping scopes in sync.
+- **Autonomous smart scopes.** Guiding, dithering, centring after slews, autofocus triggers, meridian flips, cooling
+  and frame grading all live inside the scope. Nothing above it coordinates them.
+- **Flexible composition.** An *imaging train* is one optical path: optics, imaging cameras, an off-axis guider,
+  filter wheel, focuser, rotator. A smart scope carries any number of trains on a mount and guides with whichever
+  train or OAG camera you assign. Scopes are Pointers and Shooters themselves, so they nest.
+- **Nothing references anything else.** Modules share only contract types and IDs (`src/ELink.Contracts`), all
+  messages are binary NOTES types (no JSON over the wire), and a test enforces that the UI never references a backend.
+  The UI can run in its own process on another machine.
+- **Standard INDI.** Mounts, cameras (DSLRs too), focusers, wheels, rotators, domes, weather and GPS are driven through
+  the standard INDI properties, the same ones Ekos uses, so no vendor SDKs are involved.
+
+## Features
+
+| | |
+|---|---|
+| **Imaging** | area filling shared between scopes, dither on every shot, resume across nights under the image's name |
+| **Scheduler** | queue of images with priorities, altitude/horizon, darkness, Moon distance and brightness, time windows; carries on night after night |
+| **Live stack** | sky registration (WCS, plate solve or pointing) into a fixed field at any pixel scale, debayering (interpolated or super pixel), outlier rejection, flux matching across cameras, one stack per filter, dark/flat calibration |
+| **Calibration** | master darks, biases and flats per camera; flats find their own exposure; matched by exposure, gain, temperature, binning, filter |
+| **Guiding** | multi-star guider in each scope, PHD2-style calibration over INDI pulse guiding, dither and settle, or "you are here, should be here" corrections for devices that close the loop |
+| **Focus** | HFR autofocus; triggers per train (start, time, temperature, filter, star growth); per-filter offsets |
+| **Pointing** | plate solving (ASTAP and/or astrometry.net), centring by aim-off, learned pointing correction, meridian flip |
+| **Cameras** | gain/offset presets, slow cooling ramps with the scope waiting until cold, frame grading (clouds, trailing, soft focus) |
+| **Sky** | atlas from KStars data plus OpenNGC and GSC, site and twilight, Sun/Moon/planets, horizon profile, Stellarium bridge |
+| **Equipment** | equipment profiles (ELink runs the INDI drivers itself and restarts a dying server), raw INDI property browser |
+
+| | |
+|---|---|
+| ![Image](docs/images/image.png) | ![Live stack](docs/images/live-stack.png) |
+
+## Quick start
+
+Requirements: Linux, the [.NET 8 SDK](https://dotnet.microsoft.com/download), and [INDI](https://indilib.org)
+(`indiserver` and drivers). Optional: KStars' sky data (for the atlas), [ASTAP](https://www.hnsky.org/astap.htm) with a
+star database and/or astrometry.net's `solve-field` (for plate solving).
+
+```bash
+git clone https://github.com/UltraGeekDEV/ELink-Astro.git
+cd ELink-Astro
+./dev.sh build
+```
+
+Try it on the simulators:
+
+```bash
+indiserver indi_simulator_telescope indi_simulator_ccd indi_simulator_wheel indi_simulator_focus &
+dotnet run --project src/ELink.Station -- --indi localhost:7624
+```
+
+With your own rig, list its drivers once on the **Profiles** tab and start them from there (or
+`elink --profile NAME`): ELink runs its own indiserver. The bridge and the UI can also run as separate processes on
+one mesh:
+
+```bash
+dotnet run --project src/ELink.Bridge -- --indi localhost --port 5698
+dotnet run --project src/ELink.App -- --host 127.0.0.1 --port 5698
+```
+
+Then compose your rig on the **Compose** tab (pointer from the mount, imaging trains, a smart scope) and ask for an
+image on the **Image** tab, or pick a target on the **Sky atlas** and press *Image this*.
 
 ## Documentation
 
-- [User guide](docs/user-guide.md): running ELink and using every tab.
-- [Developer guide](docs/development.md): architecture, patterns, IDs, adding devices and services, testing.
+- [User guide](docs/user-guide.md): every tab, a typical night, troubleshooting.
+- [Developer guide](docs/development.md): architecture and the design spec, patterns, IDs, adding devices and services, testing.
+- [Roadmap](TODO.md).
 
 ## Layout
 
 | project | what |
 |---|---|
-| `ELink.Contracts` | NOTES types and ID helpers: equipment (Mount, Camera, Focuser, FilterWheel, Rotator, Dome, Weather, Gps), Pointer/Shooter/Scope, generic INDI mirror |
-| `ELink.Core` | node helpers, `RemoteState` (follow a remote state), `StatePublisher`, `Commands`, astro math (precession, sexagesimal) |
-| `ELink.Indi` | INDI XML protocol client with a live property model (no EVent inside) |
-| `ELink.IndiBridge` | the INDI <-> EVent translation: generic mirror of every property + typed adapters per device kind |
-| `ELink.Compose` | smart scopes, mount pointers, camera shooters, composition host with JSON persistence |
-| `ELink.Atlas` | sky atlas service: KStars star catalogue, OpenNGC deep-sky objects, constellation figures, GSC faint stars, search |
-| `ELink.Stellarium` | Stellarium bridge: ELink as a Stellarium telescope for any pointer, plus Remote Control (show target, read selection) |
-| `ELink.Imaging` | FITS read/write, TAN WCS, live stacker (resampling), screen auto-stretch, star detection and HFR |
-| `ELink.Automation` | autofocus, the scheduler, image requests (area filling), plate solving, centring, live stacking and frame storage services, driven only by EVent IDs |
-| `ELink.UI` / `ELink.App` | Avalonia UI (library) and its stand-alone executable `elink-ui` |
-| `ELink.Bridge` | headless INDI bridge executable |
-| `ELink.Station` | all-in-one executable `elink`: bridge + composition host + UI on one node |
+| `ELink.Contracts` | NOTES types and IDs: equipment, Pointer/Shooter/Scope/Train, automation services |
+| `ELink.Core` | node helpers, `RemoteState`, `StatePublisher`, `Commands`, astro math |
+| `ELink.Indi` | INDI XML protocol client with a live property model |
+| `ELink.IndiBridge` | INDI ↔ EVent: a generic mirror of every property, typed adapters per device kind, equipment profiles |
+| `ELink.Compose` | smart scopes, imaging trains, mount pointers, camera shooters, guiders, the composition host |
+| `ELink.Imaging` | FITS, TAN WCS, live stacker, debayering, star detection and HFR, frame grading, calibration |
+| `ELink.Automation` | image requests, scheduler, autofocus, plate solving, centring, live stacking, calibration library, storage, site |
+| `ELink.Atlas` / `ELink.Stellarium` | sky atlas service; Stellarium telescope server and Remote Control client |
+| `ELink.UI` / `ELink.App` | Avalonia UI and its stand-alone executable |
+| `ELink.Bridge` / `ELink.Station` | headless INDI bridge; all-in-one `elink` (bridge, services and UI on one node) |
 
-## Running
-
-EVent is not on nuget.org: put `EVent.<ver>.nupkg` (and `EVent.Scripting`) into `nuget/` (a local feed, see `nuget.config`).
-
-```bash
-indiserver indi_simulator_telescope indi_simulator_ccd indi_simulator_wheel &      # or your real drivers
-dotnet run --project src/ELink.Station -- --indi localhost:7624                    # everything in one process
-# or as separate processes on one mesh:
-dotnet run --project src/ELink.Bridge  -- --indi localhost --port 5698
-dotnet run --project src/ELink.App     -- --host 127.0.0.1 --port 5698
-```
-
-**Image (one request, any number of scopes):** say "this image of this part of the sky": an area (0 × 0 = one frame), a depth per spot, an output scale, and which scopes may help. Each scope takes the next spot for its own frames (sizes from its imaging trains) whenever it is free, with a random dither on every shot; spots another scope covered are skipped, and a live stack of all their frames is the image. A single target and a mosaic are the same thing at different sizes.
-
-**Live stacking:** frames from any shooters are registered on the sky (their own WCS, a plate solve, or the pointing) and resampled into one image of a fixed field, for example the requested image's area, at a pixel scale you choose: finer than the frames interpolates (bicubic), coarser area-averages (binning plus supersampling), never decimates. Raw one-shot-colour frames are debayered first, interpolated (full resolution) or as super pixels (each 2x2 cell one RGB pixel). The stack comes back as a float FITS with a WCS.
-
-**Guiding:** each smart scope guides itself: a guider loops its guide camera, follows a dozen stars, calibrates through standard INDI pulse guiding, settles before and dithers between exposures. Besides pulses it can hand "you are here, should be here" corrections to devices that close the loop themselves, and fires them as an event every frame.
-
-**Focusers:** every INDI focuser is driven through the standard INDI focuser interface, the same properties Ekos uses (absolute, relative and timed moves, abort, sync, reverse, backlash, max travel, speed, temperature), so a ZWO EAF on `indi_asi_focuser`, a Moonlite, or anything else INDI supports works without vendor code. What a focuser can do is detected from the properties its driver defines.
-
-**Plate solving and centring:** astrometry.net's `solve-field` (system package, or unpacked in `~/.local/astrometry` without root; `ELINK_SOLVE_FIELD` overrides) solves any FITS or a fresh shot from any shooter. The centring service watches the mount's own target (`TARGET_EOD_COORD`), so a slew from a hand controller or other software counts as much as one from ELink: when it ends on a new target, the guide camera's frame is solved and the mount synced and re-slewed until within tolerance (or, for mounts whose syncs do not move the pointing, aimed off by the error). The guide scope and the primary need not be aligned: "Learn offset" solves both at one pointing; from then on the guide scope is aimed so the primary lands on the target, with the offset turned over after a meridian flip.
-
-**Site and time:** location typed in or from a GPS, a horizon profile, sidereal time, twilight, Sun, Moon and planets, and when any target is above your horizon (and for how much dark time); location and time are handed to the mounts.
-
-**Sky atlas:** an interactive chart (drag, wheel, click) built from the sky data KStars installs (`/usr/share/kstars`: about 43k stars to magnitude 8, 14k OpenNGC objects, constellation figures) plus faint stars from the GSC for small fields. Search (`M42`, `NGC 7000`, `Vega`, `andromeda`), see mounts where they point, send a pointer or scope to the selection, or image it.
-
-**Stellarium:** ELink is a Stellarium telescope. In Stellarium: Telescope Control → add → "External software or a remote computer", host `localhost`, port 10001 (`--stellarium-port`), equinox J2000. Stellarium then shows the bound pointer and its "slew to selection" (Ctrl+1) moves it. With Stellarium's Remote Control plugin enabled (port 8090, `--stellarium-remote`) the atlas can also show targets in Stellarium and take its selection. This was verified against a real (headless) Stellarium: `ELINK_LIVE_STELLARIUM=1 ./dev.sh test --filter StellariumLive`.
-
-In the UI: open equipment from the left, compose pointers/shooters/scopes on the **Compose** tab, run **Observe**
-(point, wait until settled, take N exposures) on a scope's tab, or browse and edit any raw INDI property on the **INDI** tab.
+EVent is not on nuget.org; its packages are in `nuget/` (a local feed, see `nuget.config`).
 
 ## Developing
 
-`./dev.sh build|test` wraps `dotnet` without resident build servers (they pile up and eat gigabytes).
-The integration tests start real `indiserver` simulators in a throwaway `HOME`; they are skipped when it is not installed.
-The roadmap is in [TODO.md](TODO.md).
+`./dev.sh build|test` wraps `dotnet` without resident build servers (they pile up and eat gigabytes of RAM). The
+integration tests start real `indiserver` simulators in a throwaway `HOME` and are skipped when INDI is not installed;
+plate-solve tests run when a solver is found.
+
+## License
+
+[GPL-3.0](LICENSE), the same family as KStars/Ekos.
