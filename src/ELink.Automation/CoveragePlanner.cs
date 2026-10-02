@@ -84,9 +84,13 @@ public sealed class CoveragePlanner
     private bool InArea(double x, double y) => Math.Abs(x) <= Map.FovWidth / 2 + _margin && Math.Abs(y) <= Map.FovHeight / 2 + _margin;
 
     /// <summary>(Re)computes the passes from the target that is still missing. Called at the start and after a retarget.</summary>
+    /// <summary>For an area that fits in one frame: no raster passes, every shot centred on it.</summary>
+    public bool TopUpOnly { get; set; }
+
     public void Plan()
     {
         _lattice?.Dispose(); _lattice = null; PassHop = double.NaN; PassCount = 0;
+        if (TopUpOnly && TargetSeconds > 0) return;
         double hop0 = Math.Max(Stepover, 1e-6);
         double perPassAtHop0 = ExposureSeconds * _frameArea / (hop0 * hop0);          // depth one pass deposits at the requested stepover
         if (TargetSeconds <= 0) { PassHop = hop0; PassCount = 0; _passIndex = 0; _lattice = Passes(true).GetEnumerator(); return; }   // endless
@@ -152,6 +156,14 @@ public sealed class CoveragePlanner
     public Pose? Next()
     {
         if (Done) return null;
+        if (TopUpOnly)
+        {
+            // the area fits in the frame: every shot centred (the caller dithers) until it is deep enough
+            var centred = new Pose(0, 0, Rotations[0]);
+            if (TargetSeconds > 0 && Evaluate(centred).Deficit <= 1e-12) return null;
+            Commit(centred);
+            return centred;
+        }
         // 1. the raster passes
         while (_lattice is not null)
         {

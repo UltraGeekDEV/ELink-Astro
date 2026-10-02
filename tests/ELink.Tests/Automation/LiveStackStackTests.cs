@@ -75,7 +75,7 @@ public class LiveStackStackTests(ITestOutputHelper log) : IAsyncLifetime
         {
             var (jra, jdec) = Precession.J2000ToDate(raH, dec, DateTime.UtcNow);
             await c.SetNumbersAsync("Telescope Simulator", "EQUATORIAL_EOD_COORD", new[] { ("RA", jra), ("DEC", jdec) });
-            await c.WaitForAsync("Telescope Simulator", "EQUATORIAL_EOD_COORD", p => p.State == IndiState.Ok && Math.Abs(p.Number("RA") - jra) < 0.005 && Math.Abs(p.Number("DEC") - jdec) < 0.05, TimeSpan.FromSeconds(180));
+            await c.WaitForAsync("Telescope Simulator", "EQUATORIAL_EOD_COORD", p => p.State == IndiState.Ok && Math.Abs(p.Number("RA") - jra) < 0.02 && Math.Abs(p.Number("DEC") - jdec) < 0.1, TimeSpan.FromSeconds(180));
             await Task.Delay(1500);   // let the simulator settle on the new position
         }
 

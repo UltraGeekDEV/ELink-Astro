@@ -33,7 +33,7 @@ Every smart scope (imaging train) is autonomous: guiding, dithering, centring, f
 | `ELink.Atlas` | sky atlas service: KStars star catalogue, OpenNGC deep-sky objects, constellation figures, GSC faint stars, search |
 | `ELink.Stellarium` | Stellarium bridge: ELink as a Stellarium telescope for any pointer, plus Remote Control (show target, read selection) |
 | `ELink.Imaging` | FITS read/write, TAN WCS, live stacker (resampling), screen auto-stretch, star detection and HFR |
-| `ELink.Automation` | autofocus, sequencer (weather guard, pause/resume), mosaic painter, plate solving, centring, live stacking and frame storage services, driven only by EVent IDs |
+| `ELink.Automation` | autofocus, sequencer (weather guard, pause/resume), image requests (area filling), plate solving, centring, live stacking and frame storage services, driven only by EVent IDs |
 | `ELink.UI` / `ELink.App` | Avalonia UI (library) and its stand-alone executable `elink-ui` |
 | `ELink.Bridge` | headless INDI bridge executable |
 | `ELink.Station` | all-in-one executable `elink`: bridge + composition host + UI on one node |
@@ -50,9 +50,9 @@ dotnet run --project src/ELink.Bridge  -- --indi localhost --port 5698
 dotnet run --project src/ELink.App     -- --host 127.0.0.1 --port 5698
 ```
 
-**Mosaic (painting a virtual FOV):** give a virtual field of view, the frames the scope shoots (each with its own size, angle and offset, so heterogeneous OTAs work), a stepover and a target exposure per spot. The scope then slowly *paints* the area with exposure time. A coverage map accumulates the seconds each spot has received, summed over all frames' rotated footprints. The planner sweeps serpentine raster passes whose hop is set so one pass deposits a uniform slice of the target (a deep target means several light passes at small stepovers, with shifted lattices; a rotator can turn the scope between passes), then tops up what the passes left short. Every move is one single shot. A producer plans visits into a bounded queue, an executor turns the rotator and has the smart scope slew and shoot, and a recorder builds the real coverage map. `SetTarget` and `SetStepover` change a running scan. Frames are saved with their pointing, and the live stack can build the field as it is painted.
+**Image (one request, any number of scopes):** say "this image of this part of the sky": an area (0 × 0 = one frame), a depth per spot, an output scale, and which scopes may help. Each scope takes the next spot for its own frames (sizes from its imaging trains) whenever it is free, with a random dither on every shot; spots another scope covered are skipped, and a live stack of all their frames is the image. A single target and a mosaic are the same thing at different sizes.
 
-**Live stacking:** frames from any shooters are registered on the sky (their own WCS, a plate solve, or the pointing) and resampled into one image of a fixed field, for example the mosaic's virtual FOV, at a pixel scale you choose: finer than the frames interpolates (bicubic), coarser area-averages (binning plus supersampling), never decimates. Raw one-shot-colour frames are debayered first, interpolated (full resolution) or as super pixels (each 2x2 cell one RGB pixel). The stack comes back as a float FITS with a WCS.
+**Live stacking:** frames from any shooters are registered on the sky (their own WCS, a plate solve, or the pointing) and resampled into one image of a fixed field, for example the requested image's area, at a pixel scale you choose: finer than the frames interpolates (bicubic), coarser area-averages (binning plus supersampling), never decimates. Raw one-shot-colour frames are debayered first, interpolated (full resolution) or as super pixels (each 2x2 cell one RGB pixel). The stack comes back as a float FITS with a WCS.
 
 **Guiding:** each smart scope guides itself: a guider loops its guide camera, follows a dozen stars, calibrates through standard INDI pulse guiding, settles before and dithers between exposures. Besides pulses it can hand "you are here, should be here" corrections to devices that close the loop themselves, and fires them as an event every frame.
 
@@ -62,7 +62,7 @@ dotnet run --project src/ELink.App     -- --host 127.0.0.1 --port 5698
 
 **Site and time:** location typed in or from a GPS, a horizon profile, sidereal time, twilight, Sun, Moon and planets, and when any target is above your horizon (and for how much dark time); location and time are handed to the mounts.
 
-**Sky atlas:** an interactive chart (drag, wheel, click) built from the sky data KStars installs (`/usr/share/kstars`: about 43k stars to magnitude 8, 14k OpenNGC objects, constellation figures) plus faint stars from the GSC for small fields. Search (`M42`, `NGC 7000`, `Vega`, `andromeda`), see mounts where they point, send a pointer or scope to the selection, or make it the mosaic centre.
+**Sky atlas:** an interactive chart (drag, wheel, click) built from the sky data KStars installs (`/usr/share/kstars`: about 43k stars to magnitude 8, 14k OpenNGC objects, constellation figures) plus faint stars from the GSC for small fields. Search (`M42`, `NGC 7000`, `Vega`, `andromeda`), see mounts where they point, send a pointer or scope to the selection, or image it.
 
 **Stellarium:** ELink is a Stellarium telescope. In Stellarium: Telescope Control → add → "External software or a remote computer", host `localhost`, port 10001 (`--stellarium-port`), equinox J2000. Stellarium then shows the bound pointer and its "slew to selection" (Ctrl+1) moves it. With Stellarium's Remote Control plugin enabled (port 8090, `--stellarium-remote`) the atlas can also show targets in Stellarium and take its selection. This was verified against a real (headless) Stellarium: `ELINK_LIVE_STELLARIUM=1 ./dev.sh test --filter StellariumLive`.
 

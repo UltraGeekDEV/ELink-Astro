@@ -22,13 +22,13 @@ public sealed record AtlasHitItem(string Label, string Kind, string Detail, doub
 }
 
 /// <summary>The sky atlas: an interactive chart of the atlas service's stars, deep-sky objects and constellations, with the mounts
-/// and smart scopes drawn where they point, the mosaic area outlined, search, and point-and-go. Stellarium can be driven from here
+/// and smart scopes drawn where they point, the requested image outlined, search, and point-and-go. Stellarium can be driven from here
 /// too. Knows the backend only by EVent IDs.</summary>
 public sealed partial class AtlasViewModel : ObservableObject, IDisposable
 {
     private readonly MeshSession _mesh;
     private readonly CatalogViewModel _catalog;
-    private readonly MosaicViewModel? _mosaic;
+    private readonly ImageViewModel? _image;
     private readonly Dictionary<string, IDisposable> _followers = new();
     private readonly Dictionary<string, ChartMarker> _mounts = new();
     private Follower<StellariumState>? _stellarium;
@@ -40,12 +40,12 @@ public sealed partial class AtlasViewModel : ObservableObject, IDisposable
     private Timer? _skyTimer;
     private List<SkyBody> _bodyList = new();
 
-    public AtlasViewModel(MeshSession mesh, CatalogViewModel catalog, MosaicViewModel? mosaic = null)
+    public AtlasViewModel(MeshSession mesh, CatalogViewModel catalog, ImageViewModel? image = null)
     {
-        _mesh = mesh; _catalog = catalog; _mosaic = mosaic;
+        _mesh = mesh; _catalog = catalog; _image = image;
         catalog.Devices.CollectionChanged += (_, _) => UiThread.Post(() => _ = FollowEquipmentAsync());
         catalog.CompositionChanged += () => UiThread.Post(() => { RebuildPointers(); _ = FollowEquipmentAsync(); });
-        if (mosaic is not null) mosaic.PropertyChanged += (_, e) => { if (e.PropertyName is nameof(MosaicViewModel.CenterRa) or nameof(MosaicViewModel.CenterDec) or nameof(MosaicViewModel.FovWidth) or nameof(MosaicViewModel.FovHeight) or nameof(MosaicViewModel.PositionAngle)) UpdateOverlays(); };
+        if (image is not null) image.PropertyChanged += (_, e) => { if (e.PropertyName is nameof(ImageViewModel.CenterRa) or nameof(ImageViewModel.CenterDec) or nameof(ImageViewModel.Width) or nameof(ImageViewModel.Height) or nameof(ImageViewModel.PositionAngle)) UpdateOverlays(); };
         RebuildPointers();
     }
 
@@ -281,15 +281,15 @@ public sealed partial class AtlasViewModel : ObservableObject, IDisposable
         if (Selection is { } sel) markers.Add(new ChartMarker(sel.RaHours, sel.DecDegrees, "", Color.FromRgb(120, 255, 140), IsSelection: true));
         Markers = markers;
         var polys = new List<ChartPolygon>();
-        if (_mosaic is not null && Sexagesimal.TryParse(_mosaic.CenterRa, out var mra) && Sexagesimal.TryParse(_mosaic.CenterDec, out var mdec))
+        if (_image is not null && _image.Width > 0 && _image.Height > 0 && Sexagesimal.TryParse(_image.CenterRa, out var mra) && Sexagesimal.TryParse(_image.CenterDec, out var mdec))
         {
-            double w = _mosaic.FovWidth / 2, h = _mosaic.FovHeight / 2, pa = _mosaic.PositionAngle * Math.PI / 180;
+            double w = _image.Width / 2, h = _image.Height / 2, pa = _image.PositionAngle * Math.PI / 180;
             var corners = new[] { (-w, h), (w, h), (w, -h), (-w, -h) }.Select(c =>
             {
                 double east = c.Item1 * Math.Cos(pa) + c.Item2 * Math.Sin(pa), north = -c.Item1 * Math.Sin(pa) + c.Item2 * Math.Cos(pa);
                 return Gnomonic.ToSky(mra, mdec, east, north);
             }).ToList();
-            polys.Add(new ChartPolygon(corners, Color.FromRgb(255, 213, 79), $"mosaic {_mosaic.Label}"));
+            polys.Add(new ChartPolygon(corners, Color.FromRgb(255, 213, 79), $"image {_image.Label}"));
         }
         Polygons = polys;
     }
@@ -367,12 +367,15 @@ public sealed partial class AtlasViewModel : ObservableObject, IDisposable
     }
 
     [RelayCommand]
-    private void UseAsMosaicCentre()
+    private void ImageThis()
     {
-        if (Selection is not { } s || _mosaic is null) { Message = "select something first"; return; }
-        _mosaic.CenterRa = Sexagesimal.Format(s.RaHours, 0); _mosaic.CenterDec = Sexagesimal.Format(s.DecDegrees, 0);
-        if (s.Label != "Position" && s.Label != "Star") _mosaic.Label = s.Label.Replace(" ", "");
-        Message = $"mosaic centred on {s.Label}";
+        if (Selection is not { } s || _image is null) { Message = "select something first"; return; }
+        _image.CenterRa = Sexagesimal.Format(s.RaHours, 0); _image.CenterDec = Sexagesimal.Format(s.DecDegrees, 0);
+        if (s.Label != "Position" && s.Label != "Star") _image.Label = s.Label.Replace(" ", "");
+        // big objects become an area, small ones a single frame
+        if (s.MajorArcmin > 30) { _image.Width = Math.Round(s.MajorArcmin / 60 * 1.3, 2); _image.Height = Math.Round(s.MajorArcmin / 60 * 1.0, 2); }
+        else { _image.Width = 0; _image.Height = 0; }
+        Message = $"Image tab: {s.Label}";
         UpdateOverlays();
     }
 

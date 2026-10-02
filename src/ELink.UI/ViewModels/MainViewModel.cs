@@ -24,7 +24,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public AutofocusViewModel Autofocus { get; }
     public SequencerViewModel Sequencer { get; }
     public StorageViewModel Storage { get; }
-    public MosaicViewModel Mosaic { get; }
+    public ImageViewModel Image { get; }
     public AtlasViewModel Atlas { get; }
     public CenteringViewModel Centering { get; }
     public LiveStackViewModel LiveStack { get; }
@@ -48,16 +48,16 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Autofocus = new AutofocusViewModel(mesh, Catalog);
         Sequencer = new SequencerViewModel(mesh, Catalog);
         Storage = new StorageViewModel(mesh, Catalog);
-        Mosaic = new MosaicViewModel(mesh, Catalog);
-        Atlas = new AtlasViewModel(mesh, Catalog, Mosaic);
+        Image = new ImageViewModel(mesh, Catalog);
+        Atlas = new AtlasViewModel(mesh, Catalog, Image);
         Centering = new CenteringViewModel(mesh, Catalog);
-        LiveStack = new LiveStackViewModel(mesh, Catalog, Mosaic);
+        LiveStack = new LiveStackViewModel(mesh, Catalog, Image);
         Site = new SiteViewModel(mesh, Catalog);
         Tabs.Add(new WorkspaceTab("Compose", Composer, false));
         Tabs.Add(new WorkspaceTab("Sky atlas", Atlas, false));
         Tabs.Add(new WorkspaceTab("Site", Site, false));
         Tabs.Add(new WorkspaceTab("Centring", Centering, false));
-        Tabs.Add(new WorkspaceTab("Mosaic", Mosaic, false));
+        Tabs.Add(new WorkspaceTab("Image", Image, false));
         Tabs.Add(new WorkspaceTab("Live stack", LiveStack, false));
         Tabs.Add(new WorkspaceTab("Sequence", Sequencer, false));
         Tabs.Add(new WorkspaceTab("Autofocus", Autofocus, false));
@@ -73,7 +73,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         await Autofocus.StartAsync();
         await Sequencer.StartAsync();
         await Storage.StartAsync();
-        await Mosaic.StartAsync();
+        await Image.StartAsync();
         await Atlas.StartAsync();
         await Centering.StartAsync();
         await LiveStack.StartAsync();
@@ -143,6 +143,6 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public void Dispose()
     {
         foreach (var t in Tabs) (t.Content as IDisposable)?.Dispose();
-        Catalog.Dispose(); IndiBrowser.Dispose(); Autofocus.Dispose(); Sequencer.Dispose(); Storage.Dispose(); Mosaic.Dispose(); Atlas.Dispose(); Centering.Dispose(); LiveStack.Dispose(); Site.Dispose(); Mesh.Dispose();
+        Catalog.Dispose(); IndiBrowser.Dispose(); Autofocus.Dispose(); Sequencer.Dispose(); Storage.Dispose(); Image.Dispose(); Atlas.Dispose(); Centering.Dispose(); LiveStack.Dispose(); Site.Dispose(); Mesh.Dispose();
     }
 }

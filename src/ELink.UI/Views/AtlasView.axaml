@@ -30,7 +30,7 @@
             <TextBlock Classes="label" Text="{Binding VisibilityText}" TextWrapping="Wrap" IsVisible="{Binding VisibilityText.Length}"/>
             <StackPanel><TextBlock Classes="label" Text="Pointer or scope"/><ComboBox ItemsSource="{Binding Pointers}" SelectedItem="{Binding SelectedPointer}" HorizontalAlignment="Stretch"/></StackPanel>
             <Button Content="Go to selection" Classes="primary" Command="{Binding GotoCommand}" HorizontalAlignment="Stretch"/>
-            <Button Content="Use as mosaic centre" Command="{Binding UseAsMosaicCentreCommand}" HorizontalAlignment="Stretch"/>
+            <Button Content="Image this" Command="{Binding ImageThisCommand}" HorizontalAlignment="Stretch"/>
             <TextBlock Classes="error" Text="{Binding Message}" IsVisible="{Binding Message.Length}"/>
           </StackPanel>
         </Border>

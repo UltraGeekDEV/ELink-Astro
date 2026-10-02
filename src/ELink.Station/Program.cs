@@ -73,8 +73,8 @@ await using var site = new SiteService(node, Path.Combine(Path.GetDirectoryName(
 await site.StartAsync();
 await using var centering = new CenteringService(node, Path.Combine(Path.GetDirectoryName(compose)!, "centering.json"));
 await centering.StartAsync();
-await using var mosaic = new MosaicService(node);
-await mosaic.StartAsync();
+await using var imaging = new ImagingService(node);
+await imaging.StartAsync();
 await using var liveStack = new LiveStackService(node);
 await liveStack.StartAsync();
 await using var storage = new StorageService(node, saveDir);

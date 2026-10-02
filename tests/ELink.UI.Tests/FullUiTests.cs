@@ -64,7 +64,7 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         await host.StartAsync();
         await using var autofocus = new AutofocusService(hostNode); await autofocus.StartAsync();
         await using var sequencer = new SequencerService(hostNode); await sequencer.StartAsync();
-        await using var mosaicSvc = new MosaicService(hostNode); await mosaicSvc.StartAsync();
+        await using var imagingSvc = new ImagingService(hostNode); await imagingSvc.StartAsync();
         var skyCatalog = File.Exists("/usr/share/kstars/namedstars.dat") ? await Task.Run(() => AtlasCatalog.LoadKStars())
             : AtlasCatalog.From(new List<CatalogStar> { new(5.92, 7.41, 0.45f, 1.85f, 39801, "Betelgeuse") }, new List<CatalogDso> { new("M 42", "Nebula", "Orion Nebula, NGC 1976", 5.588, -5.39, 4f, 90, 60, 0) });
         await using var atlasSvc = new AtlasService(hostNode, skyCatalog); await atlasSvc.StartAsync();
@@ -167,31 +167,26 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         Assert.True(await Eventually(() => vm.Autofocus.Shooters.Contains("cam") && vm.Autofocus.Focusers.Contains("Focuser_Simulator")));
         Shot(window, "07c-autofocus");
 
-        // mosaic through the UI: paint a small area to 2 s per spot with single shots, watch the coverage map fill
-        var mosaic = vm.Mosaic;
-        Assert.True(await Eventually(() => mosaic.Scopes.Contains("main")));
-        mosaic.SelectedScope = "main";
-        mosaic.Label = "UIField"; mosaic.CenterRa = "06:00:00"; mosaic.CenterDec = "10:00:00";
-        mosaic.FovWidth = 0.4; mosaic.FovHeight = 0.3; mosaic.Stepover = 0.05;
-        mosaic.Frames[0].Width = 0.2; mosaic.Frames[0].Height = 0.2;
-        mosaic.AddFrameCommand.Execute(null);                                   // a second, differently shaped frame: heterogeneous
-        Assert.Equal(2, mosaic.Frames.Count);
-        mosaic.Frames[1].Width = 0.1; mosaic.Frames[1].Height = 0.06; mosaic.Frames[1].Rotation = 30; mosaic.Frames[1].OffsetEast = 0.04;
-        mosaic.RemoveFrameCommand.Execute(mosaic.Frames[1]);
-        Assert.Single(mosaic.Frames);
-        mosaic.ExposureSeconds = 1; mosaic.TargetMinutes = 2.0 / 60; mosaic.MaxVisits = 0;
-        await mosaic.PreviewCommand.ExecuteAsync(null);
-        Assert.Equal("", mosaic.Message);
-        Assert.Contains("hop", mosaic.Summary);
-        await mosaic.StartRunCommand.ExecuteAsync(null);
-        Assert.Equal("", mosaic.Message);
-        Assert.True(await Eventually(() => mosaic.Phase == "Done", 300000), $"{mosaic.Phase} {mosaic.Message}");
-        Assert.True(await Eventually(() => mosaic.CoverageText.Contains("100% complete")), mosaic.CoverageText);
-        Assert.NotNull(mosaic.Map);
-        Assert.True(await Eventually(() => mosaic.Outlines.Count == 1));
-        Assert.Contains("shots", mosaic.Progress);
-        vm.SelectedTab = vm.Tabs.First(t => t.Content is MosaicViewModel);
-        Shot(window, "07d-mosaic");
+        // an image through the UI: an area bigger than a frame of the "cam" train, filled to one exposure per spot, built live
+        var image = vm.Image;
+        Assert.True(await Eventually(() => image.Scopes.Any(c => c.Id == "main")));
+        foreach (var c in image.Scopes) c.Selected = c.Id == "main";
+        image.Label = "UIField"; image.CenterRa = "06:00:00"; image.CenterDec = "10:00:00";
+        image.Width = 1.3; image.Height = 1.0; image.ExposureSeconds = 1; image.TargetMinutes = 1.0 / 60; image.MaxVisits = 0;
+        image.LiveStack = true; image.OutputScale = 20; image.DitherArcsec = 20;
+        await image.PreviewCommand.ExecuteAsync(null);
+        Assert.Equal("", image.Message);
+        Assert.Contains("main:", image.Summary);
+        await image.StartRunCommand.ExecuteAsync(null);
+        Assert.Equal("", image.Message);
+        Assert.True(await Eventually(() => image.Phase is "Done" or "Error", 400000), $"{image.Phase} {image.Message}");
+        Assert.Equal("Done", image.Phase);
+        Assert.True(await Eventually(() => image.CoverageText.Contains("100% complete")), image.CoverageText);
+        Assert.NotNull(image.Map);
+        Assert.Contains(image.Workers, w => w.StartsWith("main: Done"));
+        Assert.True(await Eventually(() => image.Stack.Image is not null, 120000), image.Stack.Info);
+        vm.SelectedTab = vm.Tabs.First(t => t.Content is ImageViewModel);
+        Shot(window, "07d-image");
 
         // site: type a location; tonight's sky appears, and the atlas gets a horizon, the planets and visibility
         var siteVm = vm.Site;
@@ -233,9 +228,10 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         atlas.SearchText = "M42";
         await atlas.SearchCommand.ExecuteAsync(null);
         Assert.True(await Eventually(() => atlas.Selection?.Label == "M 42"));
-        atlas.UseAsMosaicCentreCommand.Execute(null);
-        Assert.Equal("M42", vm.Mosaic.Label);
-        Assert.Contains(atlas.Polygons, p => p.Label.StartsWith("mosaic"));
+        atlas.ImageThisCommand.Execute(null);
+        Assert.Equal("M42", vm.Image.Label);
+        Assert.True(vm.Image.Width > 1);   // a big nebula becomes an area
+        Assert.Contains(atlas.Polygons, p => p.Label.StartsWith("image"));
         // a click right on Betelgeuse picks it
         atlas.CenterRa = 5.92; atlas.CenterDec = 7.4; atlas.Fov = 20;
         await atlas.RefreshAsync();
@@ -259,10 +255,10 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         Shot(window, "07f-centring");
         if (solveSvc is not null) await solveSvc.DisposeAsync();
 
-        // live stack: the mosaic's field (M42 from the atlas), frames placed by the scope's pointing, shown as they come
+        // live stack: the Image tab's field (M42 from the atlas), frames placed by the scope's pointing, shown as they come
         var live = vm.LiveStack;
         Assert.True(await Eventually(() => live.Shooters.Any(c => c.Id == "main")));
-        live.FromMosaicCommand.Execute(null);
+        live.FromImageCommand.Execute(null);
         Assert.Equal("M42", live.Label);
         Assert.True(live.Shooters.First(c => c.Id == "main").Selected);
         live.PixelScale = 20; live.Registration = "Pointing"; live.FramePixelScale = 10;

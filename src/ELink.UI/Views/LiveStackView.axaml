@@ -17,7 +17,7 @@
       <StackPanel Spacing="10">
         <Grid ColumnDefinitions="*,Auto">
           <TextBlock Classes="section" Text="FIELD (VIRTUAL FOV)"/>
-          <Button Grid.Column="1" Content="Use the mosaic's field" Command="{Binding FromMosaicCommand}"/>
+          <Button Grid.Column="1" Content="Use the Image tab's field" Command="{Binding FromImageCommand}"/>
         </Grid>
         <StackPanel Classes="row">
           <StackPanel><TextBlock Classes="label" Text="Name"/><TextBox Text="{Binding Label}" Width="130"/></StackPanel>

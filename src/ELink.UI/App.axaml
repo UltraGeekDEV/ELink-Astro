@@ -18,7 +18,7 @@
     <DataTemplate DataType="vm:AutofocusViewModel"><v:AutofocusView/></DataTemplate>
     <DataTemplate DataType="vm:SequencerViewModel"><v:SequencerView/></DataTemplate>
     <DataTemplate DataType="vm:StorageViewModel"><v:StorageView/></DataTemplate>
-    <DataTemplate DataType="vm:MosaicViewModel"><v:MosaicView/></DataTemplate>
+    <DataTemplate DataType="vm:ImageViewModel"><v:ImageView/></DataTemplate>
     <DataTemplate DataType="vm:AtlasViewModel"><v:AtlasView/></DataTemplate>
     <DataTemplate DataType="vm:CenteringViewModel"><v:CenteringView/></DataTemplate>
     <DataTemplate DataType="vm:LiveStackViewModel"><v:LiveStackView/></DataTemplate>

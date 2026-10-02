@@ -17,7 +17,7 @@ flowchart LR
         direction LR
         B[IndiBridge<br/>Mount / Camera / Focuser ...]
         C[Compose<br/>Pointer · Shooter · SmartScope]
-        A[Automation<br/>Solve · Centre · Focus · Sequence · Mosaic · Live stack · Storage]
+        A[Automation<br/>Image · Solve · Centre · Focus · Sequence · Live stack · Storage]
         S[Sky<br/>Atlas · Stellarium]
         U[UI<br/>Avalonia view models]
     end
@@ -57,7 +57,7 @@ flowchart TD
   no separate "direct" or "mosaic" mode. Scopes pull work producer/consumer style and are **not** kept in sync.
 - Shared facts (site, time, weather, dome) are services scopes consult. They never orchestrate scopes.
 
-The current `Observe` and `Mosaic` services predate this and are to be folded into the single request (see TODO.md).
+`ImagingService` is that request; `Observe` stays as the scope's own one-target primitive the request uses.
 
 ## Projects
 
@@ -101,7 +101,7 @@ backends meet, and they meet only by being started on the same node.
 | `ELink.Indi.<server>.<device>.<property>` | | generic mirror of every INDI property |
 
 IDs live as constants or helpers next to their types in `ELink.Contracts` (`EquipmentIds`, `PointerIds`, `ShooterIds`,
-`MosaicIds`, ...). Never type an ID string anywhere else.
+`ImagingIds`, ...). Never type an ID string anywhere else.
 
 ## The state + command pattern
 
@@ -178,7 +178,7 @@ frame belongs to. Shooters have offsets (arcmin east/north of the pointing axis)
 | Autofocus | shooter shots | focuser | HFR per position, parabola fit on HFR², coarse + fine |
 | Sequencer | weather state | scope `Observe`, autofocus | blocks, pause/resume, weather interlock |
 | Storage | any shooter's shots | disk | night folders, FITS headers, JSON-lines log |
-| Mosaic | its own plan | scope, rotator | coverage map painter (below) |
+| Imaging | scopes' trains | any number of scopes | one image of an area, work shared between scopes (below) |
 | PlateSolve | — | shooter (optional) | wraps `solve-field`, one solve at a time |
 | Centering | mount state (incl. hand-controller slews) | mount, PlateSolve | sync + reslew, aim-off fallback, guide→primary offset |
 | Guider (compose) | its guide camera's shots | GuidePort or GuideTarget | calibration, multi-star guiding, dithering, settle; owned by a scope |
@@ -187,20 +187,23 @@ frame belongs to. Shooters have offsets (arcmin east/north of the pointing axis)
 | Atlas | — | — | KStars stars, OpenNGC, GSC, constellations, search |
 | Stellarium | a pointer | pointer | telescope protocol server + Remote Control client |
 
-### Mosaic painter
+### The image request (fill an area)
 
 ```mermaid
 flowchart LR
-    Planner[CoveragePlanner<br/>raster passes + greedy top-up] -->|visits| Q[[bounded queue]]
-    Q --> Exec[Executor<br/>rotator → scope Observe]
-    Exec -->|ShotEvent| Rec[Recorder<br/>real CoverageMap]
-    Rec -->|coverage| Planner
-    API{{Start · Pause · SetTarget · SetStepover}} -.-> Planner
+    R{{ImagingRequest<br/>area · depth · scopes}} --> M[(shared coverage map<br/>seconds per spot)]
+    M --> PA[planner A<br/>A's frames] & PB[planner B<br/>B's frames]
+    PA -->|next spot when A is free| A[Scope A · Observe 1 shot<br/>+ random dither]
+    PB -->|next spot when B is free| B[Scope B · Observe 1 shot<br/>+ random dither]
+    A & B -->|real footprint replaces the planned one| M
+    A & B -->|frames| L[Live stack = the image]
 ```
 
-The virtual FOV is a `CoverageMap` of exposure seconds. Each frame is a rotated rectangle (`FrameSpec`) relative to the
-scope pose; one shot deposits its exposure into every cell under every frame. Raster passes use a hop derived from the
-target depth on an aligned lattice, shifted between passes; the top-up picks the visit with the best D²/(D+penalty·W).
+`ImagingService` resolves each scope's frames from its imaging trains (published fields, shooter offsets, nested
+scopes), and gives each scope a `CoveragePlanner` (raster passes + greedy top-up) over one shared map: a planner paints
+the map when it hands out a spot, so the others skip it. After a shot the planned footprint is swapped for the real,
+dithered one; a failed shot gives its spot back. An area that fits in a frame is shot centred every time. Scopes are
+never synchronised; a broken scope fails alone and the others finish.
 
 ### Centring loop
 

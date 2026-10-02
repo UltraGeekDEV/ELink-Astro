@@ -32,7 +32,15 @@ public sealed class CoverageMap
         Seconds = new float[Cols * Rows];
     }
 
-    public CoverageMap Clone() { var c = new CoverageMap(FovWidth, FovHeight, CellWidth); Array.Copy(Seconds, c.Seconds, Seconds.Length); return c; }
+    private CoverageMap(CoverageMap other)
+    {
+        FovWidth = other.FovWidth; FovHeight = other.FovHeight; Cols = other.Cols; Rows = other.Rows;
+        CellWidth = other.CellWidth; CellHeight = other.CellHeight;
+        Seconds = (float[])other.Seconds.Clone();
+    }
+
+    /// <summary>An exact copy: same grid (cells need not be square), same seconds.</summary>
+    public CoverageMap Clone() => new(this);
 
     /// <summary>Footprints of a visit's frames. Frame offsets turn with the scope's field; each frame's own rotation adds to it.</summary>
     public static Footprint[] Footprints(Pose pose, IReadOnlyList<FrameSpec> frames, double areaAngle)

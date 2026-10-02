@@ -1,0 +1,212 @@
+using System.Collections.ObjectModel;
+using System.Globalization;
+using Avalonia;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using ELink.Contracts.Automation;
+using ELink.Contracts.Composition;
+using ELink.Contracts.Equipment;
+using ELink.Core;
+using ELink.Core.Astro;
+using ELink.UI.Infrastructure;
+using Event.Connections.Models.BaseBinaryConvertibles;
+using EVent.Connections.Models.BaseBinaryConvertibles;
+
+namespace ELink.UI.ViewModels;
+
+/// <summary>A frame outline on the coverage map.</summary>
+public sealed record OutlineShape(List<Point> Points);
+
+/// <summary>"This image of this part of the sky": the area, how deep, which scopes may work on it. Shows the coverage
+/// filling in, what every scope is doing, and the image itself as it builds. A single target is just a small area.</summary>
+public sealed partial class ImageViewModel : ObservableObject, IDisposable
+{
+    private const double BoxWidth = 600, MaxBoxHeight = 380;
+    private readonly MeshSession _mesh;
+    private readonly CatalogViewModel _catalog;
+    private Follower<ImagingState>? _follower;
+    private int _shownVisits = -1;
+
+    public ImageViewModel(MeshSession mesh, CatalogViewModel catalog)
+    {
+        _mesh = mesh; _catalog = catalog;
+        catalog.CompositionChanged += () => UiThread.Post(RebuildChoices);
+        catalog.Devices.CollectionChanged += (_, _) => UiThread.Post(RebuildChoices);
+        RebuildChoices();
+    }
+
+    public ObservableCollection<ShooterChoice> Scopes { get; } = new();
+    public ObservableCollection<string> Weather { get; } = new();
+    public ObservableCollection<OutlineShape> Outlines { get; } = new();
+    public ObservableCollection<string> Workers { get; } = new();
+    public FrameDisplay Stack { get; } = new();
+
+    [ObservableProperty] private string _label = "M42";
+    [ObservableProperty] private string _centerRa = "05:35:17";
+    [ObservableProperty] private string _centerDec = "-05:23:28";
+    [ObservableProperty] private double _width;
+    [ObservableProperty] private double _height;
+    [ObservableProperty] private double _positionAngle;
+    [ObservableProperty] private double _exposureSeconds = 60;
+    [ObservableProperty] private string _filter = "";
+    [ObservableProperty] private double _targetMinutes = 60;
+    [ObservableProperty] private double _stepover;
+    [ObservableProperty] private double _ditherArcsec = 30;
+    [ObservableProperty] private int _maxVisits;
+    [ObservableProperty] private bool _liveStack = true;
+    [ObservableProperty] private double _outputScale;
+    [ObservableProperty] private string? _selectedWeather = "";
+
+    [ObservableProperty] private string _phase = "Idle";
+    [ObservableProperty] private string _summary = "";
+    [ObservableProperty] private string _progress = "";
+    [ObservableProperty] private string _coverageText = "";
+    [ObservableProperty] private string _message = "";
+    [ObservableProperty] private WriteableBitmap? _map;
+    [ObservableProperty] private double _boxHeight = 300;
+    public double BoxW => BoxWidth;
+    private double _areaW = 1, _areaH = 1;
+
+    private void RebuildChoices()
+    {
+        var ids = _catalog.Composition.Scopes.Select(s => s.Id.Text).ToList();
+        if (!Scopes.Select(s => s.Id).SequenceEqual(ids))
+        {
+            var chosen = Scopes.Where(s => s.Selected).Select(s => s.Id).ToHashSet();
+            Scopes.Clear();
+            foreach (var id in ids) Scopes.Add(new ShooterChoice(id) { Selected = chosen.Contains(id) || ids.Count == 1 });
+        }
+        var weather = new[] { "" }.Concat(_catalog.OfKind(DeviceKinds.Weather).Select(d => d.Id)).ToList();
+        if (!Weather.SequenceEqual(weather)) { Weather.Clear(); foreach (var w in weather) Weather.Add(w); }
+    }
+
+    public async Task StartAsync()
+    {
+        _follower = new Follower<ImagingState>(_mesh.Node, ImagingIds.State, ImagingIds.GetState, Show);
+        await _follower.StartAsync();
+    }
+
+    private bool TryRequest(out ImagingRequest req)
+    {
+        req = new ImagingRequest();
+        if (!Sexagesimal.TryParse(CenterRa, out var ra) || ra < 0 || ra >= 24) { Message = "centre RA must be 0..24 hours"; return false; }
+        if (!Sexagesimal.TryParse(CenterDec, out var dec) || dec < -90 || dec > 90) { Message = "centre Dec must be -90..90"; return false; }
+        req = new ImagingRequest
+        {
+            Label = Label.Trim() == "" ? "Image" : Label.Trim(), Center = new SkyTarget { RaHours = ra, DecDegrees = dec, Epoch = "J2000" },
+            WidthDegrees = Width, HeightDegrees = Height, PositionAngleDegrees = PositionAngle,
+            Exposure = new ShooterExposure { Seconds = ExposureSeconds, Filter = Filter.Trim(), FrameType = "Light" },
+            TargetSeconds = TargetMinutes * 60, StepoverDegrees = Stepover, DitherArcsec = DitherArcsec, MaxVisits = MaxVisits,
+            WeatherId = SelectedWeather ?? "", LiveStack = LiveStack, OutputPixelScaleArcsec = OutputScale,
+        };
+        foreach (var s in Scopes.Where(s => s.Selected)) req.ScopeIds.Add(s.Id);
+        if (req.ScopeIds.Count == 0) { Message = "tick at least one scope"; return false; }
+        return true;
+    }
+
+    private void Show(ImagingState s)
+    {
+        Phase = s.Phase.Text;
+        if (s.Message.Text != "") Message = s.Message.Text;
+        Progress = $"{s.Visits.Value} shots";
+        CoverageText = s.MapCols.Value > 0
+            ? $"coverage  min {Fmt(s.MinSeconds.Value)} · mean {Fmt(s.MeanSeconds.Value)} · max {Fmt(s.MaxSeconds.Value)}" +
+              (s.TargetSeconds.Value > 0 ? $"   of {Fmt(s.TargetSeconds.Value)}   ({Math.Min(100, 100 * s.MinSeconds.Value / s.TargetSeconds.Value):0}% complete)" : "")
+            : "";
+        var lines = s.Workers.Select(w => $"{w.ScopeId.Text}: {w.Phase.Text}, {w.Visits.Value} shots" + (w.Message.Text != "" ? $" — {w.Message.Text}" : "")).ToList();
+        if (!Workers.SequenceEqual(lines)) { Workers.Clear(); foreach (var l in lines) Workers.Add(l); }
+        if (s.WidthDegrees.Value > 0) { _areaW = s.WidthDegrees.Value; _areaH = s.HeightDegrees.Value; }
+        ShowMap(s);
+        if (s.Visits.Value != _shownVisits && s.Visits.Value > 0) { _shownVisits = s.Visits.Value; _ = RefreshStackAsync(); }
+    }
+
+    private static string Fmt(double seconds) => seconds >= 3600 ? $"{seconds / 3600:0.0#} h" : seconds >= 120 ? $"{seconds / 60:0.#} min" : $"{seconds:0.#} s";
+
+    private void ShowMap(ImagingState s)
+    {
+        int cols = s.MapCols.Value, rows = s.MapRows.Value;
+        var bytes = s.Map.Data;
+        if (cols <= 0 || rows <= 0 || bytes.Length != cols * rows) return;
+        BoxHeight = Math.Clamp(BoxWidth * _areaH / Math.Max(_areaW, 1e-9), 60, MaxBoxHeight);
+        var bgra = new byte[cols * rows * 4];
+        for (int i = 0; i < bytes.Length; i++)
+        {
+            double t = bytes[i] / 255.0;
+            byte r = (byte)Math.Clamp(20 + 235 * Math.Pow(t, 2.2), 0, 255), g = (byte)Math.Clamp(26 + 190 * Math.Pow(t, 0.9), 0, 255), b = (byte)Math.Clamp(48 + 130 * Math.Sin(t * Math.PI), 0, 255);
+            bgra[i * 4] = b; bgra[i * 4 + 1] = g; bgra[i * 4 + 2] = r; bgra[i * 4 + 3] = 255;
+        }
+        var bmp = new WriteableBitmap(new PixelSize(cols, rows), new Vector(96, 96), PixelFormat.Bgra8888, AlphaFormat.Premul);
+        using (var fb = bmp.Lock()) System.Runtime.InteropServices.Marshal.Copy(bgra, 0, fb.Address, bgra.Length);
+        Map = bmp;
+
+        // where each scope is shooting now
+        Outlines.Clear();
+        foreach (var w in s.Workers.Where(w => w.Phase.Text == "Shooting" && !double.IsNaN(w.PoseX.Value)))
+        {
+            var frames = w.Frames.Select(f => new FrameSpec(f.WidthDegrees.Value / 2, f.HeightDegrees.Value / 2, f.RotationDegrees.Value, f.OffsetEastDegrees.Value, f.OffsetNorthDegrees.Value)).ToList();
+            foreach (var fp in CoverageMap.Footprints(new Pose(w.PoseX.Value, w.PoseY.Value, 0), frames, PositionAngle))
+            {
+                double c = Math.Cos(fp.Theta), sn = Math.Sin(fp.Theta);
+                var pts = new List<Point>();
+                foreach (var (lx, ly) in new[] { (-fp.HalfWidth, fp.HalfHeight), (fp.HalfWidth, fp.HalfHeight), (fp.HalfWidth, -fp.HalfHeight), (-fp.HalfWidth, -fp.HalfHeight) })
+                {
+                    double x = fp.Cx + lx * c + ly * sn, y = fp.Cy - lx * sn + ly * c;
+                    pts.Add(new Point((x + _areaW / 2) / _areaW * BoxWidth, (_areaH / 2 - y) / _areaH * BoxHeight));
+                }
+                Outlines.Add(new OutlineShape(pts));
+            }
+        }
+    }
+
+    /// <summary>The image so far, from the live stack, reduced for the screen.</summary>
+    private async Task RefreshStackAsync()
+    {
+        try
+        {
+            var answers = await _mesh.Node.CallFunctionAsync<LiveStackImageRequest, LiveStackImage>(LiveStackIds.GetImage,
+                new LiveStackImageRequest { MaxWidth = 1200, MaxHeight = 900 }, TimeSpan.FromSeconds(30));
+            if (answers?.FirstOrDefault() is { Ok.Value: true } img)
+                UiThread.Post(() => Stack.Show(img.Image.Data, ".fits", $"{img.Frames.Value} frames  ·  {img.Width.Value}×{img.Height.Value} at {img.PixelScaleArcsec.Value:0.##}\"/px"));
+        }
+        catch (Exception) { }
+    }
+
+    [RelayCommand]
+    private async Task PreviewAsync()
+    {
+        if (!TryRequest(out var req)) return;
+        var answers = await _mesh.Node.CallFunctionAsync<ImagingRequest, ImagingState>(ImagingIds.Preview, req, TimeSpan.FromSeconds(60));
+        var p = answers?.FirstOrDefault();
+        if (p is null) { Message = "no imaging service on the mesh"; return; }
+        if (p.Phase.Text == "Error") { Message = p.Message.Text; Summary = ""; return; }
+        Message = "";
+        Summary = p.Message.Text + "   ·   " + string.Join("   ·   ", p.Workers.Select(w =>
+            $"{w.ScopeId.Text}: " + string.Join(" + ", w.Frames.Select(f => FormattableString.Invariant($"{f.WidthDegrees.Value:0.##}°×{f.HeightDegrees.Value:0.##}°")))));
+    }
+
+    [RelayCommand]
+    private async Task StartRunAsync()
+    {
+        if (!TryRequest(out var req)) return;
+        Message = "";
+        _shownVisits = -1;
+        var r = await Commands.CallAsync(_mesh.Node, ImagingIds.Start, req, TimeSpan.FromSeconds(60));
+        if (!r.Ok.Value) Message = r.Error.Text;
+    }
+
+    private async Task Void(string id) { var r = await Commands.CallAsync(_mesh.Node, id, NOTESVoid.Void); Message = r.Ok.Value ? "" : r.Error.Text; }
+    [RelayCommand] private Task PauseAsync() => Void(ImagingIds.Pause);
+    [RelayCommand] private Task ResumeAsync() => Void(ImagingIds.Resume);
+    [RelayCommand] private Task AbortAsync() => Void(ImagingIds.Abort);
+
+    [RelayCommand]
+    private async Task ApplyTargetAsync()
+    {
+        var r = await Commands.CallAsync(_mesh.Node, ImagingIds.SetTarget, (BinaryConvertibleDouble)(TargetMinutes * 60));
+        Message = r.Ok.Value ? "" : r.Error.Text;
+    }
+
+    public void Dispose() => _follower?.Dispose();
+}

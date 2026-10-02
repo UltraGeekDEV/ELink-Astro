@@ -60,7 +60,7 @@ flowchart LR
         S[Smart scopes<br/>click to open, ✕ to close]
     end
     subgraph Tabs
-        T1[Compose] --- T2[Sky atlas] --- T2b[Site] --- T3[Centring] --- T4[Mosaic] --- T4b[Live stack]
+        T1[Compose] --- T2[Sky atlas] --- T2b[Site] --- T3[Centring] --- T4[Image] --- T4b[Live stack]
         T4b --- T5[Sequence] --- T6[Autofocus] --- T7[Storage] --- T8[INDI]
     end
     Left --- Tabs
@@ -84,8 +84,8 @@ flowchart TD
     C --> D[Centring corrects automatically]
     D --> E[Autofocus]
     E --> F{What to shoot}
-    F -->|one target, a list of targets| G[Sequence]
-    F -->|an area bigger than the frame| H[Mosaic]
+    F -->|a list of targets| G[Sequence]
+    F -->|this image of this area| H[Image]
     G --> I[Storage saves every frame]
     H --> I
     H --> L[Live stack shows the field growing]
@@ -125,7 +125,7 @@ You do not need these for normal work: the scope guides by itself.
 - Drag to pan, wheel to zoom, click a star or object to select it.
 - Search: `M42`, `NGC 7000`, `Vega`, `andromeda`.
 - Mounts are drawn as reticles where they point. *Centre on mount* jumps there.
-- **Go to selection** sends the chosen pointer or scope there. **Use as mosaic centre** fills the Mosaic tab.
+- **Go to selection** sends the chosen pointer or scope there. **Image this** fills the Image tab (big objects as an area, small ones as one frame).
 - **Stellarium**: *Show selection in Stellarium*, *Take Stellarium's selection*, and *Stellarium follows this pointer*.
 
 ### Stellarium setup
@@ -173,18 +173,23 @@ A plan is a list of blocks: target, exposure seconds, count, filter, frame type,
 optionally a weather device (unsafe weather pauses, and the plan resumes with only the missing frames) and the
 autofocus shooter/focuser for refocus blocks. **Start**, **Pause**, **Resume**, **Abort**.
 
-## Mosaic
+## Image
 
-Paints an area bigger than one frame, Seestar style: many single shots in small steps, each one aimed at the least
-covered part, until every spot has received the target exposure.
+The one place to say what you want: **this image of this part of the sky**. There is no separate "single target" and
+"mosaic": a single target is just an area of 0 × 0 (one frame of your smallest train), a mosaic is a bigger area.
 
-1. **Area to paint**: centre (or *Use as mosaic centre* from the atlas), width, height, angle.
-2. **Frames**: one row per camera on the scope: size, rotation and offset in degrees. *Frame 1 from camera* fills
-   it from a camera and a focal length. Frames may differ (different OTAs, rotations).
-3. **Painting**: scope, seconds per shot, target minutes per spot, stepover (degrees per step; smaller is smoother),
-   max shots, optional weather guard and rotator with field angles to cycle (e.g. `0, 60, 120`).
-4. **Preview** draws the plan, **Start** runs it. The heat map shows exposure received; yellow means done.
-   *Apply target now* and *Apply stepover now* change a running mosaic.
+1. **What**: name, centre (or *Image this* in the Sky atlas), width and height in degrees (0 = one frame), angle,
+   seconds per shot and filter, **minutes per spot** (how deep every part of the image should get; 0 = until you
+   stop it), the output pixel scale (0 = the finest train's) and whether to build the image live.
+2. **Who**: tick the scopes that may work on it. Each takes the next spot for *its own* frames (sizes come from its
+   imaging trains) as soon as it is free; spots another scope already covered are skipped. Scopes are never kept in
+   step: a slow mount simply takes fewer shots. Each guides, dithers, flips and focuses by itself.
+3. **Dither**: every shot lands up to this many arcseconds from its planned spot, so even unguided scopes dither.
+4. **Preview** shows the resolved area and each scope's frames; **Start**, **Pause**, **Resume**, **Abort**;
+   *Apply depth now* changes the depth while running.
+
+The coverage map fills from blue to yellow (deep enough), with white outlines where each scope is shooting, one line
+per scope says what it is doing, and **The image** shows the stack of all their frames as it grows.
 
 ## Live stack
 
@@ -207,7 +212,7 @@ flowchart LR
     U & D --> A[add, sky levels matched] --> V[stack shown on the tab]
 ```
 
-1. **Field**: *Use the mosaic's field* copies the Mosaic tab's centre, size and angle (and ticks its scope), or type
+1. **Field**: *Use the Image tab's field* copies its centre, size and angle (and ticks its scopes); an Image run already builds its own stack, or type
    your own.
 2. **Output**: the **pixel scale** in arcsec per pixel. Smaller than the camera's means a larger, smoother image
    (frames are interpolated: bicubic by default); larger means a smaller image where each output pixel is the

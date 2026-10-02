@@ -23,14 +23,14 @@ public sealed partial class LiveStackViewModel : ObservableObject, IDisposable
 {
     private readonly MeshSession _mesh;
     private readonly CatalogViewModel _catalog;
-    private readonly MosaicViewModel _mosaic;
+    private readonly ImageViewModel _image;
     private Follower<LiveStackState>? _follower;
     private int _shownFrames = -1;
     private bool _fetching, _dirty;
 
-    public LiveStackViewModel(MeshSession mesh, CatalogViewModel catalog, MosaicViewModel mosaic)
+    public LiveStackViewModel(MeshSession mesh, CatalogViewModel catalog, ImageViewModel image)
     {
-        _mesh = mesh; _catalog = catalog; _mosaic = mosaic;
+        _mesh = mesh; _catalog = catalog; _image = image;
         catalog.CompositionChanged += () => UiThread.Post(RebuildChoices);
         RebuildChoices();
     }
@@ -96,13 +96,13 @@ public sealed partial class LiveStackViewModel : ObservableObject, IDisposable
     }
 
     [RelayCommand]
-    private void FromMosaic()
+    private void FromImage()
     {
-        CenterRa = _mosaic.CenterRa; CenterDec = _mosaic.CenterDec;
-        FovWidth = _mosaic.FovWidth; FovHeight = _mosaic.FovHeight; PositionAngle = _mosaic.PositionAngle;
-        Label = _mosaic.Label;
-        var scope = _mosaic.SelectedScope;
-        foreach (var s in Shooters) if (s.Id == scope) s.Selected = true;
+        CenterRa = _image.CenterRa; CenterDec = _image.CenterDec;
+        if (_image.Width > 0) FovWidth = _image.Width;
+        if (_image.Height > 0) FovHeight = _image.Height;
+        PositionAngle = _image.PositionAngle; Label = _image.Label;
+        foreach (var s in Shooters) if (_image.Scopes.Any(c => c.Selected && c.Id == s.Id)) s.Selected = true;
         Message = "";
     }
 

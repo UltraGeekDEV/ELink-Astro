@@ -15,7 +15,7 @@ references another module directly; they share only the contract (type) assembly
 - `ELink.Compose`     "Pointer" abstraction (anything that can point to a coordinate: mount, dome+mount,
                       alt-az, a smart scope) + "Shooter" (anything that can take frames) + SmartScope + groups.
 - `ELink.Imaging`     FITS, WCS, live stacker, stretch, star detection (no EVent).
-- `ELink.Automation`  Autofocus, sequencer, mosaic, plate solve, centring, live stack, storage services.
+- `ELink.Automation`  Image requests, autofocus, sequencer, plate solve, centring, live stack, storage services.
 - `ELink.Atlas` / `ELink.Stellarium`  Sky atlas service, Stellarium bridge.
 - `ELink.UI` / `ELink.App`  Avalonia UI (MVVM), talks to the mesh only.
 - `ELink.Station`     All-in-one executable (`elink`). See docs/development.md for diagrams.
@@ -87,7 +87,7 @@ focus triggers/offsets -> live-stack rejection/calibration -> the rest.
 - [x] SmartScope = point-to + shoot-at wrapper: any pointer + any N shooters/focusers/wheels/rotators; own EVent identity
 - [x] SmartScope-of-SmartScopes (arrays, multi-OTA per mount, multi-mount per target, wide + narrow, etc.)
 - [x] Imaging trains (optics, cameras with Imaging/Guiding roles, wheel, focuser, rotator; focal length pushed to cameras; per-camera scale and field); scopes with any number of trains per mount and inline guiding with any train or OAG camera
-- [ ] Use train fields of view directly in the "fill this area" request (no hand-entered frame sizes)
+- [x] Train fields of view used directly by the image request
 - [x] Composition at run time over EVent (Define/Remove/Snapshot) + JSON persistence
 - [x] Per-shooter offsets (primary shooter is centred on target); pointing model hooks still open
 
@@ -98,7 +98,8 @@ focus triggers/offsets -> live-stack rejection/calibration -> the rest.
 - [x] Live stacking into a fixed field (e.g. the mosaic's virtual FOV) at any pixel scale: WCS/solve/pointing registration, exact homography resampling, bicubic upscaling, area-averaged downscaling, sky-level matching, float FITS + WCS out
 - [x] Debayering of one-shot-colour frames (BAYERPAT + offsets or a given pattern): interpolated and super pixel; colour stacks and colour previews
 - [ ] Live stack: outlier rejection (sigma clip), darks/flats, colour balance
-- [x] Mosaic painter: virtual FOV as a coverage map of exposure seconds; heterogeneous rotated frames, rotator passes, small-stepover raster passes + greedy top-up, producer/executor/recorder pipeline, live dRPC control
+- [x] Image request (replaces the mosaic and single-target special cases): an area to a depth, any number of scopes pulling work from one shared coverage plan with their own train fields, dither on every shot, failed scopes fail alone, live stack of all frames
+- [ ] Image request: learn each train's camera angle from solves (planning assumes 0 without a rotator); per-scope filters; rotator passes again
 - [x] Guiding inside the scope: multi-star guider, PHD2-style calibration over INDI pulse guiding, dithering and settling driven by the scope itself; "goto guiding" output (GuideCorrection: you are here, should be here) for ELink-native devices
 - [ ] Guiding extras: PHD2 as an alternative guider behind the same contract, guide graph history, Dec backlash compensation, predictive PEC
 - [ ] Centring inside the scope (spec): the scope centres after its own slews instead of a separate watcher
