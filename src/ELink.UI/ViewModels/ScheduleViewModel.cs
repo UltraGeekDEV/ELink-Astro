@@ -45,6 +45,7 @@ public sealed partial class ScheduleViewModel : ObservableObject, IDisposable
 {
     private readonly MeshSession _mesh;
     private Follower<SchedulerState>? _follower;
+    private SchedulerState? _lastState;
 
     public ScheduleViewModel(MeshSession mesh) { _mesh = mesh; }
 
@@ -60,13 +61,20 @@ public sealed partial class ScheduleViewModel : ObservableObject, IDisposable
         _follower = new Follower<SchedulerState>(_mesh.Node, SchedulerIds.State, SchedulerIds.GetState, s =>
         {
             Phase = s.Phase.Text; Running = s.Running.Text; StateMessage = s.Message.Text;
+            _lastState = s;
             if (!Rows.Select(r => r.Label).SequenceEqual(s.Entries.Select(e => e.Label.Text))) _ = ReloadAsync();
-            foreach (var e in s.Entries)
-                if (Rows.FirstOrDefault(r => r.Label == e.Label.Text) is { } row)
-                    row.Status = $"{e.Status.Text}" + (e.Reason.Text != "" ? $" — {e.Reason.Text}" : "") + (e.CompletePercent.Value > 0 ? $" · {e.CompletePercent.Value:0}% deep" : "");
+            ApplyStatuses();
         });
         await _follower.StartAsync();
         await ReloadAsync();
+    }
+
+    private void ApplyStatuses()
+    {
+        if (_lastState is not { } s) return;
+        foreach (var e in s.Entries)
+            if (Rows.FirstOrDefault(r => r.Label == e.Label.Text) is { } row)
+                row.Status = $"{e.Status.Text}" + (e.Reason.Text != "" ? $" — {e.Reason.Text}" : "") + (e.CompletePercent.Value > 0 ? $" · {e.CompletePercent.Value:0}% deep" : "");
     }
 
     [RelayCommand]
@@ -75,7 +83,7 @@ public sealed partial class ScheduleViewModel : ObservableObject, IDisposable
         var answers = await _mesh.Node.CallFunctionAsync<NOTESVoid, Schedule>(SchedulerIds.GetSchedule, NOTESVoid.Void, TimeSpan.FromSeconds(10));
         var s = answers?.FirstOrDefault();
         if (s is null) return;
-        UiThread.Post(() => { Rows.Clear(); foreach (var e in s.Entries) Rows.Add(new ScheduleRow(e)); });
+        UiThread.Post(() => { Rows.Clear(); foreach (var e in s.Entries) Rows.Add(new ScheduleRow(e)); ApplyStatuses(); });
     }
 
     private async Task SaveAsync(IEnumerable<ScheduleEntry> entries)

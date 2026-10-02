@@ -165,7 +165,8 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         Assert.Equal("", image.Message);
         Assert.Contains("main:", image.Summary);
         await image.StartRunCommand.ExecuteAsync(null);
-        Assert.Equal("", image.Message);
+        // accepted (it may say it is learning the camera's angle first: an information, not an error)
+        Assert.True(image.Message == "" || image.Message.StartsWith("learning"), image.Message);
         Assert.True(await Eventually(() => image.Phase is "Done" or "Error", 400000), $"{image.Phase} {image.Message}");
         Assert.Equal("Done", image.Phase);
         Assert.True(await Eventually(() => image.CoverageText.Contains("100% complete")), image.CoverageText);
