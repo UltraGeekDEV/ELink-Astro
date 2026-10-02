@@ -86,6 +86,8 @@ focus triggers/offsets -> live-stack rejection/calibration -> the rest.
 - [x] Shooter capability (contract + CameraShooter glue with filter wheel): Expose, ROI/binning/gain, frame events (image + metadata)
 - [x] SmartScope = point-to + shoot-at wrapper: any pointer + any N shooters/focusers/wheels/rotators; own EVent identity
 - [x] SmartScope-of-SmartScopes (arrays, multi-OTA per mount, multi-mount per target, wide + narrow, etc.)
+- [x] DSLRs through INDI's gphoto/canon/nikon drivers: ISO (CCD_ISO), FITS transfer forced, sensor size handed over by the train (CCD_INFO); tested with a fake DSLR driver under indiserver
+- [ ] DSLR: native raw (CR2/NEF) reading via LibRaw, mirror lock, capture target
 - [x] Imaging trains (optics, cameras with Imaging/Guiding roles, wheel, focuser, rotator; focal length pushed to cameras; per-camera scale and field); scopes with any number of trains per mount and inline guiding with any train or OAG camera
 - [x] Train fields of view used directly by the image request
 - [x] Composition at run time over EVent (Define/Remove/Snapshot) + JSON persistence
@@ -101,6 +103,8 @@ focus triggers/offsets -> live-stack rejection/calibration -> the rest.
 - [x] Image request (replaces the mosaic and single-target special cases): an area to a depth, any number of scopes pulling work from one shared coverage plan with their own train fields, dither on every shot, failed scopes fail alone, live stack of all frames
 - [ ] Image request: learn each train's camera angle from solves (planning assumes 0 without a rotator); per-scope filters; rotator passes again
 - [x] Guiding inside the scope: multi-star guider, PHD2-style calibration over INDI pulse guiding, dithering and settling driven by the scope itself; "goto guiding" output (GuideCorrection: you are here, should be here) for ELink-native devices
+- [x] Autofocus inside the scope: triggers (start, time, temperature, filter change, star growth) per train with a focuser; autofocus runs per focuser in parallel; RunAndWait
+- [ ] Focus: per-filter offsets instead of refocusing on every filter change; temperature compensation between runs
 - [ ] Guiding extras: PHD2 as an alternative guider behind the same contract, guide graph history, Dec backlash compensation, predictive PEC
 - [x] Centring inside the scope: solve after its own slews, aim-off re-goto until within tolerance, stale-frame check, learned pointing correction nearby
 - [x] Meridian flip inside the scope: hour angle from the site, pier side from the mount, waits for the flip point between exposures, verifies the turn-over, flips idle scopes too

@@ -37,6 +37,7 @@ public class ShooterExposure : IBinaryConvertible
     public BinaryConvertibleInt32 BinX { get; set; } = 0;
     public BinaryConvertibleInt32 BinY { get; set; } = 0;
     public BinaryConvertibleDouble Gain { get; set; } = double.NaN;
+    public BinaryConvertibleString Iso { get; set; } = "";
 
     public override string Name => "ShooterExposure";
     private static readonly NOTESDescriptor d = new();
@@ -49,6 +50,7 @@ public class ShooterExposure : IBinaryConvertible
         d.RegisterField("BinX", (ShooterExposure x) => x.BinX).Description("0 = leave as is");
         d.RegisterField("BinY", (ShooterExposure x) => x.BinY).Description("0 = leave as is");
         d.RegisterField("Gain", (ShooterExposure x) => x.Gain).Description("NaN = leave as is");
+        d.RegisterField("Iso", (ShooterExposure x) => x.Iso).Description("DSLRs: e.g. 800; empty = leave as is");
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();

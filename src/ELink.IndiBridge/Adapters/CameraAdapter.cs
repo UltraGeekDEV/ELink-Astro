@@ -33,6 +33,12 @@ public sealed class CameraAdapter(AdapterContext ctx) : IndiDeviceAdapter<Camera
         }
         if (P("CCD_BINNING") is { } bin) { s.BinX = (int)bin.Number("HOR_BIN"); s.BinY = (int)bin.Number("VER_BIN"); }
         if (P("CCD_GAIN") is { } gain) s.Gain = gain.Number("GAIN");
+        if (P("CCD_ISO") is { } iso)
+        {
+            foreach (var e in iso.Elements) s.IsoChoices.Add(IsoLabel(e.Label, e.Name));
+            if (iso.OnSwitch is { } on) s.Iso = IsoLabel(iso[on]?.Label, on);
+        }
+        if (P("CCD_TRANSFER_FORMAT") is { } tf) s.TransferFormat = tf.OnSwitch switch { "FORMAT_FITS" => "FITS", "FORMAT_NATIVE" => "Native", { } other => other, _ => "" };
         if (exp?.State == IndiState.Alert) s.Message = "the camera reported an exposure error";
         return s;
     }
@@ -42,6 +48,7 @@ public sealed class CameraAdapter(AdapterContext ctx) : IndiDeviceAdapter<Camera
         await RegisterCommandAsync<ExposeRequest, CommandResult>("Expose", ExposeAsync, "start an exposure; the finished frame arrives on the .Frame event");
         await RegisterCommandAsync<NOTESVoid, CommandResult>("AbortExposure", _ => AbortAsync(), "abort the running exposure");
         await RegisterCommandAsync<BinaryConvertibleDouble, CommandResult>("SetTemperature", SetTemperatureAsync, "cooling target in °C");
+        await RegisterCommandAsync<SensorInfo, CommandResult>("SetSensor", SetSensorAsync, "tell a driver that cannot know it (DSLRs) the sensor size and pixel size (CCD_INFO)");
         await RegisterCommandAsync<ELink.Contracts.Composition.CameraOptics, CommandResult>(ELink.Contracts.Composition.TrainIds.CameraSetOptics, SetOpticsAsync, "the telescope in front of the camera (SCOPE_INFO): frames then carry FOCALLEN");
     }
 
@@ -69,6 +76,15 @@ public sealed class CameraAdapter(AdapterContext ctx) : IndiDeviceAdapter<Camera
             if (r.BinX.Value > 0 && P("CCD_BINNING") is not null)
                 await Client.SetNumbersAsync(Device, "CCD_BINNING", new[] { ("HOR_BIN", (double)r.BinX.Value), ("VER_BIN", (double)(r.BinY.Value > 0 ? r.BinY.Value : r.BinX.Value)) });
             if (!double.IsNaN(r.Gain.Value) && P("CCD_GAIN") is not null) await SetNumber("CCD_GAIN", "GAIN", r.Gain.Value);
+            // DSLRs: ISO, and frames as FITS (ELink reads FITS; a DSLR's native raw files cannot be measured or stacked)
+            if (r.Iso.Text.Trim() != "" && P("CCD_ISO") is { } isoProp)
+            {
+                string want = Digits(r.Iso.Text);
+                var match = isoProp.Elements.FirstOrDefault(e => Digits(e.Label ?? "") == want || Digits(e.Name) == want)
+                            ?? throw new InvalidOperationException($"the camera has no ISO {r.Iso.Text} (it offers {string.Join(", ", isoProp.Elements.Select(e => IsoLabel(e.Label, e.Name)))})");
+                if (isoProp.OnSwitch != match.Name) await SetSwitch("CCD_ISO", match.Name);
+            }
+            if (P("CCD_TRANSFER_FORMAT") is { } tf && tf.Has("FORMAT_FITS") && tf.OnSwitch != "FORMAT_FITS") await SetSwitch("CCD_TRANSFER_FORMAT", "FORMAT_FITS");
             _lastExposure = seconds; _lastFrameType = r.FrameType.Text == "" ? "Light" : r.FrameType.Text;
             await SetNumber("CCD_EXPOSURE", "CCD_EXPOSURE_VALUE", seconds);
         });
@@ -121,5 +137,25 @@ public sealed class CameraAdapter(AdapterContext ctx) : IndiDeviceAdapter<Camera
         var values = new List<(string, double)> { ("FOCAL_LENGTH", o.FocalLengthMm.Value) };
         if (o.ApertureMm.Value > 0 && P("SCOPE_INFO")!.Has("APERTURE")) values.Add(("APERTURE", o.ApertureMm.Value));
         return await Send(() => Client.SetNumbersAsync(Device, "SCOPE_INFO", values));
+    }
+
+    private static string Digits(string text) => new(text.Where(char.IsDigit).ToArray());
+    private static string IsoLabel(string? label, string name) => Digits(string.IsNullOrWhiteSpace(label) ? name : label) is { Length: > 0 } d ? d : (label ?? name);
+
+    private async Task<CommandResult> SetSensorAsync(SensorInfo info)
+    {
+        if (Need("CCD_INFO") is { } missing) return missing;
+        var values = new List<(string, double)>();
+        if (info.Width.Value > 0) values.Add(("CCD_MAX_X", info.Width.Value));
+        if (info.Height.Value > 0) values.Add(("CCD_MAX_Y", info.Height.Value));
+        if (info.PixelSizeUm.Value > 0)
+        {
+            values.Add(("CCD_PIXEL_SIZE", info.PixelSizeUm.Value));
+            if (P("CCD_INFO")!.Has("CCD_PIXEL_SIZE_X")) values.Add(("CCD_PIXEL_SIZE_X", info.PixelSizeUm.Value));
+            if (P("CCD_INFO")!.Has("CCD_PIXEL_SIZE_Y")) values.Add(("CCD_PIXEL_SIZE_Y", info.PixelSizeUm.Value));
+        }
+        if (info.BitsPerPixel.Value > 0) values.Add(("CCD_BITSPERPIXEL", info.BitsPerPixel.Value));
+        if (values.Count == 0) return CommandResult.Success();
+        return await Send(() => Client.SetNumbersAsync(Device, "CCD_INFO", values));
     }
 }

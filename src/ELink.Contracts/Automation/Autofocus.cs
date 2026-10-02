@@ -49,7 +49,7 @@ public class FocusPoint : IBinaryConvertible
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();
 }
 
-/// <summary>Service endpoints (one run at a time): <see cref="AutofocusIds.Run"/>, <see cref="AutofocusIds.Abort"/>,
+/// <summary>Service endpoints (one run per focuser at a time): <see cref="AutofocusIds.Run"/>, <see cref="AutofocusIds.Abort"/>,
 /// state event <see cref="AutofocusIds.State"/> and <see cref="AutofocusIds.GetState"/>.</summary>
 public class AutofocusState : IBinaryConvertible
 {
@@ -59,6 +59,8 @@ public class AutofocusState : IBinaryConvertible
     public BinaryConvertibleInt32 BestPosition { get; set; } = 0;
     public BinaryConvertibleDouble BestHfr { get; set; } = double.NaN;
     public BinaryConvertibleCollection<FocusPoint> Points { get; set; } = new();
+    public BinaryConvertibleString FocuserId { get; set; } = "";
+    public BinaryConvertibleString ShooterId { get; set; } = "";
 
     public override string Name => "AutofocusState";
     private static readonly NOTESDescriptor d = new();
@@ -71,6 +73,8 @@ public class AutofocusState : IBinaryConvertible
         d.RegisterField("BestPosition", (AutofocusState x) => x.BestPosition).Description("valid in Done");
         d.RegisterField("BestHfr", (AutofocusState x) => x.BestHfr);
         d.RegisterField("Points", (AutofocusState x) => x.Points, maxCount: 256).Description("every measurement of this run");
+        d.RegisterField("FocuserId", (AutofocusState x) => x.FocuserId).Description("which run this is: runs on different focusers go on at the same time");
+        d.RegisterField("ShooterId", (AutofocusState x) => x.ShooterId);
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();
@@ -82,6 +86,8 @@ public static class AutofocusIds
     /// <summary>AutofocusRequest in, CommandResult out (accepted; progress arrives as state events).</summary>
     public const string Run = Root + ".Run";
     public const string Abort = Root + ".Abort";
+    /// <summary>AutofocusRequest in, AutofocusState out when the run has ended (Done, Error or Aborted).</summary>
+    public const string RunAndWait = Root + ".RunAndWait";
     public const string State = Root + ".State";
     public const string GetState = Root + ".GetState";
 }

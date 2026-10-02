@@ -73,7 +73,7 @@ public sealed class CameraShooter : IAsyncDisposable
 
         return await Commands.CallAsync(_node, EquipmentIds.Command(DeviceKinds.Camera, _cameraId, "Expose"), new ExposeRequest
         {
-            Seconds = e.Seconds, FrameType = e.FrameType, BinX = e.BinX, BinY = e.BinY, Gain = e.Gain,
+            Seconds = e.Seconds, FrameType = e.FrameType, BinX = e.BinX, BinY = e.BinY, Gain = e.Gain, Iso = e.Iso,
         });
     }
 

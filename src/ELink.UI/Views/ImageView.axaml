@@ -28,6 +28,7 @@
         <StackPanel Classes="row">
           <StackPanel><TextBlock Classes="label" Text="Seconds per shot"/><NumericUpDown Value="{Binding ExposureSeconds}" Minimum="0.01" FormatString="0.##" Width="130"/></StackPanel>
           <StackPanel><TextBlock Classes="label" Text="Filter (optional)"/><TextBox Text="{Binding Filter}" Width="110"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="ISO (DSLRs)"/><TextBox Text="{Binding Iso}" Width="90"/></StackPanel>
           <StackPanel><TextBlock Classes="label" Text="Minutes per spot (0 = until stopped)"/><NumericUpDown Value="{Binding TargetMinutes}" Minimum="0" Increment="10" FormatString="0.##" Width="210"/></StackPanel>
           <StackPanel><TextBlock Classes="label" Text="Output &quot;/px (0 = finest train)"/><NumericUpDown Value="{Binding OutputScale}" Minimum="0" Increment="0.5" FormatString="0.###" Width="170"/></StackPanel>
           <CheckBox IsChecked="{Binding LiveStack}" Content="Build the image live" VerticalAlignment="Bottom"/>

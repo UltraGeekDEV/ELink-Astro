@@ -30,13 +30,16 @@
           <StackPanel><TextBlock Classes="label" Text="Focal length mm"/><NumericUpDown Value="{Binding FocalLength}" Minimum="0" Increment="10" FormatString="0.#" Width="140"/></StackPanel>
           <StackPanel><TextBlock Classes="label" Text="Aperture mm"/><NumericUpDown Value="{Binding Aperture}" Minimum="0" Increment="5" FormatString="0.#" Width="120"/></StackPanel>
         </StackPanel>
-        <TextBlock Classes="label" Text="Cameras"/>
+        <TextBlock Classes="label" Text="Cameras: role, and for a DSLR its pixel size µm and sensor width × height px (0 = what the camera reports)"/>
         <ItemsControl ItemsSource="{Binding TrainCameras}">
           <ItemsControl.ItemTemplate>
             <DataTemplate>
               <StackPanel Classes="row" Margin="0,0,0,2">
                 <TextBlock Text="{Binding CameraId}" Width="200" VerticalAlignment="Center"/>
                 <ComboBox ItemsSource="{Binding $parent[UserControl].DataContext.CameraRoles}" SelectedItem="{Binding Role}" Width="130"/>
+                <NumericUpDown Value="{Binding PixelSize}" Minimum="0" Increment="0.1" FormatString="0.##" Width="110" ShowButtonSpinner="False" ToolTip.Tip="pixel size µm, for DSLRs (0 = the camera's own)"/>
+                <NumericUpDown Value="{Binding SensorWidth}" Minimum="0" FormatString="0" Width="100" ShowButtonSpinner="False" ToolTip.Tip="sensor width px (0 = the camera's own)"/>
+                <NumericUpDown Value="{Binding SensorHeight}" Minimum="0" FormatString="0" Width="100" ShowButtonSpinner="False" ToolTip.Tip="sensor height px (0 = the camera's own)"/>
               </StackPanel>
             </DataTemplate>
           </ItemsControl.ItemTemplate>
@@ -97,6 +100,14 @@
         <StackPanel Classes="row">
           <CheckBox IsChecked="{Binding CenterAfterSlew}" Content="Centre after each slew (plate solve, re-aim)" VerticalAlignment="Bottom"/>
           <StackPanel><TextBlock Classes="label" Text="Within arcmin"/><NumericUpDown Value="{Binding CenterTolerance}" Minimum="0.05" Increment="0.25" FormatString="0.##" Width="120"/></StackPanel>
+        </StackPanel>
+        <TextBlock Classes="label" Text="Focus: every train with a focuser is refocused by the scope when one of these fires (0 = off)"/>
+        <StackPanel Classes="row">
+          <CheckBox IsChecked="{Binding FocusOnStart}" Content="At the start" VerticalAlignment="Bottom"/>
+          <StackPanel><TextBlock Classes="label" Text="Every minutes"/><NumericUpDown Value="{Binding RefocusEveryMinutes}" Minimum="0" Increment="15" FormatString="0" Width="120"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Temperature moved °C"/><NumericUpDown Value="{Binding RefocusTemperature}" Minimum="0" Increment="0.5" FormatString="0.#" Width="150"/></StackPanel>
+          <CheckBox IsChecked="{Binding RefocusOnFilter}" Content="On filter change" VerticalAlignment="Bottom"/>
+          <StackPanel><TextBlock Classes="label" Text="Stars grew %"/><NumericUpDown Value="{Binding RefocusHfrPercent}" Minimum="0" Increment="5" FormatString="0" Width="120"/></StackPanel>
         </StackPanel>
         <StackPanel Classes="row">
           <CheckBox IsChecked="{Binding MeridianFlip}" Content="Flip by itself at the meridian (German mounts; needs the site)" VerticalAlignment="Bottom"/>

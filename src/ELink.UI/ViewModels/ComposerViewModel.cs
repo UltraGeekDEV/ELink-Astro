@@ -27,6 +27,10 @@ public sealed partial class TrainCameraChoice : ObservableObject
     public TrainCameraChoice(string cameraId) { CameraId = cameraId; }
     public string CameraId { get; }
     [ObservableProperty] private string _role = ComposerViewModel.NotInTrain;
+    // for cameras whose driver does not know its sensor (DSLRs); 0 = the camera's own
+    [ObservableProperty] private double _pixelSize;
+    [ObservableProperty] private int _sensorWidth;
+    [ObservableProperty] private int _sensorHeight;
 }
 
 /// <summary>Composes the rig: mounts into pointers, optics and cameras into imaging trains, and pointers and trains
@@ -86,6 +90,11 @@ public sealed partial class ComposerViewModel : ObservableObject
     [ObservableProperty] private bool _meridianFlip = true;
     [ObservableProperty] private bool _centerAfterSlew;
     [ObservableProperty] private double _centerTolerance = 1;
+    [ObservableProperty] private bool _focusOnStart;
+    [ObservableProperty] private double _refocusEveryMinutes;
+    [ObservableProperty] private double _refocusTemperature;
+    [ObservableProperty] private bool _refocusOnFilter;
+    [ObservableProperty] private double _refocusHfrPercent;
     [ObservableProperty] private double _flipAfterMinutes = 6;
 
     [ObservableProperty] private string? _selectedExisting;
@@ -174,7 +183,8 @@ public sealed partial class ComposerViewModel : ObservableObject
             Id = NewTrainId.Trim(), Label = TrainLabel.Trim(), FocalLengthMm = FocalLength, ApertureMm = Aperture,
             FilterWheelId = SelectedWheel ?? "", FocuserId = SelectedFocuser ?? "", RotatorId = SelectedRotator ?? "",
         };
-        foreach (var c in TrainCameras.Where(c => c.Role != NotInTrain)) t.Cameras.Add(new TrainCamera { CameraId = c.CameraId, Role = c.Role });
+        foreach (var c in TrainCameras.Where(c => c.Role != NotInTrain))
+            t.Cameras.Add(new TrainCamera { CameraId = c.CameraId, Role = c.Role, PixelSizeUm = c.PixelSize, SensorWidth = c.SensorWidth, SensorHeight = c.SensorHeight });
         if (t.Cameras.Count == 0) { Message = "give at least one camera a role (Imaging, or Guiding for an off-axis guider)"; return Task.CompletedTask; }
         return Run(Commands.CallAsync(_mesh.Node, ScopeIds.DefineTrain, t), $"train '{NewTrainId}' defined");
     }
@@ -184,7 +194,9 @@ public sealed partial class ComposerViewModel : ObservableObject
     {
         var def = new ScopeDefinition
         {
-            Id = ScopeId.Trim(), DisplayName = ScopeName.Trim(), MeridianFlip = MeridianFlip, FlipAfterHours = FlipAfterMinutes / 60, CenterAfterSlew = CenterAfterSlew, CenterToleranceArcmin = CenterTolerance, DitherEvery = DitherEvery, DitherPixels = DitherPixels, SettlePixels = SettlePixels,
+            Id = ScopeId.Trim(), DisplayName = ScopeName.Trim(), MeridianFlip = MeridianFlip, FlipAfterHours = FlipAfterMinutes / 60, CenterAfterSlew = CenterAfterSlew, CenterToleranceArcmin = CenterTolerance,
+            FocusOnStart = FocusOnStart, RefocusEveryMinutes = RefocusEveryMinutes, RefocusTemperatureDelta = RefocusTemperature,
+            RefocusOnFilterChange = RefocusOnFilter, RefocusHfrIncreasePercent = RefocusHfrPercent, DitherEvery = DitherEvery, DitherPixels = DitherPixels, SettlePixels = SettlePixels,
             GuideShooterId = Guided ? SelectedGuideWith : "", GuideOutput = SelectedGuideOutput, GuideExposureSeconds = GuideExposure,
             GuidePortId = SelectedGuidePort == MountPort ? "" : SelectedGuidePort, GuideTargetId = PulseOutput ? "" : GuideTargetId.Trim(),
         };

@@ -97,7 +97,11 @@ flowchart TD
 1. **Pointer from a mount**: give it an id (`eq6`), pick the mount, *Define pointer*.
 2. **Imaging train**: one telescope (or lens) and what sits behind it: an id, a label, the focal length and
    aperture, and a role for each camera: **Imaging**, or **Guiding** for an off-axis guider in the same train. Add
-   the filter wheel, focuser and rotator if it has them. A guide scope is just another train. The train tells its
+   the filter wheel, focuser and rotator if it has them. A guide scope is just another train. For a **DSLR** (INDI's
+   gphoto, canon or nikon driver), give its pixel size and sensor size in pixels: those drivers cannot tell, and the
+   train hands them over. ELink switches the camera to FITS transfer before exposing (native CR2/NEF files cannot be
+   measured or stacked) and sets the ISO you ask for (Image tab, *ISO*). Raw colour frames are debayered by the
+   live stack. The train tells its
    cameras the focal length, so frames carry it and plate scales are known.
 3. **Smart scope**: id and name, tick the pointers and the trains: as many trains as ride on the mount (a main
    scope and a wide-field, say), each with its offset from the pointing axis in arcminutes (0 for the main one).
@@ -110,6 +114,10 @@ flowchart TD
    **Centre after each slew** (needs a plate solver): after its own slews the scope solves a frame of its primary
    train and re-aims by the error until it is within the tolerance (no syncs needed). A consistent error (a mount
    that always lands a few arcminutes off) is learned and aimed off on later slews nearby.
+   **Focus**: every train with a focuser is refocused by the scope (with its own camera, all trains at once) when a
+   trigger fires: at the start, every N minutes, when the focuser's temperature has moved by N °C, on a filter
+   change, or when stars have grown by N % since the last focus. Without "at the start", the first exposure is the
+   baseline (you focused by hand). A failed focus is noted and imaging carries on.
    **Meridian flip** (on by default, needs the Site): when the target passes the meridian by the set minutes, the
    scope finishes the running exposure (or waits for the flip point if the next exposure would cross it), slews to
    the target again so the mount turns over, checks the pier side changed, recalibrates guiding and carries on.

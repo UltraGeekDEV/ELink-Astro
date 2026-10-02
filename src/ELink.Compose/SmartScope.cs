@@ -46,6 +46,18 @@ public sealed class SmartScope : IAsyncDisposable
     private bool _flippedForTarget;
     private double _haAtGoto = double.NaN;
     private Timer? _flipTimer;
+    // the scope's own focus: one record per train with a focuser
+    private sealed class FocusTrain
+    {
+        public required string TrainId, FocuserId, CameraShooter;
+        public RemoteState<FocuserState>? Focuser;
+        public DateTime? LastFocus;
+        public double LastTemperature = double.NaN, BaselineHfr = double.NaN;
+        public string LastFilter = "";
+        public readonly List<double> RecentHfr = new();
+    }
+    private List<FocusTrain>? _focusTrains;
+    private volatile bool _preparing;   // centring and focus frames are the scope's own business: not relayed, not counted
     // the scope's own centring
     private bool _centred;
     private (double East, double North) _correction;      // degrees: where frames land relative to where it aims, learned from solves
@@ -223,6 +235,105 @@ public sealed class SmartScope : IAsyncDisposable
         return CommandResult.Success();
     }
 
+    // ---- the scope's own focus -----------------------------------------------------------------------------------
+
+    /// <summary>The trains (among the scope's shooters) that have a focuser, each focused with its first imaging camera.</summary>
+    private async Task<List<FocusTrain>> FocusTrainsAsync()
+    {
+        if (_focusTrains is not null) return _focusTrains;
+        var list = new List<FocusTrain>();
+        foreach (var sh in _shooters)
+        {
+            var answers = await _node.CallFunctionAsync<NOTESVoid, TrainState>(TrainIds.GetState(sh.Id), NOTESVoid.Void, TimeSpan.FromSeconds(5));
+            if (answers?.FirstOrDefault() is not { } t || t.FocuserId.Text == "") continue;
+            var cam = t.Cameras.FirstOrDefault(c => c.Role.Text == "Imaging");
+            if (cam is null) continue;
+            var ft = new FocusTrain { TrainId = sh.Id, FocuserId = t.FocuserId.Text, CameraShooter = cam.ShooterId.Text };
+            ft.Focuser = new RemoteState<FocuserState>(_node, EquipmentIds.State(DeviceKinds.Focuser, ft.FocuserId), EquipmentIds.GetState(DeviceKinds.Focuser, ft.FocuserId));
+            await ft.Focuser.StartAsync();
+            list.Add(ft);
+        }
+        _focusTrains = list;
+        return list;
+    }
+
+    private string? FocusReason(FocusTrain t, ShooterExposure e)
+    {
+        if (t.LastFocus is null) return _def.FocusOnStart.Value ? "first focus" : null;
+        if (_def.RefocusEveryMinutes.Value > 0 && (DateTime.UtcNow - t.LastFocus.Value).TotalMinutes >= _def.RefocusEveryMinutes.Value) return "time";
+        double temp = t.Focuser?.Latest?.Temperature.Value ?? double.NaN;
+        if (_def.RefocusTemperatureDelta.Value > 0 && !double.IsNaN(temp) && !double.IsNaN(t.LastTemperature) && Math.Abs(temp - t.LastTemperature) >= _def.RefocusTemperatureDelta.Value)
+            return FormattableString.Invariant($"temperature moved {temp - t.LastTemperature:+0.0;-0.0}°C");
+        if (_def.RefocusOnFilterChange.Value && e.Filter.Text != "" && !string.Equals(e.Filter.Text, t.LastFilter, StringComparison.OrdinalIgnoreCase)) return $"filter {e.Filter.Text}";
+        lock (t.RecentHfr)
+            if (_def.RefocusHfrIncreasePercent.Value > 0 && !double.IsNaN(t.BaselineHfr) && t.RecentHfr.Count >= 3)
+            {
+                double now = t.RecentHfr.Order().ElementAt(t.RecentHfr.Count / 2);
+                if (now > t.BaselineHfr * (1 + _def.RefocusHfrIncreasePercent.Value / 100)) return FormattableString.Invariant($"stars grew {100 * (now / t.BaselineHfr - 1):0}%");
+            }
+        return null;
+    }
+
+    /// <summary>Before an exposure round: refocus every train whose trigger fired (all at once: each has its own focuser).</summary>
+    private async Task FocusIfDueAsync(ShooterExposure e, CancellationToken ct = default)
+    {
+        if (!FocusTriggers) return;
+        var trains = await FocusTrainsAsync();
+        // without "focus at start", the first round is the baseline (you focused by hand): triggers count from here
+        foreach (var t in trains.Where(t => t.LastFocus is null && !_def.FocusOnStart.Value))
+        {
+            t.LastFocus = DateTime.UtcNow; t.LastTemperature = t.Focuser?.Latest?.Temperature.Value ?? double.NaN; t.LastFilter = e.Filter.Text;
+        }
+        var due = trains.Select(t => (Train: t, Why: FocusReason(t, e))).Where(x => x.Why is not null).ToList();
+        if (due.Count == 0) return;
+        await SetScope(s => { s.Phase = "Focusing"; s.Message = string.Join(", ", due.Select(d => $"{d.Train.TrainId}: {d.Why}")); });
+        var results = await Task.WhenAll(due.Select(async d =>
+        {
+            var r = await _node.CallFunctionAsync<AutofocusRequest, AutofocusState>(AutofocusIds.RunAndWait, new AutofocusRequest
+            {
+                ShooterId = d.Train.CameraShooter, FocuserId = d.Train.FocuserId, ExposureSeconds = _def.FocusExposureSeconds.Value,
+                StepSize = _def.FocusStepSize.Value, Samples = _def.FocusSamples.Value, Filter = e.Filter.Text,
+            }, TimeSpan.FromMinutes(30), ct);
+            return (d.Train, State: r?.FirstOrDefault());
+        }));
+        var notes = new List<string>();
+        foreach (var (t, st) in results)
+        {
+            // whatever the outcome, the trigger is re-armed from now (a failing focus is not retried every round)
+            t.LastFocus = DateTime.UtcNow;
+            t.LastTemperature = t.Focuser?.Latest?.Temperature.Value ?? double.NaN;
+            t.LastFilter = e.Filter.Text;
+            lock (t.RecentHfr) { t.RecentHfr.Clear(); t.BaselineHfr = double.NaN; }
+            if (st is null) notes.Add($"{t.TrainId}: no autofocus service on the mesh");
+            else if (st.Phase.Text != "Done") notes.Add($"{t.TrainId}: focus {st.Phase.Text.ToLowerInvariant()}: {st.Message.Text}");
+        }
+        if (notes.Count > 0) _guideNote = string.Join("; ", notes);
+    }
+
+    /// <summary>Star size of the frames a focusing train takes, for the HFR trigger: the first frame after a focus is the
+    /// baseline, the last three the current size.</summary>
+    private void WatchHfr(ShotEvent shot)
+    {
+        if (!(_def.RefocusHfrIncreasePercent.Value > 0) || _focusTrains is not { } trains) return;
+        var t = trains.FirstOrDefault(x => x.CameraShooter == shot.Shooter.Text);
+        if (t is null || !shot.Format.Text.StartsWith(".fit", StringComparison.OrdinalIgnoreCase) || shot.FrameType.Text is not ("Light" or "")) return;
+        var data = shot.Data.Data;
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                var r = ELink.Imaging.StarField.Detect(ELink.Imaging.FitsImage.Parse(data));
+                if (r.Count < 3 || double.IsNaN(r.MedianHfr)) return;
+                lock (t.RecentHfr)
+                {
+                    if (double.IsNaN(t.BaselineHfr)) { t.BaselineHfr = r.MedianHfr; return; }
+                    t.RecentHfr.Add(r.MedianHfr); if (t.RecentHfr.Count > 3) t.RecentHfr.RemoveAt(0);
+                }
+            }
+            catch (Exception) { }
+        });
+    }
+
     // ---- the scope's own centring ------------------------------------------------------------------------------
 
     /// <summary>After a slew: solve a frame, and while it is off by more than the tolerance re-aim by the error (no sync
@@ -349,11 +460,21 @@ public sealed class SmartScope : IAsyncDisposable
     /// <summary>Before an exposure round: make sure the guider runs, then dither (every DitherEvery rounds) or just wait
     /// until settled. A guider that fails to start fails the round; one that is merely slow to settle is noted and the
     /// round goes ahead.</summary>
-    private async Task<CommandResult> PrepareRoundAsync(double exposureSeconds)
+    private bool Prepared => _guider is not null || _def.MeridianFlip.Value || _def.CenterAfterSlew.Value || FocusTriggers;
+    private bool FocusTriggers => _def.FocusOnStart.Value || _def.RefocusEveryMinutes.Value > 0 || _def.RefocusTemperatureDelta.Value > 0
+                                  || _def.RefocusOnFilterChange.Value || _def.RefocusHfrIncreasePercent.Value > 0;
+
+    private async Task<CommandResult> PrepareRoundAsync(ShooterExposure exposure)
     {
-        var flip = await FlipIfDueAsync(exposureSeconds);
-        if (!flip.Ok.Value) return flip;
-        await CentreAsync();
+        _preparing = true;
+        try
+        {
+            var flip = await FlipIfDueAsync(exposure.Seconds.Value);
+            if (!flip.Ok.Value) return flip;
+            await CentreAsync();
+            await FocusIfDueAsync(exposure);
+        }
+        finally { _preparing = false; }
         if (_guider is null) return CommandResult.Success();
         // starting is idempotent: a running guider just says yes
         lock (_scopeGate) _guideRequested = true;
@@ -380,7 +501,7 @@ public sealed class SmartScope : IAsyncDisposable
     private async Task<CommandResult> ExposeCommandAsync(ShooterExposure e)
     {
         if (_shooters.Count == 0) return CommandResult.Fail($"scope {_id} has no shooter");
-        if (_guider is null && !_def.MeridianFlip.Value && !_def.CenterAfterSlew.Value) return await ExposeAsync(e);
+        if (!Prepared) return await ExposeAsync(e);
         _ = Task.Run(async () =>
         {
             var r = await ExposePreparedAsync(e);
@@ -394,8 +515,9 @@ public sealed class SmartScope : IAsyncDisposable
         await _exposeLock.WaitAsync();
         try
         {
-            var g = await PrepareRoundAsync(e.Seconds.Value);
+            var g = await PrepareRoundAsync(e);
             if (!g.Ok.Value) return g;
+            while (_shots.CurrentCount > 0) _shots.Wait(0);   // count only this round's frames
             var r = await ExposeAsync(e);
             if (r.Ok.Value) lock (_scopeGate) _roundsSinceDither++;
             return r;
@@ -433,6 +555,8 @@ public sealed class SmartScope : IAsyncDisposable
     /// <summary>A child shooter delivered a frame: note it for a running Observe and pass it on as our own, with pointing.</summary>
     private async Task RelayShotAsync(ShotEvent shot)
     {
+        if (_preparing) return;
+        WatchHfr(shot);
         // Read the run's tags first: once the round is counted the run may end, and the tags with it.
         (string obj, string plan) tag;
         lock (_scopeGate) tag = _tag;
@@ -513,7 +637,7 @@ public sealed class SmartScope : IAsyncDisposable
             {
                 ct.ThrowIfCancellationRequested();
                 while (_shots.CurrentCount > 0) _shots.Wait(0); // forget frames from before this round
-                var ex = _guider is null && !_def.MeridianFlip.Value && !_def.CenterAfterSlew.Value ? await ExposeAsync(r.Exposure) : await ExposePreparedAsync(r.Exposure);
+                var ex = !Prepared ? await ExposeAsync(r.Exposure) : await ExposePreparedAsync(r.Exposure);
                 if (!ex.Ok.Value) throw new InvalidOperationException(ex.Error.Text);
                 await SetScope(s => { s.Phase = "Exposing"; s.Message = _guideNote; });
                 var roundTimeout = TimeSpan.FromSeconds(r.Exposure.Seconds.Value + 180);
@@ -555,6 +679,7 @@ public sealed class SmartScope : IAsyncDisposable
         if (_observeTask is not null) await Task.WhenAny(_observeTask, Task.Delay(2000));
         _commands.Dispose(); _pointerPub.Dispose(); _shooterPub.Dispose(); _scopePub.Dispose();
         _guider?.Dispose(); _site.Dispose();
+        foreach (var t in _focusTrains ?? []) t.Focuser?.Dispose();
         if (_flipTimer is not null) await _flipTimer.DisposeAsync();
         foreach (var p in _pointers) p.State.Dispose();
         foreach (var s in _shooters)

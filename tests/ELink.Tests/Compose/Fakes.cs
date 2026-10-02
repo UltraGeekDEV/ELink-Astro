@@ -120,6 +120,7 @@ public sealed class FakeAutofocus : IAsyncDisposable
     private string _phase = "Idle";
     public int Runs;
     public bool Fail;
+    public List<ELink.Contracts.Automation.AutofocusRequest> Requests { get; } = new();
     public FakeAutofocus(TypeSafeEVentNode node)
     {
         _cmds = new CommandSet(node);
@@ -135,6 +136,13 @@ public sealed class FakeAutofocus : IAsyncDisposable
             _ = Task.Run(async () => { await Task.Delay(150); _phase = Fail ? "Error" : "Done"; await _pub.PublishAsync(); });
             return CommandResult.Success();
         }, "fake autofocus");
+        await _cmds.AddAsync<ELink.Contracts.Automation.AutofocusRequest, ELink.Contracts.Automation.AutofocusState>(ELink.Contracts.Automation.AutofocusIds.RunAndWait, async req =>
+        {
+            Interlocked.Increment(ref Runs);
+            lock (Requests) Requests.Add(req);
+            await Task.Delay(100);
+            return new ELink.Contracts.Automation.AutofocusState { Phase = Fail ? "Error" : "Done", Message = Fail ? "no stars" : "", FocuserId = req.FocuserId.Text, BestPosition = 5000 };
+        }, "fake autofocus, waiting");
         await _cmds.AddAsync<NOTESVoid, CommandResult>(ELink.Contracts.Automation.AutofocusIds.Abort, _ => Task.FromResult(CommandResult.Success()), "fake abort");
         await _pub.StartAsync();
     }

@@ -43,6 +43,14 @@ public class ScopeDefinition : IBinaryConvertible
     public BinaryConvertibleDouble CenterToleranceArcmin { get; set; } = 1.0;
     public BinaryConvertibleDouble CenterExposureSeconds { get; set; } = 3.0;
     public BinaryConvertibleInt32 CenterMaxTries { get; set; } = 4;
+    public BinaryConvertibleBool FocusOnStart { get; set; } = false;
+    public BinaryConvertibleDouble RefocusEveryMinutes { get; set; } = 0.0;
+    public BinaryConvertibleDouble RefocusTemperatureDelta { get; set; } = 0.0;
+    public BinaryConvertibleBool RefocusOnFilterChange { get; set; } = false;
+    public BinaryConvertibleDouble RefocusHfrIncreasePercent { get; set; } = 0.0;
+    public BinaryConvertibleDouble FocusExposureSeconds { get; set; } = 3.0;
+    public BinaryConvertibleInt32 FocusStepSize { get; set; } = 3000;
+    public BinaryConvertibleInt32 FocusSamples { get; set; } = 7;
     public BinaryConvertibleBool MeridianFlip { get; set; } = true;
     public BinaryConvertibleDouble FlipAfterHours { get; set; } = 0.1;
     public BinaryConvertibleString SiteId { get; set; } = "home";
@@ -72,6 +80,14 @@ public class ScopeDefinition : IBinaryConvertible
         d.RegisterField("CenterToleranceArcmin", (ScopeDefinition x) => x.CenterToleranceArcmin);
         d.RegisterField("CenterExposureSeconds", (ScopeDefinition x) => x.CenterExposureSeconds);
         d.RegisterField("CenterMaxTries", (ScopeDefinition x) => x.CenterMaxTries);
+        d.RegisterField("FocusOnStart", (ScopeDefinition x) => x.FocusOnStart).Description("autofocus every train with a focuser before the scope's first exposure");
+        d.RegisterField("RefocusEveryMinutes", (ScopeDefinition x) => x.RefocusEveryMinutes).Description("0 = never by time");
+        d.RegisterField("RefocusTemperatureDelta", (ScopeDefinition x) => x.RefocusTemperatureDelta).Description("refocus when the focuser's temperature has moved this many °C since the last focus; 0 = never");
+        d.RegisterField("RefocusOnFilterChange", (ScopeDefinition x) => x.RefocusOnFilterChange);
+        d.RegisterField("RefocusHfrIncreasePercent", (ScopeDefinition x) => x.RefocusHfrIncreasePercent).Description("refocus when stars have grown this much since the last focus (median of the last 3 frames); 0 = never");
+        d.RegisterField("FocusExposureSeconds", (ScopeDefinition x) => x.FocusExposureSeconds);
+        d.RegisterField("FocusStepSize", (ScopeDefinition x) => x.FocusStepSize).Description("focuser steps between samples");
+        d.RegisterField("FocusSamples", (ScopeDefinition x) => x.FocusSamples);
         d.RegisterField("MeridianFlip", (ScopeDefinition x) => x.MeridianFlip).Description("flip by itself when the target passes the meridian (German equatorial mounts)");
         d.RegisterField("FlipAfterHours", (ScopeDefinition x) => x.FlipAfterHours).Description("how far past the meridian (hour angle) to flip; never in the middle of an exposure");
         d.RegisterField("SiteId", (ScopeDefinition x) => x.SiteId).Description("the site whose sidereal time gives the hour angle");
@@ -124,7 +140,7 @@ public class ScopeState : IBinaryConvertible
     public override NOTESDescriptor Descriptor => d;
     static ScopeState()
     {
-        d.RegisterField("Phase", (ScopeState x) => x.Phase).Description("Idle | Pointing | OnTarget | Guiding (starting, settling) | Exposing | Dithering | Centering | WaitingForFlip | Flipping | Error");
+        d.RegisterField("Phase", (ScopeState x) => x.Phase).Description("Idle | Pointing | OnTarget | Guiding (starting, settling) | Exposing | Dithering | Centering | Focusing | WaitingForFlip | Flipping | Error");
         d.RegisterField("Message", (ScopeState x) => x.Message);
         d.RegisterField("ShotsDone", (ScopeState x) => x.ShotsDone).Description("exposure rounds finished in the current/last Observe");
         d.RegisterField("ShotsPlanned", (ScopeState x) => x.ShotsPlanned);

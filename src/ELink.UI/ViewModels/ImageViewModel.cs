@@ -51,6 +51,7 @@ public sealed partial class ImageViewModel : ObservableObject, IDisposable
     [ObservableProperty] private double _positionAngle;
     [ObservableProperty] private double _exposureSeconds = 60;
     [ObservableProperty] private string _filter = "";
+    [ObservableProperty] private string _iso = "";
     [ObservableProperty] private double _targetMinutes = 60;
     [ObservableProperty] private double _stepover;
     [ObservableProperty] private double _ditherArcsec = 30;
@@ -97,7 +98,7 @@ public sealed partial class ImageViewModel : ObservableObject, IDisposable
         {
             Label = Label.Trim() == "" ? "Image" : Label.Trim(), Center = new SkyTarget { RaHours = ra, DecDegrees = dec, Epoch = "J2000" },
             WidthDegrees = Width, HeightDegrees = Height, PositionAngleDegrees = PositionAngle,
-            Exposure = new ShooterExposure { Seconds = ExposureSeconds, Filter = Filter.Trim(), FrameType = "Light" },
+            Exposure = new ShooterExposure { Seconds = ExposureSeconds, Filter = Filter.Trim(), FrameType = "Light", Iso = Iso.Trim() },
             TargetSeconds = TargetMinutes * 60, StepoverDegrees = Stepover, DitherArcsec = DitherArcsec, MaxVisits = MaxVisits,
             WeatherId = SelectedWeather ?? "", LiveStack = LiveStack, OutputPixelScaleArcsec = OutputScale,
         };

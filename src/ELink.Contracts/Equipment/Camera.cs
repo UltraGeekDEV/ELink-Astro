@@ -20,6 +20,9 @@ public class CameraState : IBinaryConvertible
     public BinaryConvertibleInt32 BinX { get; set; } = 1;
     public BinaryConvertibleInt32 BinY { get; set; } = 1;
     public BinaryConvertibleDouble Gain { get; set; } = double.NaN;
+    public BinaryConvertibleCollection<BinaryConvertibleString> IsoChoices { get; set; } = new();
+    public BinaryConvertibleString Iso { get; set; } = "";
+    public BinaryConvertibleString TransferFormat { get; set; } = "";
     public BinaryConvertibleString Message { get; set; } = "";
 
     public override string Name => "CameraState";
@@ -39,6 +42,9 @@ public class CameraState : IBinaryConvertible
         d.RegisterField("BinX", (CameraState x) => x.BinX);
         d.RegisterField("BinY", (CameraState x) => x.BinY);
         d.RegisterField("Gain", (CameraState x) => x.Gain).Description("NaN if the camera has no gain control");
+        d.RegisterField("IsoChoices", (CameraState x) => x.IsoChoices, maxCount: 64).Description("DSLRs: the ISO settings the camera offers (INDI CCD_ISO); empty otherwise");
+        d.RegisterField("Iso", (CameraState x) => x.Iso).Description("the ISO in use");
+        d.RegisterField("TransferFormat", (CameraState x) => x.TransferFormat).Description("FITS | Native | empty (INDI CCD_TRANSFER_FORMAT); ELink asks for FITS before exposing");
         d.RegisterField("Message", (CameraState x) => x.Message);
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
@@ -52,6 +58,7 @@ public class ExposeRequest : IBinaryConvertible
     public BinaryConvertibleInt32 BinX { get; set; } = 0;
     public BinaryConvertibleInt32 BinY { get; set; } = 0;
     public BinaryConvertibleDouble Gain { get; set; } = double.NaN;
+    public BinaryConvertibleString Iso { get; set; } = "";
 
     public override string Name => "ExposeRequest";
     private static readonly NOTESDescriptor d = new();
@@ -63,6 +70,7 @@ public class ExposeRequest : IBinaryConvertible
         d.RegisterField("BinX", (ExposeRequest x) => x.BinX).Description("0 = leave the camera's current binning");
         d.RegisterField("BinY", (ExposeRequest x) => x.BinY).Description("0 = leave the camera's current binning");
         d.RegisterField("Gain", (ExposeRequest x) => x.Gain).Description("NaN = leave the camera's current gain");
+        d.RegisterField("Iso", (ExposeRequest x) => x.Iso).Description("DSLRs: e.g. 800 or ISO800; empty = leave it");
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();
@@ -89,6 +97,28 @@ public class FrameEvent : IBinaryConvertible
         d.RegisterField("FrameType", (FrameEvent x) => x.FrameType);
         d.RegisterField("Timestamp", (FrameEvent x) => x.Timestamp).Description("ISO 8601 UTC, when the bridge received the frame");
         d.RegisterField("Data", (FrameEvent x) => x.Data);
+    }
+    public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
+    public override byte[] ToBytes() => d.ToBytes(this).ToArray();
+}
+
+/// <summary>A camera's sensor, for drivers that cannot tell (DSLRs through gphoto): INDI CCD_INFO.</summary>
+public class SensorInfo : IBinaryConvertible
+{
+    public BinaryConvertibleInt32 Width { get; set; } = 0;
+    public BinaryConvertibleInt32 Height { get; set; } = 0;
+    public BinaryConvertibleDouble PixelSizeUm { get; set; } = 0.0;
+    public BinaryConvertibleInt32 BitsPerPixel { get; set; } = 0;
+
+    public override string Name => "SensorInfo";
+    private static readonly NOTESDescriptor d = new();
+    public override NOTESDescriptor Descriptor => d;
+    static SensorInfo()
+    {
+        d.RegisterField("Width", (SensorInfo x) => x.Width).Description("pixels; 0 = leave");
+        d.RegisterField("Height", (SensorInfo x) => x.Height);
+        d.RegisterField("PixelSizeUm", (SensorInfo x) => x.PixelSizeUm).Description("micrometres; 0 = leave");
+        d.RegisterField("BitsPerPixel", (SensorInfo x) => x.BitsPerPixel).Description("0 = leave");
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();

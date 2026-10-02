@@ -163,6 +163,11 @@ The scope **centres itself** when asked (`CenterAfterSlew`): before its first ex
 frame of its primary (or chosen) shooter and re-aims by the error (aim-off, no sync), detects frames taken before a
 move showed, and learns a pointing correction applied to later slews within 15°.
 
+The scope **refocuses its trains** itself: before an exposure round, each train with a focuser whose trigger fired
+(start, time, temperature, filter, star growth from the HFR of its frames) is focused through
+`AutofocusIds.RunAndWait` with its first imaging camera; runs on different focusers go on in parallel. Frames taken
+while a round is prepared (centring, focus) are not relayed as the scope's frames.
+
 The scope also does its own **meridian flip**: it follows its site's sidereal time for the target's hour angle and
 its pointer's pier side (ASCOM/INDI: West = looking east, before the flip). Before each exposure round it waits for
 the flip point if the round would cross it, then re-gotos the target and checks the pier side turned to East; a timer

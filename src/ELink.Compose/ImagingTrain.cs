@@ -68,13 +68,21 @@ public sealed class ImagingTrain : IAsyncDisposable
         await _trainPub.StartAsync();
     }
 
-    /// <summary>Once per connection: tell the camera which telescope it sits behind.</summary>
+    /// <summary>Once per connection: tell the camera which telescope it sits behind, and, for cameras whose driver
+    /// cannot know it (DSLRs), what sensor it has.</summary>
     private async Task GiveOpticsAsync(Member m, CameraState s)
     {
-        if (!(_def.FocalLengthMm.Value > 0)) return;
         string key = m.Camera.CameraId.Text;
         if (!s.Connected.Value) { lock (_opticsGiven) _opticsGiven.Remove(key); return; }
         lock (_opticsGiven) if (!_opticsGiven.Add(key)) return;
+        var c = m.Camera;
+        if (c.PixelSizeUm.Value > 0 || c.SensorWidth.Value > 0)
+        {
+            var sensor = await Commands.CallAsync(_node, EquipmentIds.Command(DeviceKinds.Camera, key, "SetSensor"),
+                new SensorInfo { Width = c.SensorWidth.Value, Height = c.SensorHeight.Value, PixelSizeUm = c.PixelSizeUm.Value });
+            if (!sensor.Ok.Value) { _message = $"{key}: {sensor.Error.Text}"; await _trainPub.PublishAsync(); }
+        }
+        if (!(_def.FocalLengthMm.Value > 0)) return;
         var r = await Commands.CallAsync(_node, EquipmentIds.Command(DeviceKinds.Camera, key, TrainIds.CameraSetOptics),
             new CameraOptics { FocalLengthMm = _def.FocalLengthMm.Value, ApertureMm = _def.ApertureMm.Value });
         if (!r.Ok.Value)
@@ -91,7 +99,7 @@ public sealed class ImagingTrain : IAsyncDisposable
         // the filter applies to the camera behind the wheel; the others take the same exposure unfiltered
         var results = await Task.WhenAll(_imaging.Select((m, i) => Commands.CallAsync(_node, ShooterIds.Expose(m.ShooterId), i == 0 ? e : new ShooterExposure
         {
-            Seconds = e.Seconds.Value, FrameType = e.FrameType.Text, BinX = e.BinX.Value, BinY = e.BinY.Value, Gain = e.Gain.Value,
+            Seconds = e.Seconds.Value, FrameType = e.FrameType.Text, BinX = e.BinX.Value, BinY = e.BinY.Value, Gain = e.Gain.Value, Iso = e.Iso.Text,
         })));
         return results.FirstOrDefault(r => !r.Ok.Value) ?? CommandResult.Success();
     }
@@ -132,12 +140,20 @@ public sealed class ImagingTrain : IAsyncDisposable
         {
             var c = m.State.Latest;
             var info = new TrainCameraInfo { CameraId = m.Camera.CameraId.Text, Role = m.Camera.Role.Text, ShooterId = m.ShooterId, Connected = c?.Connected.Value ?? false };
-            if (c is not null && c.PixelSizeUm.Value > 0 && _def.FocalLengthMm.Value > 0)
+            // the train's own sensor numbers win over a driver that does not know (a DSLR reporting zeros)
+            double pixel = m.Camera.PixelSizeUm.Value > 0 ? m.Camera.PixelSizeUm.Value : c?.PixelSizeUm.Value ?? 0;
+            int width = m.Camera.SensorWidth.Value > 0 ? m.Camera.SensorWidth.Value : c?.SensorWidth.Value ?? 0;
+            int height = m.Camera.SensorHeight.Value > 0 ? m.Camera.SensorHeight.Value : c?.SensorHeight.Value ?? 0;
+            int binX = Math.Max(1, c?.BinX.Value ?? 1), binY = Math.Max(1, c?.BinY.Value ?? 1);
+            if (pixel > 0 && _def.FocalLengthMm.Value > 0)
             {
-                double scale = 206.265 * c.PixelSizeUm.Value * Math.Max(1, c.BinX.Value) / _def.FocalLengthMm.Value;
+                double scale = 206.265 * pixel * binX / _def.FocalLengthMm.Value;
                 info.PixelScaleArcsec = scale;
-                info.FieldWidthDegrees = scale * c.SensorWidth.Value / Math.Max(1, c.BinX.Value) / 3600;
-                info.FieldHeightDegrees = scale * c.SensorHeight.Value / Math.Max(1, c.BinY.Value) / 3600;
+                if (width > 0 && height > 0)
+                {
+                    info.FieldWidthDegrees = scale * width / binX / 3600;
+                    info.FieldHeightDegrees = scale * height / binY / 3600;
+                }
             }
             t.Cameras.Add(info);
         }

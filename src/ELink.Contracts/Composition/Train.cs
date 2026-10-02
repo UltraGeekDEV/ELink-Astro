@@ -9,6 +9,9 @@ public class TrainCamera : IBinaryConvertible
 {
     public BinaryConvertibleString CameraId { get; set; } = "";
     public BinaryConvertibleString Role { get; set; } = "Imaging";
+    public BinaryConvertibleDouble PixelSizeUm { get; set; } = 0.0;
+    public BinaryConvertibleInt32 SensorWidth { get; set; } = 0;
+    public BinaryConvertibleInt32 SensorHeight { get; set; } = 0;
 
     public override string Name => "TrainCamera";
     private static readonly NOTESDescriptor d = new();
@@ -17,6 +20,9 @@ public class TrainCamera : IBinaryConvertible
     {
         d.RegisterField("CameraId", (TrainCamera x) => x.CameraId);
         d.RegisterField("Role", (TrainCamera x) => x.Role).Description("Imaging | Guiding (e.g. an off-axis guider camera)");
+        d.RegisterField("PixelSizeUm", (TrainCamera x) => x.PixelSizeUm).Description("for cameras whose driver does not know its sensor (DSLRs): handed to the camera; 0 = the camera's own");
+        d.RegisterField("SensorWidth", (TrainCamera x) => x.SensorWidth).Description("pixels; 0 = the camera's own");
+        d.RegisterField("SensorHeight", (TrainCamera x) => x.SensorHeight);
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();
