@@ -1,0 +1,41 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="ELink.UI.Views.CalibrationView">
+  <StackPanel MaxWidth="1100" Spacing="0">
+    <Border Classes="card">
+      <StackPanel>
+        <TextBlock Classes="title" Text="Calibration"/>
+        <TextBlock Classes="label" TextWrapping="Wrap" Text="Darks, biases and flats for each camera, combined into masters (each pixel's highest and lowest value left out). The live stack takes off the dark that suits every frame (same camera, exposure, gain and temperature; else a bias) and divides by the flat of its filter."/>
+        <TextBlock Text="{Binding Status}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+      </StackPanel>
+    </Border>
+    <Border Classes="card">
+      <StackPanel Spacing="10">
+        <StackPanel Classes="row">
+          <StackPanel><TextBlock Classes="label" Text="Camera"/><ComboBox ItemsSource="{Binding Cameras}" SelectedItem="{Binding SelectedCamera}" Width="240"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Kind"/><ComboBox ItemsSource="{Binding Kinds}" SelectedItem="{Binding Kind}" Width="110"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Exposure s"/><NumericUpDown Value="{Binding ExposureSeconds}" Minimum="0" FormatString="0.###" Width="130"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Frames"/><NumericUpDown Value="{Binding Count}" Minimum="3" Maximum="500" FormatString="0" Width="110"/></StackPanel>
+        </StackPanel>
+        <StackPanel Classes="row">
+          <StackPanel><TextBlock Classes="label" Text="Filter (flats)"/><TextBox Text="{Binding Filter}" Width="110"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Gain (empty = as set)"/><TextBox Text="{Binding Gain}" Width="110"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="ISO (DSLR)"/><TextBox Text="{Binding Iso}" Width="90"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Flat level %"/><NumericUpDown Value="{Binding FlatLevelPercent}" Minimum="10" Maximum="90" FormatString="0" Width="110"/></StackPanel>
+          <Button Content="Capture" Classes="primary" Command="{Binding CaptureCommand}" VerticalAlignment="Bottom"/>
+          <Button Content="Abort" Classes="danger" Command="{Binding AbortCommand}" VerticalAlignment="Bottom"/>
+        </StackPanel>
+        <TextBlock Classes="label" Text="{Binding Hint}" TextWrapping="Wrap"/>
+        <TextBlock Classes="error" Text="{Binding Message}" IsVisible="{Binding Message.Length}" TextWrapping="Wrap"/>
+      </StackPanel>
+    </Border>
+    <Border Classes="card">
+      <StackPanel Spacing="6">
+        <TextBlock Classes="section" Text="MASTERS"/>
+        <ListBox ItemsSource="{Binding Masters}" SelectedItem="{Binding SelectedMaster}" MaxHeight="320">
+          <ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Line}"/></DataTemplate></ListBox.ItemTemplate>
+        </ListBox>
+        <Button Content="Delete master" Classes="danger" Command="{Binding DeleteCommand}"/>
+      </StackPanel>
+    </Border>
+  </StackPanel>
+</UserControl>

@@ -100,7 +100,8 @@ focus triggers/offsets -> live-stack rejection/calibration -> the rest.
 - [x] Live stacking into a fixed field (e.g. the mosaic's virtual FOV) at any pixel scale: WCS/solve/pointing registration, exact homography resampling, bicubic upscaling, area-averaged downscaling, sky-level matching, float FITS + WCS out
 - [x] Debayering of one-shot-colour frames (BAYERPAT + offsets or a given pattern): interpolated and super pixel; colour stacks and colour previews
 - [x] Live stack: running outlier rejection, flux matching between frames/cameras, one stack per filter, background and colour balance
-- [ ] Live stack: darks and flats (with the calibration library)
+- [x] Calibration library: darks, biases and flats per camera combined into masters (min/max-rejected mean), flats find their own exposure and have the bias taken off, matching by camera, size, binning, exposure, gain/ISO, temperature, filter; Calibration tab
+- [x] Live stack: darks and flats from the library applied to every raw frame before debayering
 - [x] Image request (replaces the mosaic and single-target special cases): an area to a depth, any number of scopes pulling work from one shared coverage plan with their own train fields, dither on every shot, failed scopes fail alone, live stack of all frames
 - [x] Images kept across nights: coverage and live stacks saved under the image's name and carried on; list/forget kept images
 - [ ] Image request: learn each train's camera angle from solves (planning assumes 0 without a rotator); per-scope filters; rotator passes again

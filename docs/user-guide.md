@@ -272,10 +272,28 @@ flowchart LR
    rays) once it has a few frames; *Match brightness* scales every frame to the stack's stars, so frames from other
    cameras and scopes (or through thin cloud) blend in; *One stack per filter* keeps Ha, OIII, L, R, G, B... apart
    (pick which to show). *Balance background and colour* gives colour stacks a neutral sky and white stars.
-6. **Start**. Every new frame updates the picture. *Stop* stops listening (the stack stays), *Empty* clears it.
+6. **Calibrate** (on by default): every raw frame has its dark taken off and is divided by its flat, from the
+   Calibration tab's library, when it has masters that suit (see below). The status line says *dark+flat* when it did.
+7. **Start**. Every new frame updates the picture. *Stop* stops listening (the stack stays), *Empty* clears it.
 
 Only Light frames are used. Raw colour frames also show in colour in the camera and scope previews. The stack can be fetched as a 32-bit FITS with a
 WCS (it plate-solves on its own) through `ELink.Automation.LiveStack.GetImage`.
+
+## Calibration
+
+The calibration library keeps master darks, biases and flats for each camera (each camera of a train on its own,
+e.g. `main-ZWO_ASI2600MC`). Pick the camera and the kind, then **Capture**:
+
+- **Dark**: cap the scope. Same exposure, gain and sensor temperature as the lights it is for.
+- **Bias**: cap the scope. The shortest exposure; used when no dark suits.
+- **Flat**: even light over the aperture (a panel, a T-shirt in daylight, the twilight sky), through a **filter**.
+  Leave the exposure at 0 and it finds the exposure that fills the camera to *Flat level* (half by default). The dark or
+  bias is taken off each flat when the library has one, so take those first.
+
+The frames are combined into a master (for each pixel the mean, leaving out its highest and lowest value: cosmic rays,
+flickering pixels) and listed under *Masters* with the camera's gain and temperature. The live stack picks for each frame
+the dark of the same camera, size and binning whose exposure, gain/ISO and temperature (within 3 °C) match, else a bias,
+and the newest flat of the frame's filter. Masters live in `calibration/` next to the composition file.
 
 ## Storage
 

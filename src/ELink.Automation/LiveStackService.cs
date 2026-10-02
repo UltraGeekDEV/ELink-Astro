@@ -245,7 +245,10 @@ public sealed class LiveStackService : IAsyncDisposable
         LiveStackRequest r;
         lock (_gate) { if (_request is null || item.Generation != _generation) return "!stack was replaced"; r = _request; }
         var img = FitsImage.Parse(item.Fits);
+        string calibrated = "";
+        if (r.Calibrate.Value) (img, calibrated) = await CalibrateAsync(img, item, ct);
         var (data, width, height, channels, bin, colour) = Prepare(img, r);
+        colour = calibrated + colour;
 
         var (rawWcs, how) = await RegisterAsync(r, img, item, ct);   // the raw frame is what gets solved
         if (rawWcs is null) return "!" + how;
@@ -331,6 +334,49 @@ public sealed class LiveStackService : IAsyncDisposable
             return new TanWcs(s.WcsCrVal1.Value, s.WcsCrVal2.Value, s.WcsCrPix1.Value - 1, s.WcsCrPix2.Value - 1, s.WcsCd11.Value, s.WcsCd12.Value, s.WcsCd21.Value, s.WcsCd22.Value);
         double pa = double.IsNaN(s.PositionAngle.Value) ? 0 : s.PositionAngle.Value;
         return TanWcs.Centered(s.RaHours.Value * 15, s.DecDegrees.Value, pa, s.PixelScale.Value, width, height);
+    }
+
+    private sealed record CachedMaster(float[]? Data, string Id, DateTime At);
+    private readonly Dictionary<string, CachedMaster> _masters = new();
+    /// <summary>How long a library answer is trusted (so masters taken meanwhile are picked up).</summary>
+    public TimeSpan MasterCacheTime { get; set; } = TimeSpan.FromMinutes(2);
+
+    /// <summary>The raw frame less its dark (or bias), divided by its flat, from the calibration library (when it has any).</summary>
+    private async Task<(FitsImage Image, string Note)> CalibrateAsync(FitsImage img, Item item, CancellationToken ct)
+    {
+        if (img.Channels != 1 || img.Get("IMAGETYP") is { } t && t.StartsWith("Master", StringComparison.OrdinalIgnoreCase)) return (img, "");
+        string filter = item.Filter != "" ? item.Filter : (img.Get("FILTER") ?? "").Trim();
+        double seconds = !double.IsNaN(item.Seconds) && item.Seconds > 0 ? item.Seconds : img.GetDouble("EXPTIME", img.GetDouble("EXPOSURE", 0));
+        var q = new MasterQuery
+        {
+            ShooterId = item.Source, ExposureSeconds = seconds, Gain = img.GetDouble("GAIN"), Iso = (img.Get("ISOSPEED") ?? "").Trim(),
+            TemperatureC = img.GetDouble("CCD-TEMP"), BinX = Math.Max(1, (int)img.GetDouble("XBINNING", 1)), Filter = filter, Width = img.Width, Height = img.Height,
+        };
+        q.Kind = "Dark"; var dark = await MasterAsync(q, ct);
+        q.Kind = "Flat"; var flat = await MasterAsync(q, ct);
+        if (dark.Data is null && flat.Data is null) return (img, "");
+        var data = Calibrate.Apply(img.Data, dark.Data, flat.Data);
+        string note = ", " + string.Join("+", new[] { dark.Data is null ? null : dark.Id.StartsWith("bias") ? "bias" : "dark", flat.Data is null ? null : "flat" }.Where(x => x is not null));
+        return (FitsImage.FromPlanar(img.Width, img.Height, 1, data, img.Header, img.Range), note);
+    }
+
+    private async Task<CachedMaster> MasterAsync(MasterQuery q, CancellationToken ct)
+    {
+        string key = $"{q.Kind.Text}|{q.ShooterId.Text}|{q.ExposureSeconds.Value:R}|{q.Gain.Value:R}|{q.Iso.Text}|{Math.Round(q.TemperatureC.Value)}|{q.BinX.Value}|{q.Filter.Text}|{q.Width.Value}x{q.Height.Value}";
+        lock (_gate) if (_masters.TryGetValue(key, out var c) && DateTime.UtcNow - c.At < MasterCacheTime) return c;
+        CachedMaster found = new(null, "", DateTime.UtcNow);
+        try
+        {
+            var answers = await _node.CallFunctionAsync<MasterQuery, MasterMatch>(CalibrationIds.Find, q, TimeSpan.FromSeconds(20));
+            if (answers?.FirstOrDefault(a => a.Found.Value) is { } m)
+            {
+                var master = FitsImage.Parse(m.Image.Data);
+                if (master.Width == q.Width.Value && master.Height == q.Height.Value) found = new(master.Data, m.Master.Id.Text, DateTime.UtcNow);
+            }
+        }
+        catch (Exception) when (!ct.IsCancellationRequested) { }
+        lock (_gate) _masters[key] = found;
+        return found;
     }
 
     /// <summary>The frame as it goes into the stack: raw Bayer frames debayered as asked (super pixel halves the grid),

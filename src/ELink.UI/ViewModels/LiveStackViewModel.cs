@@ -58,6 +58,7 @@ public sealed partial class LiveStackViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _debayer = "Interpolated";
     [ObservableProperty] private bool _separateFilters = true;
     [ObservableProperty] private bool _matchFlux = true;
+    [ObservableProperty] private bool _calibrate = true;
     [ObservableProperty] private double _rejectSigma = 3;
     [ObservableProperty] private bool _neutralize = true;
     [ObservableProperty] private string? _shownFilter;
@@ -128,7 +129,7 @@ public sealed partial class LiveStackViewModel : ObservableObject, IDisposable
             Interpolation = Interpolation, Registration = Registration, FramePixelScaleArcsec = FramePixelScale, FramePositionAngleDegrees = FramePositionAngle,
             NormalizeBackground = NormalizeBackground, MaxMegapixels = MaxMegapixels,
             Debayer = Debayer, BayerPattern = BayerPattern == "From frame" ? "" : BayerPattern,
-            SeparateFilters = SeparateFilters, MatchFlux = MatchFlux, RejectSigma = RejectSigma,
+            SeparateFilters = SeparateFilters, MatchFlux = MatchFlux, RejectSigma = RejectSigma, Calibrate = Calibrate,
         };
         foreach (var s in Shooters.Where(s => s.Selected)) r.ShooterIds.Add(s.Id);
         if (r.ShooterIds.Count == 0) { Message = "tick at least one shooter or scope"; return; }

@@ -76,6 +76,7 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         if (solveSvc is not null) await solveSvc.StartAsync();
         string saveDir = Path.Combine(Path.GetTempPath(), "elink-ui-save-" + Guid.NewGuid().ToString("N"));
         await using var storage = new StorageService(hostNode, saveDir); await storage.StartAsync();
+        await using var calibrationSvc = new CalibrationService(hostNode, saveDir); await calibrationSvc.StartAsync();
 
         // frontend: a separate node that joins the mesh
         var session = await MeshSession.CreateAsync(null, "UI-Test");
@@ -314,6 +315,16 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         Assert.True(await Eventually(() => profiles.Profiles.Contains("UI rig")));
         vm.SelectedTab = vm.Tabs.First(t => t.Content is ProfilesViewModel);
         Shot(window, "07j-profiles");
+
+        // calibration: a master bias of the camera, listed in the library
+        var cal = vm.Calibration;
+        vm.SelectedTab = vm.Tabs.First(t => t.Content is CalibrationViewModel);
+        Assert.True(await Eventually(() => cal.Cameras.Contains("cam-CCD_Simulator")), string.Join(",", cal.Cameras));
+        cal.SelectedCamera = "cam-CCD_Simulator"; cal.Kind = "Bias"; cal.Count = 3;
+        await cal.CaptureCommand.ExecuteAsync(null);
+        Assert.Equal("", cal.Message);
+        Assert.True(await Eventually(() => cal.Masters.Any(m => m.Line.Contains("Bias")), 60000), cal.Status);
+        Shot(window, "07k-calibration");
 
         // generic INDI browser
         vm.SelectedTab = vm.Tabs.First(t => t.Content is IndiBrowserViewModel);

@@ -87,6 +87,8 @@ await using var imaging = new ImagingService(node, Path.GetDirectoryName(compose
 await imaging.StartAsync();
 await using var liveStack = new LiveStackService(node, Path.GetDirectoryName(compose)!);
 await liveStack.StartAsync();
+await using var calibration = new CalibrationService(node, Path.GetDirectoryName(compose)!);
+await calibration.StartAsync();
 await using var storage = new StorageService(node, saveDir);
 await storage.StartAsync();
 foreach (var id in save) await Commands.CallAsync(node, ELink.Contracts.Automation.StorageIds.Watch, new ELink.Contracts.Automation.StorageWatch { ShooterId = id });

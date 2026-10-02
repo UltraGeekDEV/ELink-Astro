@@ -191,7 +191,8 @@ frame belongs to. Shooters have offsets (arcmin east/north of the pointing axis)
 | PlateSolve | — | shooter (optional) | wraps `solve-field`, one solve at a time |
 | Centering | mount state (incl. hand-controller slews) | mount, PlateSolve | sync + reslew, aim-off fallback, guide→primary offset |
 | Guider (compose) | its guide camera's shots | GuidePort or GuideTarget | calibration, multi-star guiding, dithering, settle; owned by a scope |
-| LiveStack | any shooter's shots | PlateSolve (optional) | registers frames, resamples into a fixed sky grid |
+| LiveStack | any shooter's shots | PlateSolve, Calibration (optional) | calibrates raw frames, registers them, resamples into a fixed sky grid |
+| Calibration | a camera shooter's shots | that shooter | master darks/biases/flats (min/max-rejected mean, flat auto-exposure), `Find` the master for a light frame |
 | Site | a GPS (optional) | mounts (location, time) | sidereal time, twilight, Sun/Moon/planets, observability with a horizon profile |
 | Atlas | — | — | KStars stars, OpenNGC, GSC, constellations, search |
 | Stellarium | a pointer | pointer | telescope protocol server + Remote Control client |

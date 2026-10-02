@@ -29,6 +29,7 @@ public class LiveStackRequest : IBinaryConvertible
     public BinaryConvertibleBool MatchFlux { get; set; } = true;
     public BinaryConvertibleDouble RejectSigma { get; set; } = 3.0;
     public BinaryConvertibleString BayerPattern { get; set; } = "";
+    public BinaryConvertibleBool Calibrate { get; set; } = true;
 
     public override string Name => "LiveStackRequest";
     private static readonly NOTESDescriptor d = new();
@@ -56,6 +57,7 @@ public class LiveStackRequest : IBinaryConvertible
         d.RegisterField("RejectSigma", (LiveStackRequest x) => x.RejectSigma).Description("leave out samples this many standard deviations from a pixel's mean (satellites, planes); 0 = keep all");
         d.RegisterField("Debayer", (LiveStackRequest x) => x.Debayer).Description("raw colour (Bayer) frames: Interpolated (full resolution) | SuperPixel (each 2x2 cell is one RGB pixel, half resolution) | None (stack the raw mosaic as mono)");
         d.RegisterField("BayerPattern", (LiveStackRequest x) => x.BayerPattern).Description("RGGB | BGGR | GRBG | GBRG as seen from the first pixel of the file; empty = the frame's BAYERPAT (and X/YBAYROFF)");
+        d.RegisterField("Calibrate", (LiveStackRequest x) => x.Calibrate).Description("take off the dark (or bias) and divide by the flat from the calibration library, when it has ones that suit");
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();

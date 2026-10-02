@@ -39,6 +39,7 @@
         <StackPanel Classes="row">
           <StackPanel><TextBlock Classes="label" Text="Reject outliers beyond σ (0 = off)"/><NumericUpDown Value="{Binding RejectSigma}" Minimum="0" Increment="0.5" FormatString="0.#" Width="200"/></StackPanel>
           <CheckBox IsChecked="{Binding SeparateFilters}" Content="One stack per filter" VerticalAlignment="Bottom"/>
+          <CheckBox IsChecked="{Binding Calibrate}" Content="Calibrate (darks, flats from the library)" VerticalAlignment="Bottom"/>
         </StackPanel>
         <TextBlock Classes="label" Text="{Binding SizeText}"/>
 
