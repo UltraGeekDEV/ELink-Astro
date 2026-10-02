@@ -32,6 +32,12 @@ public class ScopeDefinition : IBinaryConvertible
     public BinaryConvertibleString DisplayName { get; set; } = "";
     public BinaryConvertibleCollection<BinaryConvertibleString> Pointers { get; set; } = new();
     public BinaryConvertibleCollection<ScopeShooterRef> Shooters { get; set; } = new();
+    public BinaryConvertibleString GuiderId { get; set; } = "";
+    public BinaryConvertibleInt32 DitherEvery { get; set; } = 0;
+    public BinaryConvertibleDouble DitherPixels { get; set; } = 5.0;
+    public BinaryConvertibleDouble SettlePixels { get; set; } = 1.5;
+    public BinaryConvertibleDouble SettleSeconds { get; set; } = 10.0;
+    public BinaryConvertibleDouble SettleTimeoutSeconds { get; set; } = 120.0;
 
     public override string Name => "ScopeDefinition";
     private static readonly NOTESDescriptor d = new();
@@ -42,6 +48,12 @@ public class ScopeDefinition : IBinaryConvertible
         d.RegisterField("DisplayName", (ScopeDefinition x) => x.DisplayName);
         d.RegisterField("Pointers", (ScopeDefinition x) => x.Pointers, maxCount: 64).Description("Pointer ids; the first is the reference, all are sent to the same target");
         d.RegisterField("Shooters", (ScopeDefinition x) => x.Shooters, maxCount: 64);
+        d.RegisterField("GuiderId", (ScopeDefinition x) => x.GuiderId).Description("the scope's own guider: it guides between slews and dithers between frames by itself; empty = unguided");
+        d.RegisterField("DitherEvery", (ScopeDefinition x) => x.DitherEvery).Description("dither after every N exposure rounds; 0 = never");
+        d.RegisterField("DitherPixels", (ScopeDefinition x) => x.DitherPixels).Description("dither size, guide camera pixels");
+        d.RegisterField("SettlePixels", (ScopeDefinition x) => x.SettlePixels).Description("guiding counts as settled below this error ...");
+        d.RegisterField("SettleSeconds", (ScopeDefinition x) => x.SettleSeconds).Description("... held for this long");
+        d.RegisterField("SettleTimeoutSeconds", (ScopeDefinition x) => x.SettleTimeoutSeconds).Description("how long to wait for guiding to settle before starting (or carrying on)");
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();
@@ -86,7 +98,7 @@ public class ScopeState : IBinaryConvertible
     public override NOTESDescriptor Descriptor => d;
     static ScopeState()
     {
-        d.RegisterField("Phase", (ScopeState x) => x.Phase).Description("Idle | Pointing | OnTarget | Exposing | Error");
+        d.RegisterField("Phase", (ScopeState x) => x.Phase).Description("Idle | Pointing | OnTarget | Guiding (starting, settling) | Exposing | Dithering | Error");
         d.RegisterField("Message", (ScopeState x) => x.Message);
         d.RegisterField("ShotsDone", (ScopeState x) => x.ShotsDone).Description("exposure rounds finished in the current/last Observe");
         d.RegisterField("ShotsPlanned", (ScopeState x) => x.ShotsPlanned);
@@ -110,6 +122,8 @@ public static class ScopeIds
     public const string DefineMountPointer = "ELink.Compose.DefineMountPointer";
     /// <summary>CameraShooterDefinition in, CommandResult out. Makes a Camera (+ filter wheel) usable as a Shooter.</summary>
     public const string DefineCameraShooter = "ELink.Compose.DefineCameraShooter";
+    /// <summary>GuiderDefinition in, CommandResult out.</summary>
+    public const string DefineGuider = "ELink.Compose.DefineGuider";
     /// <summary>BinaryConvertibleString "Scope:id", "Pointer:id" or "Shooter:id" in, CommandResult out.</summary>
     public const string Remove = "ELink.Compose.Remove";
     /// <summary>Void in, <see cref="CompositionSnapshot"/> out (one per composition host).</summary>
@@ -162,6 +176,7 @@ public class CompositionSnapshot : IBinaryConvertible
     public BinaryConvertibleCollection<MountPointerDefinition> MountPointers { get; set; } = new();
     public BinaryConvertibleCollection<CameraShooterDefinition> CameraShooters { get; set; } = new();
     public BinaryConvertibleCollection<ScopeDefinition> Scopes { get; set; } = new();
+    public BinaryConvertibleCollection<GuiderDefinition> Guiders { get; set; } = new();
 
     public override string Name => "CompositionSnapshot";
     private static readonly NOTESDescriptor d = new();
@@ -171,6 +186,7 @@ public class CompositionSnapshot : IBinaryConvertible
         d.RegisterField("MountPointers", (CompositionSnapshot x) => x.MountPointers);
         d.RegisterField("CameraShooters", (CompositionSnapshot x) => x.CameraShooters);
         d.RegisterField("Scopes", (CompositionSnapshot x) => x.Scopes);
+        d.RegisterField("Guiders", (CompositionSnapshot x) => x.Guiders);
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();

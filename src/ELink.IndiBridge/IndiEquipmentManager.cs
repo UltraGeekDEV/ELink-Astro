@@ -12,7 +12,7 @@ namespace ELink.IndiBridge;
 public sealed class IndiEquipmentManager : IAsyncDisposable
 {
     // INDI DRIVER_INTERFACE bit mask
-    private const int Telescope = 1 << 0, Ccd = 1 << 1, Focuser = 1 << 3, Filter = 1 << 4, Dome = 1 << 5, Gps = 1 << 6, Weather = 1 << 7, Rotator = 1 << 12;
+    private const int Telescope = 1 << 0, Ccd = 1 << 1, Guider = 1 << 2, Focuser = 1 << 3, Filter = 1 << 4, Dome = 1 << 5, Gps = 1 << 6, Weather = 1 << 7, Rotator = 1 << 12;
 
     private readonly TypeSafeEVentNode _node;
     private readonly DeviceDirectory _directory;
@@ -89,6 +89,7 @@ public sealed class IndiEquipmentManager : IAsyncDisposable
             if ((interfaces & Gps) != 0) await Add(new GpsAdapter(ctx));
             if ((interfaces & Weather) != 0) await Add(new WeatherAdapter(ctx));
             if ((interfaces & Rotator) != 0) await Add(new RotatorAdapter(ctx));
+            if ((interfaces & Guider) != 0) await Add(new GuidePortAdapter(ctx));
 
             _adapters[device] = made;
             _infos[device] = infos;

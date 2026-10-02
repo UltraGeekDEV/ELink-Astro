@@ -285,3 +285,52 @@ public sealed class FakeSolver : IAsyncDisposable
 
     public ValueTask DisposeAsync() { _cmds.Dispose(); return ValueTask.CompletedTask; }
 }
+
+/// <summary>A guider that is only EVent endpoints: records what the scope asks of it.</summary>
+public sealed class FakeGuider : IAsyncDisposable
+{
+    private readonly CommandSet _cmds;
+    private readonly StatePublisher<GuiderState> _pub;
+    private string _phase = "Idle";
+    public List<string> Calls { get; } = new();
+    public bool FailStart { get; set; }
+    public bool NeverSettles { get; set; }
+
+    public FakeGuider(TypeSafeEVentNode node, string id)
+    {
+        _cmds = new CommandSet(node);
+        Id = id;
+        _pub = new(node, GuiderIds.State(id), GuiderIds.GetState(id), () => new GuiderState { Phase = _phase, Settled = _phase == "Guiding" });
+    }
+
+    public string Id { get; }
+
+    public async Task StartAsync()
+    {
+        await _cmds.AddAsync<GuideStartRequest, CommandResult>(GuiderIds.Start(Id), async _ =>
+        {
+            lock (Calls) Calls.Add("Start");
+            if (FailStart) { _phase = "Error"; await _pub.PublishAsync(); return CommandResult.Fail("no guide star"); }
+            _phase = "Guiding"; await _pub.PublishAsync();
+            return CommandResult.Success();
+        }, "fake guide start");
+        await _cmds.AddAsync<NOTESVoid, CommandResult>(GuiderIds.Stop(Id), async _ =>
+        {
+            lock (Calls) Calls.Add("Stop");
+            _phase = "Idle"; await _pub.PublishAsync();
+            return CommandResult.Success();
+        }, "fake guide stop");
+        await _cmds.AddAsync<DitherRequest, CommandResult>(GuiderIds.Dither(Id), async r =>
+        {
+            lock (Calls) Calls.Add(r.Pixels.Value > 0 ? $"Dither {r.Pixels.Value:0.#}" : "Settle");
+            await Task.Delay(30);
+            if (_phase != "Guiding") return CommandResult.Fail("not guiding");
+            return NeverSettles ? CommandResult.Fail("guiding did not settle") : CommandResult.Success();
+        }, "fake dither");
+        await _pub.StartAsync();
+    }
+
+    public List<string> Snapshot() { lock (Calls) return Calls.ToList(); }
+
+    public ValueTask DisposeAsync() { _cmds.Dispose(); _pub.Dispose(); return ValueTask.CompletedTask; }
+}

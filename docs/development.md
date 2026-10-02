@@ -166,6 +166,7 @@ frame belongs to. Shooters have offsets (arcmin east/north of the pointing axis)
 | Mosaic | its own plan | scope, rotator | coverage map painter (below) |
 | PlateSolve | — | shooter (optional) | wraps `solve-field`, one solve at a time |
 | Centering | mount state (incl. hand-controller slews) | mount, PlateSolve | sync + reslew, aim-off fallback, guide→primary offset |
+| Guider (compose) | its guide camera's shots | GuidePort or GuideTarget | calibration, multi-star guiding, dithering, settle; owned by a scope |
 | LiveStack | any shooter's shots | PlateSolve (optional) | registers frames, resamples into a fixed sky grid |
 | Site | a GPS (optional) | mounts (location, time) | sidereal time, twilight, Sun/Moon/planets, observability with a horizon profile |
 | Atlas | — | — | KStars stars, OpenNGC, GSC, constellations, search |
@@ -233,6 +234,31 @@ go into a colour stack as grey and colour frames into a mono stack as luminance.
 
 Partial edge pixels add a fractional weight, the mean is sum/weight, and each frame's background median is matched
 to the first frame's, per channel. Memory is 8 bytes per output pixel (16 in colour), capped by `MaxMegapixels`.
+
+### Guiding (inside the scope)
+
+A `Guider` (composition layer, like pointers and shooters) loops a guide camera, follows up to a dozen stars
+(median shift, so one lost star does not matter) and drives one of two outputs:
+
+```mermaid
+flowchart LR
+    Cam[guide camera<br/>any Shooter] -->|frames| G[Guider<br/>multi-star tracker]
+    G -->|Pulse output| P["GuidePort.Pulse<br/>(INDI TELESCOPE_TIMED_GUIDE_NS/WE)"]
+    G -->|Correction output| T["GuideTarget.Correct<br/>'you are here, should be here'"]
+    G -.->|every frame, either mode| E((Guider.Correction event))
+    G -.-> S((Guider.Step event))
+    Scope[Smart scope] -->|Start · Stop · Dither / settle| G
+```
+
+- **Pulse**: calibrated like PHD2 (West leg, back, Dec backlash take-up, North leg, back) into a `PulseCalibration`
+  (pixels per ms for each axis; RA rate scaled by cos Dec). Recalibrates after a pier flip.
+- **Correction** ("goto guiding"), for ELink-native devices that close the loop themselves: `GuideCorrection` carries
+  `IsRa/IsDec` and `ShouldRa/ShouldDec` (J2000, absolute when the first guide frame was plate solved) and the move
+  `MoveEastArcsec/MoveNorthArcsec`. A native mount implements `ELink.GuideTarget.<id>.Correct`; anything else may
+  just listen to `ELink.Guider.<id>.Correction`.
+- **Ownership**: the scope stops its guider before any slew (its own or a parent scope's `Goto`), starts it once its
+  pointers settle, and before every exposure round asks it to settle or, every `DitherEvery` rounds, to dither.
+  `Expose` on a guided scope answers "accepted" and exposes once settled, so a parent scope never knows.
 
 ## Coordinates
 

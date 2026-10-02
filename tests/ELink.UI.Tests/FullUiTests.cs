@@ -14,6 +14,7 @@ using ELink.UI.Infrastructure;
 using ELink.UI.ViewModels;
 using ELink.UI.Views;
 using Event.CoreFunctionality;
+using EVent.Connections.Models.BaseBinaryConvertibles;
 using Xunit;
 
 namespace ELink.UI.Tests;
@@ -273,6 +274,35 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         Assert.True(await Eventually(() => live.Phase == "Stopped"));
         vm.SelectedTab = vm.Tabs.First(t => t.Content is LiveStackViewModel);
         Shot(window, "07g-live-stack");
+
+        // guiding: a guide camera and the mount's guide port make a guider; a scope that owns it guides by itself
+        Assert.True(await Eventually(() => vm.Catalog.OfKind(DeviceKinds.GuidePort).Any(d => d.Id == "Telescope_Simulator") && vm.Catalog.OfKind(DeviceKinds.Camera).Any(d => d.Id == "Guide_Simulator")));
+        Assert.True((await Commands.CallAsync(bridge, EquipmentIds.Command(DeviceKinds.Camera, "Guide_Simulator", "Connect"), (BinaryConvertibleBool)true)).Ok.Value);
+        vm.SelectedTab = vm.Tabs.First(t => t.Content is ComposerViewModel);
+        composer.NewShooterId = "gcam"; composer.SelectedCamera = "Guide_Simulator"; composer.SelectedWheel = "";
+        await composer.DefineShooterCommand.ExecuteAsync(null);
+        Assert.True(await Eventually(() => composer.GuideCameras.Contains("gcam") && composer.GuidePorts.Contains("Telescope_Simulator")), composer.Message);
+        composer.NewGuiderId = "guide"; composer.SelectedGuideCamera = "gcam"; composer.SelectedGuideOutput = "Pulse";
+        composer.SelectedGuidePort = "Telescope_Simulator"; composer.SelectedGuideMount = "Telescope_Simulator"; composer.GuideExposure = 1;
+        Assert.True(composer.PulseOutput);
+        await composer.DefineGuiderCommand.ExecuteAsync(null);
+        Assert.Contains("defined", composer.Message);
+        Assert.True(await Eventually(() => composer.Guiders.Contains("guide") && composer.Existing.Contains("Guider:guide")));
+        composer.ScopeId = "guided"; composer.ScopeName = "Guided scope"; composer.SelectedGuider = "guide"; composer.DitherEvery = 2;
+        foreach (var c in composer.PointerChoices) c.IsSelected = c.Id == "eq";
+        foreach (var c in composer.ShooterChoices) c.IsSelected = c.Id == "cam";
+        await composer.DefineScopeCommand.ExecuteAsync(null);
+        Assert.True(await Eventually(() => vm.Catalog.Scopes.Any(s => s.Id == "guided")), composer.Message);
+        Assert.Equal("guide", vm.Catalog.Composition.Scopes.First(s => s.Id.Text == "guided").GuiderId.Text);
+        Shot(window, "07h-compose-guider");
+        await vm.OpenScopeCommand.ExecuteAsync(vm.Catalog.Scopes.First(s => s.Id == "guided"));
+        var guided = Assert.IsType<ScopePanelViewModel>(vm.SelectedTab!.Content);
+        Assert.True(guided.HasGuider);
+        await guided.StartGuidingCommand.ExecuteAsync(null);
+        Assert.True(await Eventually(() => guided.GuidePhase is not ("--" or "Idle"), 30000), guided.GuidePhase);
+        Shot(window, "07i-scope-guiding");
+        await guided.StopGuidingCommand.ExecuteAsync(null);
+        Assert.True(await Eventually(() => guided.GuidePhase == "Idle", 30000), guided.GuidePhase);
 
         // generic INDI browser
         vm.SelectedTab = vm.Tabs.First(t => t.Content is IndiBrowserViewModel);

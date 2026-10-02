@@ -121,7 +121,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         if (item is null) return;
         var existing = Tabs.FirstOrDefault(t => t.Content is ScopePanelViewModel s && s.ScopeId == item.Id);
         if (existing is not null) { SelectedTab = existing; return; }
-        var panel = new ScopePanelViewModel(Mesh, item.Id, item.DisplayName);
+        string guider = Catalog.Composition.Scopes.FirstOrDefault(s => s.Id.Text == item.Id)?.GuiderId.Text ?? "";
+        var panel = new ScopePanelViewModel(Mesh, item.Id, item.DisplayName, guider);
         await panel.StartAsync();
         var tab = new WorkspaceTab($"Scope: {item.DisplayName}", panel, true);
         Tabs.Add(tab); SelectedTab = tab;

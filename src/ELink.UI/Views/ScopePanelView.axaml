@@ -54,6 +54,30 @@
         <TextBlock Classes="error" Text="{Binding Message}" IsVisible="{Binding Message.Length}"/>
       </StackPanel>
     </Border>
+    <Border Classes="card" IsVisible="{Binding HasGuider}">
+      <StackPanel Spacing="6">
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock Classes="section" Text="GUIDING (THE SCOPE DOES THIS BY ITSELF)"/>
+          <TextBlock Grid.Column="1" Classes="value" Text="{Binding GuidePhase}"/>
+        </Grid>
+        <TextBlock Text="{Binding GuideText}" TextWrapping="Wrap"/>
+        <TextBlock Classes="label" Text="{Binding GuideCalibration}"/>
+        <Border Background="#0B1220" CornerRadius="4" Width="600" Height="120" HorizontalAlignment="Left" ClipToBounds="True">
+          <Canvas Width="600" Height="120">
+            <Line StartPoint="0,60" EndPoint="600,60" Stroke="#33557A" StrokeThickness="1"/>
+            <Polyline Points="{Binding RaGraph}" Stroke="#5AA9FF" StrokeThickness="1.6"/>
+            <Polyline Points="{Binding DecGraph}" Stroke="#FF6B6B" StrokeThickness="1.6"/>
+          </Canvas>
+        </Border>
+        <TextBlock Classes="label" Text="RA (blue) and Dec (red) error, ±4&quot; full height, last 100 guide frames"/>
+        <StackPanel Classes="row">
+          <Button Content="Start guiding" Command="{Binding StartGuidingCommand}"/>
+          <Button Content="Stop" Command="{Binding StopGuidingCommand}"/>
+          <Button Content="Recalibrate" Command="{Binding RecalibrateCommand}"/>
+          <Button Content="Dither now" Command="{Binding DitherNowCommand}"/>
+        </StackPanel>
+      </StackPanel>
+    </Border>
     <Border Classes="card">
       <StackPanel Spacing="6">
         <TextBlock Classes="section" Text="LATEST FRAME"/>

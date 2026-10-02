@@ -53,7 +53,7 @@ public sealed class IndiServerFixture : IAsyncLifetime
     public static readonly string[] Drivers =
     {
         "indi_simulator_telescope", "indi_simulator_ccd", "indi_simulator_focus", "indi_simulator_wheel",
-        "indi_simulator_rotator", "indi_simulator_dome", "indi_simulator_weather", "indi_simulator_gps",
+        "indi_simulator_rotator", "indi_simulator_dome", "indi_simulator_weather", "indi_simulator_gps", "indi_simulator_guide",
     };
 
     private IndiServerProcess? _process;

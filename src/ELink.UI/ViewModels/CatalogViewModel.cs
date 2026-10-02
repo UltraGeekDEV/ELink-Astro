@@ -66,6 +66,7 @@ public sealed partial class CatalogViewModel : ObservableObject
                 foreach (var x in s.MountPointers) merged.MountPointers.Add(x);
                 foreach (var x in s.CameraShooters) merged.CameraShooters.Add(x);
                 foreach (var x in s.Scopes) merged.Scopes.Add(x);
+                foreach (var x in s.Guiders) merged.Guiders.Add(x);
             }
             Merge(merged);
         });

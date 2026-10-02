@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
+using Avalonia;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ELink.Contracts.Composition;
@@ -18,10 +19,23 @@ public partial class ScopePanelViewModel : ObservableObject, IDisposable
     private readonly List<IDisposable> _disposables = new();
     private Action<ShotEvent>? _shotHook;
 
-    public ScopePanelViewModel(MeshSession mesh, string scopeId, string displayName)
+    private Action<GuideStep>? _stepHook;
+    private readonly List<GuideStep> _steps = new();
+
+    public ScopePanelViewModel(MeshSession mesh, string scopeId, string displayName, string guiderId = "")
     {
-        _mesh = mesh; ScopeId = scopeId; DisplayName = displayName;
+        _mesh = mesh; ScopeId = scopeId; DisplayName = displayName; GuiderId = guiderId;
     }
+
+    // its own guiding (when the scope has a guider)
+    public string GuiderId { get; }
+    public bool HasGuider => GuiderId != "";
+    [ObservableProperty] private string _guidePhase = "--";
+    [ObservableProperty] private string _guideText = "";
+    [ObservableProperty] private string _guideCalibration = "";
+    [ObservableProperty] private IList<Point> _raGraph = new List<Point>();
+    [ObservableProperty] private IList<Point> _decGraph = new List<Point>();
+    public const double GraphWidth = 600, GraphHeight = 120, GraphArcsec = 4;
 
     public string ScopeId { get; }
     public string DisplayName { get; }
@@ -90,7 +104,49 @@ public partial class ScopePanelViewModel : ObservableObject, IDisposable
             Preview.Show(shot.Data.Data, shot.Format.Text, text);
         };
         await node.HookEventAsync(ShooterIds.Shot(ScopeId), _shotHook, "scope preview");
+
+        if (HasGuider)
+        {
+            var guider = new Follower<GuiderState>(node, GuiderIds.State(GuiderId), GuiderIds.GetState(GuiderId), g =>
+            {
+                GuidePhase = g.Phase.Text + (g.Phase.Text == "Guiding" ? (g.Settled.Value ? ", settled" : ", settling") : "");
+                GuideText = (double.IsNaN(g.RmsTotalArcsec.Value)
+                                ? $"error {g.ErrorPixels.Value:0.00} px"
+                                : $"RMS {g.RmsTotalArcsec.Value:0.00}\" (RA {g.RmsRaArcsec.Value:0.00}\", Dec {g.RmsDecArcsec.Value:0.00}\")") +
+                            $"   ·   {g.Stars.Value} stars   ·   {g.Frames.Value} frames   ·   {g.Dithers.Value} dithers   ·   {g.Output.Text}" +
+                            (g.Message.Text != "" ? $"   ·   {g.Message.Text}" : "");
+                GuideCalibration = g.Calibration.Text;
+            });
+            _disposables.Add(guider);
+            await guider.StartAsync();
+            _stepHook = st => UiThread.Post(() =>
+            {
+                _steps.Add(st); if (_steps.Count > 100) _steps.RemoveAt(0);
+                RaGraph = Graph(st2 => st2.RaArcsec.Value); DecGraph = Graph(st2 => st2.DecArcsec.Value);
+            });
+            await node.HookEventAsync(GuiderIds.Step(GuiderId), _stepHook, "scope guide graph");
+        }
     }
+
+    /// <summary>The last 100 guide errors as a line: ±GraphArcsec over the graph's height, newest on the right.</summary>
+    private List<Point> Graph(Func<GuideStep, double> value)
+    {
+        var pts = new List<Point>();
+        double dx = GraphWidth / 99;
+        for (int i = 0; i < _steps.Count; i++)
+        {
+            double v = value(_steps[i]);
+            if (double.IsNaN(v)) v = 0;
+            double y = GraphHeight / 2 - Math.Clamp(v / GraphArcsec, -1, 1) * GraphHeight / 2;
+            pts.Add(new Point(GraphWidth - (_steps.Count - 1 - i) * dx, y));
+        }
+        return pts;
+    }
+
+    [RelayCommand] private Task StartGuidingAsync() => Run(Commands.CallAsync(_mesh.Node, GuiderIds.Start(GuiderId), new GuideStartRequest()));
+    [RelayCommand] private Task StopGuidingAsync() => Run(Commands.CallAsync(_mesh.Node, GuiderIds.Stop(GuiderId), NOTESVoid.Void, TimeSpan.FromSeconds(60)));
+    [RelayCommand] private Task RecalibrateAsync() => Run(Commands.CallAsync(_mesh.Node, GuiderIds.Start(GuiderId), new GuideStartRequest { Recalibrate = true }, TimeSpan.FromSeconds(60)));
+    [RelayCommand] private Task DitherNowAsync() => Run(Commands.CallAsync(_mesh.Node, GuiderIds.Dither(GuiderId), new DitherRequest { Pixels = 5, TimeoutSeconds = 90 }, TimeSpan.FromSeconds(120)));
 
     private bool TryTarget(out SkyTarget target)
     {
@@ -118,6 +174,7 @@ public partial class ScopePanelViewModel : ObservableObject, IDisposable
     public void Dispose()
     {
         if (_shotHook is not null) { try { _mesh.Node.UnhookEvent(ShooterIds.Shot(ScopeId), _shotHook); } catch (ObjectDisposedException) { } }
+        if (_stepHook is not null) { try { _mesh.Node.UnhookEvent(GuiderIds.Step(GuiderId), _stepHook); } catch (ObjectDisposedException) { } }
         foreach (var d in _disposables) d.Dispose();
     }
 }

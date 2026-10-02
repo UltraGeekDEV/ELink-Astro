@@ -42,6 +42,28 @@ public sealed partial class ComposerViewModel : ObservableObject
     public ObservableCollection<ComposeChoice> PointerChoices { get; } = new();
     public ObservableCollection<ComposeChoice> ShooterChoices { get; } = new();
     public ObservableCollection<string> Existing { get; } = new();
+    public ObservableCollection<string> GuideCameras { get; } = new();
+    public ObservableCollection<string> GuidePorts { get; } = new();
+    public ObservableCollection<string> GuideMounts { get; } = new();
+    public ObservableCollection<string> Guiders { get; } = new();
+    public string[] GuideOutputs { get; } = ["Pulse", "Correction"];
+    public const string NoGuider = "(none)";
+
+    [ObservableProperty] private string _newGuiderId = "";
+    [ObservableProperty] private string? _selectedGuideCamera;
+    [ObservableProperty] private string _selectedGuideOutput = "Pulse";
+    [ObservableProperty] private string? _selectedGuidePort;
+    [ObservableProperty] private string _guideTargetId = "";
+    [ObservableProperty] private string? _selectedGuideMount;
+    [ObservableProperty] private double _guideExposure = 2;
+    [ObservableProperty] private double _guideScale;
+    [ObservableProperty] private string _selectedGuider = NoGuider;
+    [ObservableProperty] private int _ditherEvery = 3;
+    [ObservableProperty] private double _ditherPixels = 5;
+    [ObservableProperty] private double _settlePixels = 1.5;
+
+    public bool PulseOutput => SelectedGuideOutput != "Correction";
+    partial void OnSelectedGuideOutputChanged(string value) => OnPropertyChanged(nameof(PulseOutput));
 
     [ObservableProperty] private string _newPointerId = "";
     [ObservableProperty] private string? _selectedMount;
@@ -69,11 +91,19 @@ public sealed partial class ComposerViewModel : ObservableObject
                 .Concat(c.Scopes.Select(s => (s.Id.Text, "scope"))).ToList();
             var shooters = c.CameraShooters.Select(s => (s.Id.Text, s.FilterWheelId.Text == "" ? $"camera {s.CameraId.Text}" : $"camera {s.CameraId.Text} + wheel"))
                 .Concat(c.Scopes.Select(s => (s.Id.Text, "scope"))).ToList();
+            Fill(GuideCameras, c.CameraShooters.Select(x => x.Id.Text));
+            Fill(GuidePorts, _catalog.OfKind(DeviceKinds.GuidePort).Select(d => d.Id));
+            Fill(GuideMounts, new[] { "" }.Concat(_catalog.OfKind(DeviceKinds.Mount).Select(d => d.Id)));
+            Fill(Guiders, new[] { NoGuider }.Concat(c.Guiders.Select(g => g.Id.Text)));
+            SelectedGuideCamera ??= GuideCameras.FirstOrDefault();
+            SelectedGuidePort ??= GuidePorts.FirstOrDefault();
+            SelectedGuideMount ??= GuideMounts.Skip(1).FirstOrDefault() ?? "";
             Refill(PointerChoices, pointers);
             Refill(ShooterChoices, shooters);
 
             var existing = c.MountPointers.Select(p => "Pointer:" + p.Id.Text)
                 .Concat(c.CameraShooters.Select(s => "Shooter:" + s.Id.Text))
+                .Concat(c.Guiders.Select(g => "Guider:" + g.Id.Text))
                 .Concat(c.Scopes.Select(s => "Scope:" + s.Id.Text)).ToList();
             Fill(Existing, existing);
         });
@@ -121,9 +151,24 @@ public sealed partial class ComposerViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private Task DefineGuiderAsync()
+    {
+        if (SelectedGuideCamera is null) { Message = "define a shooter for the guide camera first"; return Task.CompletedTask; }
+        return Run(Commands.CallAsync(_mesh.Node, ScopeIds.DefineGuider, new GuiderDefinition
+        {
+            Id = NewGuiderId.Trim(), ShooterId = SelectedGuideCamera, Output = SelectedGuideOutput, GuidePortId = PulseOutput ? SelectedGuidePort ?? "" : "",
+            TargetId = PulseOutput ? "" : GuideTargetId.Trim(), MountId = SelectedGuideMount ?? "", ExposureSeconds = GuideExposure, PixelScaleArcsec = GuideScale,
+        }), $"guider '{NewGuiderId}' defined");
+    }
+
+    [RelayCommand]
     private Task DefineScopeAsync()
     {
-        var def = new ScopeDefinition { Id = ScopeId.Trim(), DisplayName = ScopeName.Trim() };
+        var def = new ScopeDefinition
+        {
+            Id = ScopeId.Trim(), DisplayName = ScopeName.Trim(), GuiderId = SelectedGuider == NoGuider ? "" : SelectedGuider,
+            DitherEvery = DitherEvery, DitherPixels = DitherPixels, SettlePixels = SettlePixels,
+        };
         foreach (var p in PointerChoices.Where(c => c.IsSelected)) def.Pointers.Add(p.Id);
         foreach (var s in ShooterChoices.Where(c => c.IsSelected))
             def.Shooters.Add(new ScopeShooterRef { Id = s.Id, OffsetEastArcmin = s.EastArcmin, OffsetNorthArcmin = s.NorthArcmin });

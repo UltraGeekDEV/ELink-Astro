@@ -97,7 +97,10 @@ focus triggers/offsets -> live-stack rejection/calibration -> the rest.
 - [x] Debayering of one-shot-colour frames (BAYERPAT + offsets or a given pattern): interpolated and super pixel; colour stacks and colour previews
 - [ ] Live stack: outlier rejection (sigma clip), darks/flats, colour balance
 - [x] Mosaic painter: virtual FOV as a coverage map of exposure seconds; heterogeneous rotated frames, rotator passes, small-stepover raster passes + greedy top-up, producer/executor/recorder pipeline, live dRPC control
-- [ ] Meridian flip (deferred), dithering, guiding (PHD2/INDI guider) as modules
+- [x] Guiding inside the scope: multi-star guider, PHD2-style calibration over INDI pulse guiding, dithering and settling driven by the scope itself; "goto guiding" output (GuideCorrection: you are here, should be here) for ELink-native devices
+- [ ] Guiding extras: PHD2 as an alternative guider behind the same contract, guide graph history, Dec backlash compensation, predictive PEC
+- [ ] Centring inside the scope (spec): the scope centres after its own slews instead of a separate watcher
+- [ ] Meridian flip inside the scope
 - [x] Sequencer (plans of blocks, autofocus, pause/resume, weather interlock); [ ] scheduler/priorities, dome interlock
 - [x] Frame storage (FITS headers stamped, night folders, JSON-lines session log)
 

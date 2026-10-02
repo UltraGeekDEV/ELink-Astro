@@ -97,12 +97,24 @@ flowchart TD
 1. **Pointer from a mount**: give it an id (`eq6`), pick the mount, *Define pointer*.
 2. **Shooter from a camera**: id (`main`), camera, optional filter wheel, *Define shooter*. Do the same for the guide
    camera.
-3. **Smart scope**: id and name, tick the pointers and shooters. For each shooter you can give its offset from the
+3. **Guider** (optional): an id, the guide camera's shooter, and where corrections go: **Pulse** to a guide port
+   (the mount's pulse guiding, or a camera's ST4 port; anything INDI calls a guider) or **Correction** to a device
+   that takes "you are here, should be here" and moves itself. Pick the mount it rides on (for declination and
+   pier side) and the guide exposure.
+4. **Smart scope**: id and name, tick the pointers and shooters. For each shooter you can give its offset from the
    pointing axis (arcmin east/north); leave 0 for the main camera. *Define scope*.
+
+   Pick the scope's **guider** and how often to **dither** (every N exposure rounds) and by how many guide-camera
+   pixels. A guided scope does everything itself: it stops guiding before any slew, starts (and calibrates the first
+   time) once on target, waits until guiding has settled before each exposure, and dithers between them.
 
 Definitions are saved and come back on the next start. A defined scope appears under *Smart scopes* on the left; its
 panel has **Observe** (go to, wait until settled, take *Count* frames), *Go to only*, *Expose only* and *Abort*.
 Coordinates are typed as `5:35:17` / `-5:23:28` or decimal; pick the epoch (J2000 or JNow).
+
+A guided scope's panel also has a **Guiding** card: phase (calibrating, guiding, settled), RMS in arcseconds, the
+calibration, a graph of the last 100 RA (blue) and Dec (red) errors, and Start / Stop / Recalibrate / Dither now.
+You do not need these for normal work: the scope guides by itself.
 
 ## Sky atlas
 

@@ -80,7 +80,7 @@ public class DeviceAnnouncement : IBinaryConvertible
 public static class DeviceKinds
 {
     public const string Mount = "Mount", Camera = "Camera", Focuser = "Focuser", FilterWheel = "FilterWheel",
-        Rotator = "Rotator", Dome = "Dome", Weather = "Weather", Gps = "Gps";
+        Rotator = "Rotator", Dome = "Dome", Weather = "Weather", Gps = "Gps", GuidePort = "GuidePort";
 }
 
 /// <summary>EVent IDs of the equipment layer. Every device kind has one state event and a set of command

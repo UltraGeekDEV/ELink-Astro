@@ -31,6 +31,13 @@ public sealed class SmartScope : IAsyncDisposable
     private CancellationTokenSource? _observe;
     private Task? _observeTask;
     private (string Object, string Plan) _tag = ("", "");
+    // the scope's own guiding: started when its pointers settle, stopped before they move, settled/dithered before exposures
+    private readonly string _guiderId;
+    private readonly RemoteState<GuiderState>? _guider;
+    private readonly SemaphoreSlim _exposeLock = new(1, 1);
+    private bool _guideRequested, _awaitSlew;
+    private int _roundsSinceDither;
+    private string _guideNote = "";
 
     public SmartScope(TypeSafeEVentNode node, ScopeDefinition definition)
     {
@@ -47,6 +54,8 @@ public sealed class SmartScope : IAsyncDisposable
         _pointerPub = new(node, PointerIds.State(_id), PointerIds.GetState(_id), BuildPointer);
         _shooterPub = new(node, ShooterIds.State(_id), ShooterIds.GetState(_id), BuildShooter);
         _scopePub = new(node, ScopeIds.State(_id), ScopeIds.GetState(_id), () => { lock (_scopeGate) return Clone(_scope); });
+        _guiderId = definition.GuiderId.Text;
+        if (_guiderId != "") _guider = new RemoteState<GuiderState>(node, GuiderIds.State(_guiderId), GuiderIds.GetState(_guiderId));
     }
 
     public string Id => _id;
@@ -54,7 +63,8 @@ public sealed class SmartScope : IAsyncDisposable
 
     public async Task StartAsync()
     {
-        foreach (var p in _pointers) { await p.State.StartAsync(); p.State.Changed += __ => { _ = _pointerPub.PublishAsync(); _ = Task.Run(RefreshScopeAsync); }; }
+        if (_guider is not null) await _guider.StartAsync();
+        foreach (var p in _pointers) { await p.State.StartAsync(); p.State.Changed += __ => { _ = _pointerPub.PublishAsync(); _ = Task.Run(RefreshScopeAsync); _ = Task.Run(FollowPointingAsync); }; }
         foreach (var s in _shooters)
         {
             await s.State.StartAsync();
@@ -64,7 +74,7 @@ public sealed class SmartScope : IAsyncDisposable
 
         await _commands.AddAsync<SkyTarget, CommandResult>(PointerIds.Goto(_id), GotoAsync, $"point every pointer of scope {_id} at a position");
         await _commands.AddAsync<NOTESVoid, CommandResult>(PointerIds.Abort(_id), _ => AbortPointersAsync(), "stop all pointers");
-        await _commands.AddAsync<ShooterExposure, CommandResult>(ShooterIds.Expose(_id), ExposeAsync, $"expose with every shooter of scope {_id}");
+        await _commands.AddAsync<ShooterExposure, CommandResult>(ShooterIds.Expose(_id), ExposeCommandAsync, $"expose with every shooter of scope {_id} (guided: once settled, dithering as configured)");
         await _commands.AddAsync<NOTESVoid, CommandResult>(ShooterIds.Abort(_id), _ => AbortShootersAsync(), "abort all exposures");
         await _commands.AddAsync<ObserveRequest, CommandResult>(ScopeIds.Command(_id, "Observe"), ObserveAsync, "point at a target, wait until settled, then take the exposures");
         await _commands.AddAsync<NOTESVoid, CommandResult>(ScopeIds.Command(_id, "Abort"), _ => AbortAllAsync(), "stop the observation, all pointers and all shooters");
@@ -79,6 +89,8 @@ public sealed class SmartScope : IAsyncDisposable
     private async Task<CommandResult> GotoAsync(SkyTarget target)
     {
         if (_pointers.Count == 0) return CommandResult.Fail($"scope {_id} has no pointer");
+        lock (_scopeGate) _awaitSlew = true;   // ignore "on target" until the pointers have started to move
+        await StopGuidingAsync();   // never guide through a slew
         double ra = target.RaHours.Value, dec = target.DecDegrees.Value;
         string epoch = target.Epoch.Text;
         // Put the primary shooter's centre, not the pointing axis, on the target.
@@ -111,7 +123,85 @@ public sealed class SmartScope : IAsyncDisposable
         return s;
     }
 
+    // ---- the scope's own guiding --------------------------------------------------------------------------------
+
+    private async Task StopGuidingAsync()
+    {
+        if (_guider is null) return;
+        lock (_scopeGate) _guideRequested = false;
+        await Commands.CallAsync(_node, GuiderIds.Stop(_guiderId), NOTESVoid.Void, TimeSpan.FromSeconds(60));
+    }
+
+    /// <summary>Whoever moved the pointers (this scope, a parent scope, a hand controller): guide once they have settled,
+    /// stop when they move.</summary>
+    private async Task FollowPointingAsync()
+    {
+        if (_guider is null) return;
+        var p = BuildPointer();
+        bool start = false, stop = false;
+        lock (_scopeGate)
+        {
+            if (p.Phase.Text != "OnTarget") _awaitSlew = false;
+            if (p.Phase.Text == "OnTarget" && !_guideRequested && !_awaitSlew) { _guideRequested = true; _roundsSinceDither = 0; start = true; }
+            else if (p.Phase.Text is "Slewing" or "Parked" or "Disconnected" && _guideRequested) { _guideRequested = false; stop = true; }
+        }
+        if (start) await Commands.CallAsync(_node, GuiderIds.Start(_guiderId), new GuideStartRequest());
+        if (stop) await Commands.CallAsync(_node, GuiderIds.Stop(_guiderId), NOTESVoid.Void, TimeSpan.FromSeconds(60));
+    }
+
+    /// <summary>Before an exposure round: make sure the guider runs, then dither (every DitherEvery rounds) or just wait
+    /// until settled. A guider that fails to start fails the round; one that is merely slow to settle is noted and the
+    /// round goes ahead.</summary>
+    private async Task<CommandResult> PrepareGuidedAsync()
+    {
+        if (_guider is null) return CommandResult.Success();
+        // starting is idempotent: a running guider just says yes
+        lock (_scopeGate) _guideRequested = true;
+        var started = await Commands.CallAsync(_node, GuiderIds.Start(_guiderId), new GuideStartRequest());
+        if (!started.Ok.Value) return CommandResult.Fail("guiding: " + started.Error.Text);
+        bool dither;
+        lock (_scopeGate) dither = _def.DitherEvery.Value > 0 && _roundsSinceDither >= _def.DitherEvery.Value;
+        await SetScope(s => s.Phase = dither ? "Dithering" : "Guiding");
+        double timeout = Math.Max(10, _def.SettleTimeoutSeconds.Value);
+        var r = await Commands.CallAsync(_node, GuiderIds.Dither(_guiderId), new DitherRequest
+        {
+            Pixels = dither ? _def.DitherPixels.Value : 0, SettlePixels = _def.SettlePixels.Value, SettleSeconds = _def.SettleSeconds.Value, TimeoutSeconds = timeout,
+        }, TimeSpan.FromSeconds(timeout + 30));
+        if (dither) lock (_scopeGate) _roundsSinceDither = 0;
+        if (r.Ok.Value) return CommandResult.Success();
+        if (_guider.Latest is { Phase.Text: "Guiding" }) { _guideNote = r.Error.Text; return CommandResult.Success(); }
+        return CommandResult.Fail("guiding: " + r.Error.Text);
+    }
+
     // ---- Shooter interface ------------------------------------------------------------------------------------
+
+    /// <summary>The Expose command: unguided scopes expose at once; guided ones answer "accepted" and expose once
+    /// guiding has settled (the frames, as always, arrive as shot events).</summary>
+    private async Task<CommandResult> ExposeCommandAsync(ShooterExposure e)
+    {
+        if (_shooters.Count == 0) return CommandResult.Fail($"scope {_id} has no shooter");
+        if (_guider is null) return await ExposeAsync(e);
+        _ = Task.Run(async () =>
+        {
+            var r = await ExposeGuidedAsync(e);
+            if (!r.Ok.Value) await SetScope(s => s.Message = r.Error.Text);
+        });
+        return CommandResult.Success();
+    }
+
+    private async Task<CommandResult> ExposeGuidedAsync(ShooterExposure e)
+    {
+        await _exposeLock.WaitAsync();
+        try
+        {
+            var g = await PrepareGuidedAsync();
+            if (!g.Ok.Value) return g;
+            var r = await ExposeAsync(e);
+            if (r.Ok.Value) lock (_scopeGate) _roundsSinceDither++;
+            return r;
+        }
+        finally { _exposeLock.Release(); }
+    }
 
     private async Task<CommandResult> ExposeAsync(ShooterExposure e)
     {
@@ -193,6 +283,7 @@ public sealed class SmartScope : IAsyncDisposable
             _observe = new CancellationTokenSource();
             _tag = (r.ObjectName.Text, r.PlanId.Text);
             _scope = new ScopeState { Phase = "Pointing", Observing = true, ShotsPlanned = r.Count.Value, ShotsDone = 0 };
+            _guideNote = "";
         }
         var cts = _observe;
         _observeTask = Task.Run(() => RunObserveAsync(r, cts!));
@@ -222,9 +313,9 @@ public sealed class SmartScope : IAsyncDisposable
             {
                 ct.ThrowIfCancellationRequested();
                 while (_shots.CurrentCount > 0) _shots.Wait(0); // forget frames from before this round
-                await SetScope(s => s.Phase = "Exposing");
-                var ex = await ExposeAsync(r.Exposure);
+                var ex = _guider is null ? await ExposeAsync(r.Exposure) : await ExposeGuidedAsync(r.Exposure);
                 if (!ex.Ok.Value) throw new InvalidOperationException(ex.Error.Text);
+                await SetScope(s => { s.Phase = "Exposing"; s.Message = _guideNote; });
                 var roundTimeout = TimeSpan.FromSeconds(r.Exposure.Seconds.Value + 180);
                 for (int k = 0; k < perRound; k++)
                     if (!await _shots.WaitAsync(roundTimeout, ct)) throw new TimeoutException("a frame did not arrive in time");
@@ -240,7 +331,8 @@ public sealed class SmartScope : IAsyncDisposable
         {
             lock (_scopeGate) { _observe = null; _tag = ("", ""); }
             cts.Dispose();
-            await SetScope(s => { s.Observing = false; s.Phase = endPhase; s.Message = endMessage; });
+            string note = endMessage != "" ? endMessage : _guideNote;   // a guiding warning outlives a successful run
+            await SetScope(s => { s.Observing = false; s.Phase = endPhase; s.Message = note; });
         }
     }
 
@@ -262,6 +354,7 @@ public sealed class SmartScope : IAsyncDisposable
         try { _observe?.Cancel(); } catch (ObjectDisposedException) { }
         if (_observeTask is not null) await Task.WhenAny(_observeTask, Task.Delay(2000));
         _commands.Dispose(); _pointerPub.Dispose(); _shooterPub.Dispose(); _scopePub.Dispose();
+        _guider?.Dispose();
         foreach (var p in _pointers) p.State.Dispose();
         foreach (var s in _shooters)
         {
