@@ -16,6 +16,8 @@ public class MountState : IBinaryConvertible
     public BinaryConvertibleBool Parked { get; set; } = false;
     public BinaryConvertibleString PierSide { get; set; } = "Unknown";
     public BinaryConvertibleString Message { get; set; } = "";
+    public BinaryConvertibleDouble TargetRaHours { get; set; } = double.NaN;
+    public BinaryConvertibleDouble TargetDecDegrees { get; set; } = double.NaN;
 
     public override string Name => "MountState";
     private static readonly NOTESDescriptor d = new();
@@ -31,6 +33,8 @@ public class MountState : IBinaryConvertible
         d.RegisterField("Parked", (MountState x) => x.Parked);
         d.RegisterField("PierSide", (MountState x) => x.PierSide).Description("East | West | Unknown");
         d.RegisterField("Message", (MountState x) => x.Message).Description("last problem or note, empty if none");
+        d.RegisterField("TargetRaHours", (MountState x) => x.TargetRaHours).Description("where the mount was last told to go (by anyone: ELink, a hand controller, other software), in Epoch; NaN if the mount does not say");
+        d.RegisterField("TargetDecDegrees", (MountState x) => x.TargetDecDegrees);
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();

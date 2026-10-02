@@ -171,3 +171,117 @@ public sealed class FakeRotator : IAsyncDisposable
 
     public ValueTask DisposeAsync() { _cmds.Dispose(); _pub.Dispose(); return ValueTask.CompletedTask; }
 }
+
+/// <summary>A mount with a real pointing error: it reports R = X + e for its true axis X. Goto(T) makes R = T; Sync(S) sets what it
+/// reports without moving it (e = S − X). With <see cref="SyncDoesNotHelp"/> it behaves like the INDI simulator, whose field follows
+/// whatever it reports, so a sync shifts the field too and only aiming off can correct.</summary>
+public sealed class FakeMount : IAsyncDisposable
+{
+    private readonly TypeSafeEVentNode _node;
+    private readonly string _id;
+    private readonly CommandSet _cmds;
+    private readonly StatePublisher<MountState> _pub;
+    private readonly object _gate = new();
+    public (double Ra, double Dec) Reported = (5, 10);
+    public (double E, double N) ErrorDeg;             // pointing error: true = reported shifted by -error (tangent plane)
+    public (double Ra, double Dec)? Target;
+    public string Phase = "Tracking";
+    public string PierSide = "West";
+    public bool SyncDoesNotHelp;
+    public int Gotos, Syncs;
+
+    public FakeMount(TypeSafeEVentNode node, string id)
+    {
+        _node = node; _id = id; _cmds = new CommandSet(node);
+        _pub = new(node, EquipmentIds.State(DeviceKinds.Mount, id), EquipmentIds.GetState(DeviceKinds.Mount, id), () =>
+        {
+            lock (_gate) return new MountState
+            {
+                Connected = true, RaHours = Reported.Ra, DecDegrees = Reported.Dec, Epoch = "J2000", Phase = Phase, Tracking = Phase == "Tracking", PierSide = PierSide,
+                TargetRaHours = Target?.Ra ?? double.NaN, TargetDecDegrees = Target?.Dec ?? double.NaN,
+            };
+        });
+    }
+
+    /// <summary>Where the mount really points.</summary>
+    public (double Ra, double Dec) True { get { lock (_gate) return ELink.Core.Astro.Gnomonic.ToSky(Reported.Ra, Reported.Dec, -ErrorDeg.E, -ErrorDeg.N); } }
+
+    public async Task StartAsync()
+    {
+        await _cmds.AddAsync<SkyTarget, CommandResult>(EquipmentIds.Command(DeviceKinds.Mount, _id, "Goto"), async t =>
+        {
+            Interlocked.Increment(ref Gotos);
+            await SlewAsync(t.RaHours.Value, t.DecDegrees.Value);
+            return CommandResult.Success();
+        }, "fake goto");
+        await _cmds.AddAsync<SkyTarget, CommandResult>(EquipmentIds.Command(DeviceKinds.Mount, _id, "Sync"), async t =>
+        {
+            Interlocked.Increment(ref Syncs);
+            lock (_gate)
+            {
+                if (!SyncDoesNotHelp)
+                {
+                    // "you are at S": keep the true axis, change what is reported
+                    (double Ra, double Dec) truth = ELink.Core.Astro.Gnomonic.ToSky(Reported.Ra, Reported.Dec, -ErrorDeg.E, -ErrorDeg.N);
+                    var (e, n) = ELink.Core.Astro.Gnomonic.FromSky(truth.Ra, truth.Dec, t.RaHours.Value, t.DecDegrees.Value);
+                    ErrorDeg = (e, n);
+                }
+                Reported = (t.RaHours.Value, t.DecDegrees.Value);
+            }
+            await _pub.PublishAsync();
+            return CommandResult.Success();
+        }, "fake sync");
+        await _pub.StartAsync();
+    }
+
+    /// <summary>Like pressing goto on a hand controller: the mount moves; ELink did not ask for it.</summary>
+    public Task HandControllerGotoAsync(double ra, double dec) => SlewAsync(ra, dec);
+
+    private async Task SlewAsync(double ra, double dec)
+    {
+        lock (_gate) { Target = (ra, dec); Phase = "Slewing"; }
+        await _pub.PublishAsync();
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(60);
+            lock (_gate) { Reported = (ra, dec); Phase = "Tracking"; }
+            await _pub.PublishAsync();
+        });
+    }
+
+    public Task PublishAsync() => _pub.PublishAsync();
+    public ValueTask DisposeAsync() { _cmds.Dispose(); _pub.Dispose(); return ValueTask.CompletedTask; }
+}
+
+/// <summary>A plate solver that knows where each camera really looks: the guide scope along the mount's true axis, the primary at a
+/// fixed offset from it (turned over on the other pier side).</summary>
+public sealed class FakeSolver : IAsyncDisposable
+{
+    private readonly CommandSet _cmds;
+    private readonly FakeMount _mount;
+    public string GuideId = "guide", PrimaryId = "main";
+    public (double E, double N) PrimaryOffsetDeg;     // on the West pier side
+    public (double E, double N) SimLikeFieldShiftDeg; // with SyncDoesNotHelp: the field is the reported position shifted by this
+    public bool Fail;
+    public int Solves;
+
+    public FakeSolver(TypeSafeEVentNode node, FakeMount mount) { _mount = mount; _cmds = new CommandSet(node); }
+
+    public Task StartAsync() => _cmds.AddAsync<ELink.Contracts.Automation.SolveRequest, ELink.Contracts.Automation.SolveResult>(ELink.Contracts.Automation.SolveIds.Solve, r =>
+    {
+        Interlocked.Increment(ref Solves);
+        if (Fail) return Task.FromResult(new ELink.Contracts.Automation.SolveResult { Message = "no solution" });
+        (double Ra, double Dec) axis = _mount.SyncDoesNotHelp
+            ? ELink.Core.Astro.Gnomonic.ToSky(_mount.Reported.Ra, _mount.Reported.Dec, SimLikeFieldShiftDeg.E, SimLikeFieldShiftDeg.N)
+            : _mount.True;
+        var at = axis;
+        if (r.ShooterId.Text == PrimaryId)
+        {
+            double s = _mount.PierSide == "East" ? -1 : 1;
+            at = ELink.Core.Astro.Gnomonic.ToSky(axis.Ra, axis.Dec, s * PrimaryOffsetDeg.E, s * PrimaryOffsetDeg.N);
+        }
+        return Task.FromResult(new ELink.Contracts.Automation.SolveResult { Solved = true, RaHours = at.Ra, DecDegrees = at.Dec, ShooterId = r.ShooterId.Text });
+    }, "fake solver");
+
+    public ValueTask DisposeAsync() { _cmds.Dispose(); return ValueTask.CompletedTask; }
+}

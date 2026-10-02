@@ -15,9 +15,18 @@ namespace ELink.Tests.Compose;
 
 /// <summary>INDI simulators -> bridge node -> composition host node -> consumer node: three EVent nodes that know each other
 /// only through IDs and contract types. A smart scope built from a simulated mount, camera and filter wheel runs an Observe.</summary>
-[Collection("indiserver")]
-public class FullStackTests(IndiServerFixture server)
+public class FullStackTests : IAsyncLifetime
 {
+    // its own simulator server: the scope's slew and filter checks must not inherit other tests' mount and wheel state
+    private IndiServerProcess _server = null!;
+    private IndiServerProcess server => _server;
+    public async Task InitializeAsync()
+    {
+        _server = new IndiServerProcess(ELink.Testing.TestPorts.Next(), "indi_simulator_telescope", "indi_simulator_ccd", "indi_simulator_wheel");
+        Assert.True(await _server.WaitListeningAsync());
+    }
+    public Task DisposeAsync() { _server.Dispose(); return Task.CompletedTask; }
+
     private static int FreePort() => ELink.Testing.TestPorts.Next();
 
     private static async Task<bool> Eventually(Func<bool> cond, int ms = 20000)
@@ -30,7 +39,6 @@ public class FullStackTests(IndiServerFixture server)
     [Fact]
     public async Task SmartScopeFromSimulatorsObserves()
     {
-        Assert.True(server.Available);
         int bridgePort = FreePort();
         using var bridge = ElinkNode.Create("FS-Bridge", bridgePort);
         var dir = new DeviceDirectory(bridge); await dir.StartAsync();

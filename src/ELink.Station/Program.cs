@@ -61,6 +61,16 @@ await using var autofocus = new AutofocusService(node);
 await autofocus.StartAsync();
 await using var sequencer = new SequencerService(node);
 await sequencer.StartAsync();
+PlateSolveService? solver = null;
+if (PlateSolver.Locate() is { } solveField)
+{
+    solver = new PlateSolveService(node, new PlateSolver(solveField));
+    await solver.StartAsync();
+    Console.WriteLine($"plate solving: {solveField}");
+}
+else Console.WriteLine("plate solving: solve-field not found (install astrometry.net, or set ELINK_SOLVE_FIELD)");
+await using var centering = new CenteringService(node, Path.Combine(Path.GetDirectoryName(compose)!, "centering.json"));
+await centering.StartAsync();
 await using var mosaic = new MosaicService(node);
 await mosaic.StartAsync();
 await using var storage = new StorageService(node, saveDir);
@@ -102,4 +112,5 @@ else
 }
 foreach (var l in links) await l.DisposeAsync();
 if (atlas is not null) await atlas.DisposeAsync();
+if (solver is not null) await solver.DisposeAsync();
 return exit;

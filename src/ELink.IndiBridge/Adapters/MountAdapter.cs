@@ -26,6 +26,9 @@ public sealed class MountAdapter(AdapterContext ctx) : IndiDeviceAdapter<MountSt
         {
             s.RaHours = coords.Number("RA"); s.DecDegrees = coords.Number("DEC"); s.Epoch = c!.Value.Epoch;
         }
+        // the mount's own target: set by whoever commanded the slew (ELink, a hand controller, Ekos)
+        if (P("TARGET_EOD_COORD") is { } target && (c?.Epoch ?? "JNow") == "JNow" && !(target.Number("RA") == 0 && target.Number("DEC") == 0))
+        { s.TargetRaHours = target.Number("RA"); s.TargetDecDegrees = target.Number("DEC"); }
         var track = P("TELESCOPE_TRACK_STATE");
         s.Tracking = track?.Switch("TRACK_ON") ?? false;
         var park = P("TELESCOPE_PARK");

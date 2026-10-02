@@ -21,7 +21,7 @@ public class ArchitectureTests
     [Fact]
     public void BackendAssembliesReferenceNoUi()
     {
-        foreach (var t in new[] { typeof(ELink.IndiBridge.IndiServerLink), typeof(ELink.Compose.SmartScope), typeof(ELink.Automation.SequencerService), typeof(ELink.Atlas.AtlasService), typeof(ELink.Stellarium.StellariumService) })
+        foreach (var t in new[] { typeof(ELink.IndiBridge.IndiServerLink), typeof(ELink.Compose.SmartScope), typeof(ELink.Automation.SequencerService), typeof(ELink.Atlas.AtlasService), typeof(ELink.Stellarium.StellariumService), typeof(ELink.Automation.CenteringService) })
         {
             var refs = t.Assembly.GetReferencedAssemblies().Select(a => a.Name).ToHashSet();
             Assert.DoesNotContain("ELink.UI", refs);

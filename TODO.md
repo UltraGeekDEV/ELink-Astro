@@ -70,7 +70,8 @@ ID scheme: `ELink.<Kind>.<DeviceName>.<Thing>` e.g. `ELink.Camera.CCD_Simulator.
 - [x] Per-shooter offsets (primary shooter is centred on target); pointing model hooks still open
 
 ### Phase 4 — Automation
-- [ ] Plate solve service (astrometry.net / ASTAP via EVent function), center-on-target
+- [x] Plate solve service (astrometry.net, unpacked in user space; any FITS or a shot from any Shooter)
+- [x] Automatic centring after every slew (also hand controller / other software): solve the guide camera, sync + reslew (aim off when syncs do not help), learned guide-to-primary offset per pier side
 - [x] Autofocus (HFR star measurement, hyperbola/parabola fit, coarse + fine sweeps) as a mesh service
 - [x] Mosaic painter: virtual FOV as a coverage map of exposure seconds; heterogeneous rotated frames, rotator passes, small-stepover raster passes + greedy top-up, producer/executor/recorder pipeline, live dRPC control
 - [ ] Meridian flip (deferred), dithering, guiding (PHD2/INDI guider) as modules

@@ -67,6 +67,9 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         var skyCatalog = File.Exists("/usr/share/kstars/namedstars.dat") ? await Task.Run(() => AtlasCatalog.LoadKStars())
             : AtlasCatalog.From(new List<CatalogStar> { new(5.92, 7.41, 0.45f, 1.85f, 39801, "Betelgeuse") }, new List<CatalogDso> { new("M 42", "Nebula", "Orion Nebula, NGC 1976", 5.588, -5.39, 4f, 90, 60, 0) });
         await using var atlasSvc = new AtlasService(hostNode, skyCatalog); await atlasSvc.StartAsync();
+        await using var centeringSvc = new CenteringService(hostNode); await centeringSvc.StartAsync();
+        PlateSolveService? solveSvc = PlateSolver.Locate() is { } sf ? new PlateSolveService(hostNode, new PlateSolver(sf)) : null;
+        if (solveSvc is not null) await solveSvc.StartAsync();
         string saveDir = Path.Combine(Path.GetTempPath(), "elink-ui-save-" + Guid.NewGuid().ToString("N"));
         await using var storage = new StorageService(hostNode, saveDir); await storage.StartAsync();
 
@@ -210,6 +213,21 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         atlas.PickCommand.Execute((5.9195, 7.4071, 40.0));
         Assert.Equal("Betelgeuse", atlas.Selection!.Label);
         Shot(window, "07e-atlas");
+
+        // centring: configure through the UI, solve a guide frame (the simulator has no optics set here, so it may not solve: the log says either way)
+        var centering = vm.Centering;
+        Assert.True(await Eventually(() => centering.Mounts.Contains("Telescope_Simulator") && centering.Shooters.Contains("cam")));
+        centering.MountId = "Telescope_Simulator"; centering.GuideShooter = "cam"; centering.PrimaryShooter = "cam"; centering.Enabled = false; centering.ExposureSeconds = 1;
+        await centering.ApplyCommand.ExecuteAsync(null);
+        Assert.Equal("saved", centering.Message);
+        if (solveSvc is not null)
+        {
+            await centering.SolveGuideCommand.ExecuteAsync(null);
+            Assert.True(await Eventually(() => centering.Solves.Count >= 1, 120000), centering.Message);
+        }
+        vm.SelectedTab = vm.Tabs.First(t => t.Content is CenteringViewModel);
+        Shot(window, "07f-centring");
+        if (solveSvc is not null) await solveSvc.DisposeAsync();
 
         // generic INDI browser
         vm.SelectedTab = vm.Tabs.First(t => t.Content is IndiBrowserViewModel);
