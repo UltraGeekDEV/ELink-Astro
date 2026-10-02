@@ -93,7 +93,9 @@ public class FullStackTests : IAsyncLifetime
         Assert.True(await Eventually(() => shot is not null));
         Assert.StartsWith("SIMPLE", System.Text.Encoding.ASCII.GetString(shot!.Data.Data, 0, 6));
         Assert.Equal("Blue", shot.Filter.Text);
-        Assert.Equal(3.0, shot.PointingRaHours.Value, 2);      // J2000 pointing at the time of the frame (mount speaks JNow, converted back)
-        Assert.Equal(40.0, shot.PointingDecDegrees.Value, 2);
+        // J2000 pointing at the time of the frame (the mount speaks JNow, converted back): where the mount really is, which
+        // for the simulator can be a few arcminutes from where it was sent (centring corrects that on real rigs)
+        Assert.True(ELink.Core.Astro.Sky.SeparationDegrees(shot.PointingRaHours.Value, shot.PointingDecDegrees.Value, 3.0, 40.0) * 60 < 6,
+            $"shot pointing {shot.PointingRaHours.Value} {shot.PointingDecDegrees.Value}");
     }
 }

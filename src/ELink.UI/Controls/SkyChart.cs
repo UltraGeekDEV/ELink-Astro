@@ -15,6 +15,10 @@ public sealed record ChartLabel(string Text, float RaHours, float DecDegrees);
 /// <summary>A reticle (mount, scope) or the selection ring.</summary>
 public sealed record ChartMarker(double RaHours, double DecDegrees, string Label, Color Color, bool IsSelection = false);
 /// <summary>An outline on the sky, e.g. a mosaic area or frame footprints.</summary>
+/// <summary>The local horizon as a line on the sky (J2000), with N/E/S/W labels.</summary>
+public sealed record ChartHorizon(IReadOnlyList<(double RaHours, double DecDegrees)> Line, IReadOnlyList<ChartLabel> Cardinals);
+/// <summary>Sun, Moon or a planet: a disc with a name.</summary>
+public sealed record ChartBody(double RaHours, double DecDegrees, string Label, Color Color, double Radius);
 public sealed record ChartPolygon(IReadOnlyList<(double RaHours, double DecDegrees)> Corners, Color Color, string Label = "");
 
 /// <summary>An interactive sky chart: drag to pan, wheel to zoom, click to pick. It only draws what it is given (stars, deep-sky
@@ -30,6 +34,8 @@ public sealed class SkyChart : Control
     public static readonly StyledProperty<IReadOnlyList<ChartSegment>?> LinesProperty = AvaloniaProperty.Register<SkyChart, IReadOnlyList<ChartSegment>?>(nameof(Lines));
     public static readonly StyledProperty<IReadOnlyList<ChartLabel>?> LabelsProperty = AvaloniaProperty.Register<SkyChart, IReadOnlyList<ChartLabel>?>(nameof(Labels));
     public static readonly StyledProperty<IReadOnlyList<ChartMarker>?> MarkersProperty = AvaloniaProperty.Register<SkyChart, IReadOnlyList<ChartMarker>?>(nameof(Markers));
+    public static readonly StyledProperty<ChartHorizon?> HorizonProperty = AvaloniaProperty.Register<SkyChart, ChartHorizon?>(nameof(Horizon));
+    public static readonly StyledProperty<IReadOnlyList<ChartBody>?> BodiesProperty = AvaloniaProperty.Register<SkyChart, IReadOnlyList<ChartBody>?>(nameof(Bodies));
     public static readonly StyledProperty<IReadOnlyList<ChartPolygon>?> PolygonsProperty = AvaloniaProperty.Register<SkyChart, IReadOnlyList<ChartPolygon>?>(nameof(Polygons));
     public static readonly StyledProperty<ICommand?> PickCommandProperty = AvaloniaProperty.Register<SkyChart, ICommand?>(nameof(PickCommand));
     public static readonly StyledProperty<bool> ShowGridProperty = AvaloniaProperty.Register<SkyChart, bool>(nameof(ShowGrid), true);
@@ -45,6 +51,8 @@ public sealed class SkyChart : Control
     public IReadOnlyList<ChartLabel>? Labels { get => GetValue(LabelsProperty); set => SetValue(LabelsProperty, value); }
     public IReadOnlyList<ChartMarker>? Markers { get => GetValue(MarkersProperty); set => SetValue(MarkersProperty, value); }
     public IReadOnlyList<ChartPolygon>? Polygons { get => GetValue(PolygonsProperty); set => SetValue(PolygonsProperty, value); }
+    public ChartHorizon? Horizon { get => GetValue(HorizonProperty); set => SetValue(HorizonProperty, value); }
+    public IReadOnlyList<ChartBody>? Bodies { get => GetValue(BodiesProperty); set => SetValue(BodiesProperty, value); }
     /// <summary>Executed with a (RaHours, DecDegrees, PixelsPerDegree) tuple when the user clicks without dragging.</summary>
     public ICommand? PickCommand { get => GetValue(PickCommandProperty); set => SetValue(PickCommandProperty, value); }
     public bool ShowGrid { get => GetValue(ShowGridProperty); set => SetValue(ShowGridProperty, value); }
@@ -53,7 +61,7 @@ public sealed class SkyChart : Control
     static SkyChart()
     {
         AffectsRender<SkyChart>(CenterRaProperty, CenterDecProperty, FovProperty, StarsProperty, DsosProperty, LinesProperty, LabelsProperty,
-            MarkersProperty, PolygonsProperty, ShowGridProperty, ShowConstellationsProperty, StarLimitProperty);
+            MarkersProperty, PolygonsProperty, HorizonProperty, BodiesProperty, ShowGridProperty, ShowConstellationsProperty, StarLimitProperty);
         FocusableProperty.OverrideDefaultValue<SkyChart>(true);
     }
 
@@ -120,6 +128,8 @@ public sealed class SkyChart : Control
         if (ShowConstellations) DrawConstellations(ctx, proj);
         DrawDsos(ctx, proj);
         DrawStars(ctx, proj);
+        DrawBodies(ctx, proj);
+        DrawHorizon(ctx, proj);
         DrawPolygons(ctx, proj);
         DrawMarkers(ctx, proj);
         DrawScale(ctx, proj);
@@ -230,6 +240,30 @@ public sealed class SkyChart : Control
             double r = StarRadius(s.Magnitude, limit);
             ctx.DrawEllipse(brush, null, new Point(x, y), r, r);
             if (s.Label != "" && (s.Magnitude < 2.2 || (Fov < 40 && s.Magnitude < 4.5) || Fov < 12)) Text(ctx, s.Label, x + r + 2, y - 6, StarText, 10);
+        }
+    }
+
+    private static readonly IPen HorizonPen = new Pen(new SolidColorBrush(Color.FromArgb(220, 120, 200, 90)), 2.2);
+    private static readonly IBrush HorizonText = new SolidColorBrush(Color.FromArgb(230, 150, 220, 110));
+
+    private void DrawHorizon(DrawingContext ctx, SkyProjection proj)
+    {
+        if (Horizon is not { } h) return;
+        Polyline(ctx, proj, HorizonPen, h.Line);
+        foreach (var l in h.Cardinals)
+            if (proj.TryProject(l.RaHours, l.DecDegrees, out var x, out var y) && Visible(x, y)) Text(ctx, l.Text, x - 5, y - 18, HorizonText, 14);
+    }
+
+    private void DrawBodies(DrawingContext ctx, SkyProjection proj)
+    {
+        if (Bodies is not { } bodies) return;
+        foreach (var b in bodies)
+        {
+            if (!proj.TryProject(b.RaHours, b.DecDegrees, out var x, out var y) || !Visible(x, y)) continue;
+            // the true disc when zoomed in far enough, else a symbol
+            double r = Math.Max(b.Radius * proj.PixelsPerDegree, 4.5);
+            ctx.DrawEllipse(new SolidColorBrush(b.Color, 0.9), new Pen(Brushes.Black, 0.5), new Point(x, y), r, r);
+            Text(ctx, b.Label, x + r + 3, y - 7, new SolidColorBrush(b.Color), 12);
         }
     }
 

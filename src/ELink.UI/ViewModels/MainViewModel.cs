@@ -28,6 +28,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public AtlasViewModel Atlas { get; }
     public CenteringViewModel Centering { get; }
     public LiveStackViewModel LiveStack { get; }
+    public SiteViewModel Site { get; }
 
     public ObservableCollection<WorkspaceTab> Tabs { get; } = new();
     [ObservableProperty] private WorkspaceTab? _selectedTab;
@@ -51,8 +52,10 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Atlas = new AtlasViewModel(mesh, Catalog, Mosaic);
         Centering = new CenteringViewModel(mesh, Catalog);
         LiveStack = new LiveStackViewModel(mesh, Catalog, Mosaic);
+        Site = new SiteViewModel(mesh, Catalog);
         Tabs.Add(new WorkspaceTab("Compose", Composer, false));
         Tabs.Add(new WorkspaceTab("Sky atlas", Atlas, false));
+        Tabs.Add(new WorkspaceTab("Site", Site, false));
         Tabs.Add(new WorkspaceTab("Centring", Centering, false));
         Tabs.Add(new WorkspaceTab("Mosaic", Mosaic, false));
         Tabs.Add(new WorkspaceTab("Live stack", LiveStack, false));
@@ -74,6 +77,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         await Atlas.StartAsync();
         await Centering.StartAsync();
         await LiveStack.StartAsync();
+        await Site.StartAsync();
         await IndiBrowser.RefreshServersAsync();
     }
 
@@ -136,6 +140,6 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public void Dispose()
     {
         foreach (var t in Tabs) (t.Content as IDisposable)?.Dispose();
-        Catalog.Dispose(); IndiBrowser.Dispose(); Autofocus.Dispose(); Sequencer.Dispose(); Storage.Dispose(); Mosaic.Dispose(); Atlas.Dispose(); Centering.Dispose(); LiveStack.Dispose(); Mesh.Dispose();
+        Catalog.Dispose(); IndiBrowser.Dispose(); Autofocus.Dispose(); Sequencer.Dispose(); Storage.Dispose(); Mosaic.Dispose(); Atlas.Dispose(); Centering.Dispose(); LiveStack.Dispose(); Site.Dispose(); Mesh.Dispose();
     }
 }

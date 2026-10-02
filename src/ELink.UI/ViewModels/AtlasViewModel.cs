@@ -6,6 +6,7 @@ using CommunityToolkit.Mvvm.Input;
 using ELink.Contracts.Atlas;
 using ELink.Contracts.Composition;
 using ELink.Contracts.Equipment;
+using ELink.Contracts.Site;
 using ELink.Core;
 using ELink.Core.Astro;
 using ELink.UI.Controls;
@@ -34,6 +35,10 @@ public sealed partial class AtlasViewModel : ObservableObject, IDisposable
     private Action<AtlasHit>? _stellariumSelected;
     private CancellationTokenSource? _pending;
     private int _queries;
+    private Follower<SiteState>? _site;
+    private SiteState? _siteState;
+    private Timer? _skyTimer;
+    private List<SkyBody> _bodyList = new();
 
     public AtlasViewModel(MeshSession mesh, CatalogViewModel catalog, MosaicViewModel? mosaic = null)
     {
@@ -58,6 +63,10 @@ public sealed partial class AtlasViewModel : ObservableObject, IDisposable
     [ObservableProperty] private IReadOnlyList<ChartLabel> _labels = Array.Empty<ChartLabel>();
     [ObservableProperty] private IReadOnlyList<ChartMarker> _markers = Array.Empty<ChartMarker>();
     [ObservableProperty] private IReadOnlyList<ChartPolygon> _polygons = Array.Empty<ChartPolygon>();
+    [ObservableProperty] private ChartHorizon? _horizon;
+    [ObservableProperty] private IReadOnlyList<ChartBody> _bodies = Array.Empty<ChartBody>();
+    [ObservableProperty] private bool _showHorizon = true;
+    [ObservableProperty] private string _visibilityText = "";
     // search and selection
     [ObservableProperty] private string _searchText = "";
     public ObservableCollection<AtlasHitItem> Results { get; } = new();
@@ -100,9 +109,91 @@ public sealed partial class AtlasViewModel : ObservableObject, IDisposable
         _stellariumSelected = hit => UiThread.Post(() => StellariumOffer = hit.Label.Text != "" ? $"Stellarium selected {hit.Label.Text}" : "");
         await _mesh.Node.HookEventAsync(StellariumIds.Selected, _stellariumSelected, "atlas: Stellarium selection");
 
+        _site = new Follower<SiteState>(_mesh.Node, SiteIds.State(SiteIds.Default), SiteIds.GetState(SiteIds.Default), s =>
+        {
+            _siteState = s;
+            RebuildHorizon();
+            _ = RefreshBodiesAsync();
+        });
+        await _site.StartAsync();
+        _skyTimer = new Timer(_ => UiThread.Post(() => { RebuildHorizon(); _ = RefreshBodiesAsync(); }), null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
+
         await FollowEquipmentAsync();
         UpdateOverlays();
+        await RefreshBodiesAsync();
         await RefreshAsync();
+    }
+
+    // ---- the site: horizon, Sun, Moon and planets ------------------------------------------------------------------
+
+    private GeoSite? Site => _siteState is { Known.Value: true } s
+        ? new GeoSite(s.Config.LatitudeDegrees.Value, s.Config.LongitudeDegrees.Value, s.Config.ElevationMeters.Value) : null;
+
+    partial void OnShowHorizonChanged(bool value) => RebuildHorizon();
+
+    /// <summary>The site's horizon (flat minimum and profile) as it lies on the sky right now.</summary>
+    private void RebuildHorizon()
+    {
+        if (!ShowHorizon || Site is not { } site || _siteState is not { } st) { Horizon = null; return; }
+        var now = DateTime.UtcNow;
+        var profile = st.Config.Horizon.Select(p => (p.AzimuthDegrees.Value, p.AltitudeDegrees.Value)).ToList();
+        (double, double) J2000(double alt, double az)
+        {
+            var (ra, dec) = ELink.Core.Astro.Horizon.FromAltAz(alt, az, now, site);
+            return Precession.DateToJ2000(ra, dec, now);
+        }
+        var line = Enumerable.Range(0, 361).Select(az => J2000(ELink.Core.Astro.Horizon.ProfileAltitude(st.Config.MinAltitudeDegrees.Value, profile, az), az)).ToList();
+        var cardinals = new[] { ("N", 0.0), ("E", 90.0), ("S", 180.0), ("W", 270.0) }
+            .Select(c => { var (ra, dec) = J2000(ELink.Core.Astro.Horizon.ProfileAltitude(st.Config.MinAltitudeDegrees.Value, profile, c.Item2), c.Item2); return new ChartLabel(c.Item1, (float)ra, (float)dec); }).ToList();
+        Horizon = new ChartHorizon(line, cardinals);
+    }
+
+    private static readonly Dictionary<string, (Color Color, double Radius)> BodyLook = new()
+    {
+        ["Sun"] = (Color.FromRgb(255, 220, 90), 0.267), ["Moon"] = (Color.FromRgb(225, 225, 210), 0.259),
+        ["Mercury"] = (Color.FromRgb(200, 190, 180), 0), ["Venus"] = (Color.FromRgb(255, 250, 220), 0), ["Mars"] = (Color.FromRgb(255, 130, 90), 0),
+        ["Jupiter"] = (Color.FromRgb(240, 215, 170), 0), ["Saturn"] = (Color.FromRgb(230, 210, 140), 0),
+        ["Uranus"] = (Color.FromRgb(170, 230, 240), 0), ["Neptune"] = (Color.FromRgb(120, 150, 255), 0),
+    };
+
+    private async Task RefreshBodiesAsync()
+    {
+        try
+        {
+            var answers = await _mesh.Node.CallFunctionAsync<NOTESVoid, SkyBodies>(SiteIds.Bodies(SiteIds.Default), NOTESVoid.Void, TimeSpan.FromSeconds(10));
+            if (answers?.FirstOrDefault() is not { } b) return;
+            var list = b.Bodies.ToList();
+            var chart = list.Select(x =>
+            {
+                var look = BodyLook.TryGetValue(x.Label.Text, out var l) ? l : (Color.FromRgb(200, 200, 200), 0);
+                string label = x.Label.Text == "Moon" && !double.IsNaN(x.Illumination.Value) ? $"Moon {x.Illumination.Value * 100:0}%" : x.Label.Text;
+                return new ChartBody(x.RaHours.Value, x.DecDegrees.Value, label, look.Color, look.Radius);
+            }).ToList();
+            UiThread.Post(() => { _bodyList = list; Bodies = chart; });
+        }
+        catch (Exception) { }
+    }
+
+    /// <summary>Altitude now, and when the selection rises, culminates and sets, from the site service.</summary>
+    private async Task DescribeVisibilityAsync(AtlasHitItem item)
+    {
+        if (Site is null) { VisibilityText = _siteState is null ? "" : "set the site (Site tab) to see when this is up"; return; }
+        try
+        {
+            var answers = await _mesh.Node.CallFunctionAsync<ObservabilityRequest, ObservabilityResult>(SiteIds.Observability(SiteIds.Default),
+                new ObservabilityRequest { Target = new SkyTarget { RaHours = item.RaHours, DecDegrees = item.DecDegrees, Epoch = "J2000" } }, TimeSpan.FromSeconds(20));
+            if (answers?.FirstOrDefault() is not { Ok.Value: true } o) return;
+            static string Local(string iso) => iso == "" ? "" : DateTime.Parse(iso, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal).ToLocalTime().ToString("HH:mm");
+            var parts = new List<string> { $"now alt {o.Altitude.Value:0.0}°  az {o.Azimuth.Value:0}°" + (o.AboveHorizon.Value ? "" : " (below your horizon)") };
+            if (o.RiseUtc.Text != "") parts.Add("rises " + Local(o.RiseUtc.Text));
+            if (o.TransitUtc.Text != "") parts.Add($"culminates {Local(o.TransitUtc.Text)} at {o.TransitAltitude.Value:0}°");
+            if (o.SetUtc.Text != "") parts.Add("sets " + Local(o.SetUtc.Text));
+            if (o.Message.Text != "") parts.Add(o.Message.Text);
+            parts.Add($"{o.DarkHoursVisible.Value:0.#} h dark and up in the next 24 h");
+            parts.Add($"{o.MoonSeparationDegrees.Value:0}° from the Moon");
+            UiThread.Post(() => { if (Selection == item) VisibilityText = string.Join("  ·  ", parts); });
+        }
+        catch (Exception) { }
     }
 
     partial void OnCenterRaChanged(double value) => ScheduleRefresh();
@@ -231,6 +322,8 @@ public sealed partial class AtlasViewModel : ObservableObject, IDisposable
         SelectionText = $"{item.Label}  ·  {item.Kind}" + (float.IsNaN(item.Magnitude) ? "" : $"  ·  mag {item.Magnitude:0.##}") +
                         $"\nRA {Sexagesimal.Format(item.RaHours)}   Dec {Sexagesimal.Format(item.DecDegrees, 0)}  (J2000)" +
                         (item.MajorArcmin > 0 ? $"   size {item.MajorArcmin:0.#}'" : "") + (item.Detail != "" ? $"\n{item.Detail}" : "");
+        VisibilityText = "";
+        _ = DescribeVisibilityAsync(item);
         UpdateOverlays();
     }
 
@@ -239,8 +332,12 @@ public sealed partial class AtlasViewModel : ObservableObject, IDisposable
     {
         Results.Clear();
         if (SearchText.Trim() == "") return;
+        // the Sun, Moon and planets come from the site service (they move)
+        foreach (var b in _bodyList.Where(b => b.Label.Text.StartsWith(SearchText.Trim(), StringComparison.OrdinalIgnoreCase)))
+            Results.Add(new AtlasHitItem(b.Label.Text, b.Label.Text is "Sun" or "Moon" ? b.Label.Text : "Planet",
+                double.IsNaN(b.Altitude.Value) ? "" : $"alt {b.Altitude.Value:0}°", b.RaHours.Value, b.DecDegrees.Value, float.NaN, b.Label.Text is "Sun" or "Moon" ? 31 : 0));
         var answers = await _mesh.Node.CallFunctionAsync<BinaryConvertibleString, AtlasHits>(AtlasIds.Search, (BinaryConvertibleString)SearchText.Trim());
-        foreach (var h in answers?.FirstOrDefault()?.Hits ?? new())
+        foreach (var h in (answers?.FirstOrDefault()?.Hits ?? new()).Where(h => !Results.Any(r => r.Label == h.Label.Text)))
             Results.Add(new AtlasHitItem(h.Label.Text, h.Kind.Text, h.Detail.Text, h.RaHours.Value, h.DecDegrees.Value, h.Magnitude.value, h.MajorArcmin.value));
         Message = Results.Count == 0 ? $"nothing called '{SearchText}'" : "";
         if (Results.Count > 0) SelectedResult = Results[0];
@@ -320,7 +417,7 @@ public sealed partial class AtlasViewModel : ObservableObject, IDisposable
     {
         _pending?.Cancel();
         foreach (var f in _followers.Values) f.Dispose();
-        _stellarium?.Dispose();
+        _stellarium?.Dispose(); _site?.Dispose(); _skyTimer?.Dispose();
         if (_stellariumSelected is not null) { try { _mesh.Node.UnhookEvent(StellariumIds.Selected, _stellariumSelected); } catch (ObjectDisposedException) { } }
     }
 }

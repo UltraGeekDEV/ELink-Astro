@@ -86,6 +86,10 @@ public sealed class IndiClient : IAsyncDisposable
     public Task SetNumberAsync(string device, string property, string element, double value, CancellationToken ct = default) =>
         SetNumbersAsync(device, property, new[] { (element, value) }, ct);
 
+    public Task SetTextsAsync(string device, string property, IEnumerable<(string element, string value)> values, CancellationToken ct = default) =>
+        SendAsync(new IndiNew(IndiPropertyType.Text, device, property,
+            values.Select(v => new IndiNewElement(v.element, v.value)).ToImmutableArray()), ct);
+
     public Task SetTextAsync(string device, string property, string element, string value, CancellationToken ct = default) =>
         SendAsync(new IndiNew(IndiPropertyType.Text, device, property,
             ImmutableArray.Create(new IndiNewElement(element, value))), ct);

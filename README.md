@@ -11,6 +11,10 @@ C# / .NET 8, Avalonia UI.
 - **MVVM over EVent.** View models mirror device state events and send commands as function calls. The UI runs in its own
   process, joined to the mesh, or inside the all-in-one station on the node's local loopback.
 
+## Design
+
+Every smart scope (imaging train) is autonomous: guiding, dithering, centring, focus triggers and flips live inside it. The only top-level request is "this image of this part of the sky"; scopes pull work from it and fill the frame. See [the developer guide](docs/development.md#design-spec-autonomous-imaging-trains).
+
 ## Documentation
 
 - [User guide](docs/user-guide.md): running ELink and using every tab.
@@ -52,6 +56,8 @@ dotnet run --project src/ELink.App     -- --host 127.0.0.1 --port 5698
 **Focusers:** every INDI focuser is driven through the standard INDI focuser interface, the same properties Ekos uses (absolute, relative and timed moves, abort, sync, reverse, backlash, max travel, speed, temperature), so a ZWO EAF on `indi_asi_focuser`, a Moonlite, or anything else INDI supports works without vendor code. What a focuser can do is detected from the properties its driver defines.
 
 **Plate solving and centring:** astrometry.net's `solve-field` (system package, or unpacked in `~/.local/astrometry` without root; `ELINK_SOLVE_FIELD` overrides) solves any FITS or a fresh shot from any shooter. The centring service watches the mount's own target (`TARGET_EOD_COORD`), so a slew from a hand controller or other software counts as much as one from ELink: when it ends on a new target, the guide camera's frame is solved and the mount synced and re-slewed until within tolerance (or, for mounts whose syncs do not move the pointing, aimed off by the error). The guide scope and the primary need not be aligned: "Learn offset" solves both at one pointing; from then on the guide scope is aimed so the primary lands on the target, with the offset turned over after a meridian flip.
+
+**Site and time:** location typed in or from a GPS, a horizon profile, sidereal time, twilight, Sun, Moon and planets, and when any target is above your horizon (and for how much dark time); location and time are handed to the mounts.
 
 **Sky atlas:** an interactive chart (drag, wheel, click) built from the sky data KStars installs (`/usr/share/kstars`: about 43k stars to magnitude 8, 14k OpenNGC objects, constellation figures) plus faint stars from the GSC for small fields. Search (`M42`, `NGC 7000`, `Vega`, `andromeda`), see mounts where they point, send a pointer or scope to the selection, or make it the mosaic centre.
 

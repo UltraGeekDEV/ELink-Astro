@@ -22,6 +22,7 @@
     <DataTemplate DataType="vm:AtlasViewModel"><v:AtlasView/></DataTemplate>
     <DataTemplate DataType="vm:CenteringViewModel"><v:CenteringView/></DataTemplate>
     <DataTemplate DataType="vm:LiveStackViewModel"><v:LiveStackView/></DataTemplate>
+    <DataTemplate DataType="vm:SiteViewModel"><v:SiteView/></DataTemplate>
     <DataTemplate DataType="vm:IndiBrowserViewModel"><v:IndiBrowserView/></DataTemplate>
   </Application.DataTemplates>
 

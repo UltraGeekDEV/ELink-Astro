@@ -33,6 +33,32 @@ flowchart LR
 Dotted lines are mesh traffic, not references. `ArchitectureTests` fails the build if `ELink.UI` references any backend
 project.
 
+## Design spec: autonomous imaging trains
+
+The coupling ELink exists to remove is the one in Ekos / N.I.N.A., where one coordination layer drives guiding,
+dithering, centring, focusing and flips for every train.
+
+```mermaid
+flowchart TD
+    R["Request: this image of this part of the sky<br/>(area, depth, filters, output scale)"] --> Q[[work: spots still short of depth]]
+    Q -->|pull| A[Smart scope A]
+    Q -->|pull| B[Smart scope B]
+    subgraph A_inside[inside each scope]
+        G[guiding · dithering] --- C[centring] --- F[focus triggers] --- M[meridian flip] --- S[own safety reactions]
+    end
+    A --- A_inside
+    A -->|frames| L[Live stack = the requested image]
+    B -->|frames| L
+    Site[(site · time · weather · dome<br/>shared facts, consulted)] -.-> A & B
+```
+
+- A smart scope (imaging train) is **autonomous**: everything that keeps its own frames good lives inside it.
+- The only top-level request is "this image of this part of the sky". A single target is a small area; there is
+  no separate "direct" or "mosaic" mode. Scopes pull work producer/consumer style and are **not** kept in sync.
+- Shared facts (site, time, weather, dome) are services scopes consult. They never orchestrate scopes.
+
+The current `Observe` and `Mosaic` services predate this and are to be folded into the single request (see TODO.md).
+
 ## Projects
 
 ```mermaid
@@ -141,6 +167,7 @@ frame belongs to. Shooters have offsets (arcmin east/north of the pointing axis)
 | PlateSolve | — | shooter (optional) | wraps `solve-field`, one solve at a time |
 | Centering | mount state (incl. hand-controller slews) | mount, PlateSolve | sync + reslew, aim-off fallback, guide→primary offset |
 | LiveStack | any shooter's shots | PlateSolve (optional) | registers frames, resamples into a fixed sky grid |
+| Site | a GPS (optional) | mounts (location, time) | sidereal time, twilight, Sun/Moon/planets, observability with a horizon profile |
 | Atlas | — | — | KStars stars, OpenNGC, GSC, constellations, search |
 | Stellarium | a pointer | pointer | telescope protocol server + Remote Control client |
 
@@ -212,7 +239,9 @@ to the first frame's, per channel. Memory is 8 bytes per output pixel (16 in col
 All mesh coordinates are **J2000** unless a field says otherwise. INDI mounts speak JNow (`EQUATORIAL_EOD_COORD`);
 the mount adapter and `Precession` (IAU 1976) convert at the edge. `ELink.Core.Astro` has the shared math: `Sky`
 (separation, offsets), `Gnomonic` (tangent plane), `SkyProjection` (stereographic, north up, east left),
-`Sexagesimal`, `FieldOfView`, `Coverage`.
+`Sexagesimal`, `FieldOfView`, `Coverage`, `Horizon` (sidereal time, alt/az, rise/transit/set finder, horizon
+profiles) and `SolarSystem` (Sun: Meeus 25; Moon: main terms of Meeus 47; planets: JPL approximate elements;
+topocentric parallax), all checked against Meeus' worked examples and real 2024-25 events.
 
 ## Adding things
 

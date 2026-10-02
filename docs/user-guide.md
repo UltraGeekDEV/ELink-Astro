@@ -60,7 +60,7 @@ flowchart LR
         S[Smart scopes<br/>click to open, ✕ to close]
     end
     subgraph Tabs
-        T1[Compose] --- T2[Sky atlas] --- T3[Centring] --- T4[Mosaic] --- T4b[Live stack]
+        T1[Compose] --- T2[Sky atlas] --- T2b[Site] --- T3[Centring] --- T4[Mosaic] --- T4b[Live stack]
         T4b --- T5[Sequence] --- T6[Autofocus] --- T7[Storage] --- T8[INDI]
     end
     Left --- Tabs
@@ -78,6 +78,7 @@ Ekos does: absolute and relative moves, timed moves, abort, sync, reverse, backl
 
 ```mermaid
 flowchart TD
+    S0[Set the site once] --> A
     A[Compose a scope] --> B[Pick a target in the Sky atlas]
     B --> C[Go to selection]
     C --> D[Centring corrects automatically]
@@ -116,6 +117,19 @@ Coordinates are typed as `5:35:17` / `-5:23:28` or decimal; pick the epoch (J200
 1. Telescope Control → add telescope → **External software or a remote computer**, host `localhost`, port `10001`,
    equinox **J2000**. Stellarium now shows the pointer, and Ctrl+1 slews it to Stellarium's selection.
 2. For the show/take buttons, enable the **Remote Control** plugin (port 8090).
+
+## Site
+
+Set this once: latitude and longitude (degrees, `47.5` or `47:29:52`; east longitudes positive), elevation, or
+pick a **GPS** device to take them from (it also reports how far this computer's clock is off). **Lowest altitude**
+and the **obstructions** list (`azimuth:altitude` pairs, e.g. `180:10, 200:35, 260:35, 280:10` for a house to the
+south-west) describe your real horizon. With *Give the mounts this location and the time* ticked, every mount gets
+them when it connects, as Ekos does.
+
+The tab then shows tonight: whether it is day, twilight or night, the Sun's altitude, sidereal time, astronomical
+dusk and dawn, the Moon (phase, altitude, rise and set) and where the planets are. The Sky atlas draws your horizon
+(green line, N/E/S/W), the Sun, Moon and planets, finds planets by name, and for any selection says its altitude now,
+when it rises, culminates and sets above *your* horizon, how many dark hours it is up, and how far it is from the Moon.
 
 ## Centring (plate solving)
 

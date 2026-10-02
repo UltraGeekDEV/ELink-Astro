@@ -52,6 +52,32 @@ public sealed class MountAdapter(AdapterContext ctx) : IndiDeviceAdapter<MountSt
         await RegisterCommandAsync<NOTESVoid, CommandResult>("Abort", _ => AbortAsync(), "stop any slew immediately");
         await RegisterCommandAsync<BinaryConvertibleBool, CommandResult>("Park", ParkAsync, "park (true) or unpark (false) the mount");
         await RegisterCommandAsync<BinaryConvertibleBool, CommandResult>("SetTracking", TrackAsync, "start or stop tracking");
+        await RegisterCommandAsync<ELink.Contracts.Site.GeoLocation, CommandResult>(ELink.Contracts.Site.SiteIds.MountSetLocation, SetLocationAsync, "tell the mount where it stands (GEOGRAPHIC_COORD)");
+        await RegisterCommandAsync<BinaryConvertibleString, CommandResult>(ELink.Contracts.Site.SiteIds.MountSetTime, SetTimeAsync, "set the mount's clock: ISO 8601 UTC, empty = now (TIME_UTC)");
+    }
+
+    private async Task<CommandResult> SetLocationAsync(ELink.Contracts.Site.GeoLocation g)
+    {
+        if (Need("GEOGRAPHIC_COORD") is { } missing) return missing;
+        double lat = g.LatitudeDegrees.Value, lon = g.LongitudeDegrees.Value;
+        if (double.IsNaN(lat) || double.IsNaN(lon) || Math.Abs(lat) > 90) return CommandResult.Fail("invalid location");
+        lon = ((lon % 360) + 360) % 360;   // INDI: 0..360 east
+        return await Send(() => Client.SetNumbersAsync(Device, "GEOGRAPHIC_COORD", new[] { ("LAT", lat), ("LONG", lon), ("ELEV", g.ElevationMeters.Value) }));
+    }
+
+    private async Task<CommandResult> SetTimeAsync(BinaryConvertibleString iso)
+    {
+        if (Need("TIME_UTC") is { } missing) return missing;
+        var utc = DateTime.UtcNow;
+        if (iso.Text.Trim() != "" && !DateTime.TryParse(iso.Text, System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal, out utc))
+            return CommandResult.Fail("time must be ISO 8601");
+        double offset = TimeZoneInfo.Local.GetUtcOffset(utc).TotalHours;
+        return await Send(() => Client.SetTextsAsync(Device, "TIME_UTC", new[]
+        {
+            ("UTC", utc.ToString("yyyy-MM-ddTHH:mm:ss", System.Globalization.CultureInfo.InvariantCulture)),
+            ("OFFSET", offset.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)),
+        }));
     }
 
     private async Task<CommandResult> MoveAsync(SkyTarget target, string mode)

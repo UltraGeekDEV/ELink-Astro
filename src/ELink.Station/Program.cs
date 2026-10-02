@@ -69,6 +69,8 @@ if (PlateSolver.Locate() is { } solveField)
     Console.WriteLine($"plate solving: {solveField}");
 }
 else Console.WriteLine("plate solving: solve-field not found (install astrometry.net, or set ELINK_SOLVE_FIELD)");
+await using var site = new SiteService(node, Path.Combine(Path.GetDirectoryName(compose)!, "site.json"));
+await site.StartAsync();
 await using var centering = new CenteringService(node, Path.Combine(Path.GetDirectoryName(compose)!, "centering.json"));
 await centering.StartAsync();
 await using var mosaic = new MosaicService(node);

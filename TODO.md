@@ -36,6 +36,21 @@ ID scheme: `ELink.<Kind>.<DeviceName>.<Thing>` e.g. `ELink.Camera.CCD_Simulator.
   *command functions*. ViewModels hold no logic about devices, they just mirror state and send intents.
 - Test: UI app must run with the backend absent (shows "no devices") and backend must run headless.
 
+## Design spec: autonomous imaging trains (hard rule)
+
+- A smart scope (imaging train) is **autonomous**: guiding, dithering, centring after slews, autofocus triggers,
+  meridian handling and its own safety reactions live *inside* the scope. Nobody above it drives these.
+- The only top-level request is **"I want this image of this part of the sky"**: an area (centre, size, angle), a
+  depth (exposure per spot, filters), an output pixel scale. There is no "direct target" vs "mosaic" special case:
+  one target is just a small area.
+- Scopes take producer/consumer work from that request and fill the frame; several scopes may contribute to one
+  request and they are **not** kept in sync with each other. The live stack is the request's resulting image.
+- Shared physical facts (site, time, weather, dome) are services scopes may consult; they never orchestrate scopes.
+
+Roadmap order (agreed): site and time -> guiding/dithering in the scope -> meridian flip in the scope -> safety ->
+polar alignment -> "fill this area" request replacing Observe/Mosaic special cases + scheduler -> calibration ->
+focus triggers/offsets -> live-stack rejection/calibration -> the rest.
+
 ## TODO
 
 ### Phase 0 — Setup
@@ -90,7 +105,9 @@ ID scheme: `ELink.<Kind>.<DeviceName>.<Thing>` e.g. `ELink.Camera.CCD_Simulator.
 - [x] Focusers through the full standard INDI focuser interface (Ekos parity; EAF-capable INDI drivers work as is)
 - [x] Sky atlas service (KStars stars, OpenNGC, constellations, GSC faint stars, search) and interactive chart
 - [x] Stellarium bridge: telescope server for any pointer (verified live), Remote Control show/selection
-- [ ] Atlas: horizon/altitude overlay and observability (needs site location), planets/moon
+- [x] Site and time service: location (manual or GPS, clock check), horizon profile, sidereal time, twilight, Sun/Moon/planets, observability; pushes location/time to mounts
+- [x] Atlas: horizon overlay, Sun/Moon/planets, planet search, visibility of the selection
+- [ ] Atlas: comets/asteroids, satellites; survey imagery behind the chart
 
 ### Phase 5 — Avalonia UI
 - [x] ViewModel base classes bound to EVent (state hook -> property, command -> function call), no backend refs

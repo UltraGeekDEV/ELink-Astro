@@ -69,6 +69,7 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         await using var atlasSvc = new AtlasService(hostNode, skyCatalog); await atlasSvc.StartAsync();
         await using var centeringSvc = new CenteringService(hostNode); await centeringSvc.StartAsync();
         await using var liveStackSvc = new LiveStackService(hostNode); await liveStackSvc.StartAsync();
+        await using var siteSvc = new SiteService(hostNode); await siteSvc.StartAsync();
         PlateSolveService? solveSvc = PlateSolver.Locate() is { } sf ? new PlateSolveService(hostNode, new PlateSolver(sf)) : null;
         if (solveSvc is not null) await solveSvc.StartAsync();
         string saveDir = Path.Combine(Path.GetTempPath(), "elink-ui-save-" + Guid.NewGuid().ToString("N"));
@@ -187,6 +188,21 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         vm.SelectedTab = vm.Tabs.First(t => t.Content is MosaicViewModel);
         Shot(window, "07d-mosaic");
 
+        // site: type a location; tonight's sky appears, and the atlas gets a horizon, the planets and visibility
+        var siteVm = vm.Site;
+        vm.SelectedTab = vm.Tabs.First(t => t.Content is SiteViewModel);
+        siteVm.Latitude = "47:29:52"; siteVm.Longitude = "19:02:25"; siteVm.Elevation = 100; siteVm.MinAltitude = 15;
+        siteVm.HorizonText = "180:15, 200:35";
+        Assert.True(SiteViewModel.TryParseHorizon(siteVm.HorizonText, out var hp) && hp.Count == 2);
+        siteVm.HorizonText = "180:15, 200:35, 260:35, 280:15";
+        await siteVm.ApplyCommand.ExecuteAsync(null);
+        Assert.Equal("saved", siteVm.Message);
+        Assert.True(await Eventually(() => siteVm.Known && siteVm.SkyText.Contains("sidereal")), siteVm.StateMessage);
+        Assert.Contains("Moon", siteVm.MoonText);
+        Assert.True(await Eventually(() => siteVm.Bodies.Count == 9));
+        Assert.Equal(47.4978, siteSvc.Site!.Value.LatitudeDegrees, 3);
+        Shot(window, "07e0-site");
+
         // sky atlas: search, select, send the mount there from the chart, see its reticle; hand the target to the mosaic
         var atlas = vm.Atlas;
         vm.SelectedTab = vm.Tabs.First(t => t.Content is AtlasViewModel);
@@ -196,6 +212,8 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         await atlas.SearchCommand.ExecuteAsync(null);
         Assert.Equal("M 42", atlas.Results.First().Label);
         Assert.True(await Eventually(() => atlas.Selection?.Label == "M 42"));
+        Assert.True(await Eventually(() => atlas.Horizon is { Line.Count: 361 } && atlas.Bodies.Count == 9), "horizon and planets on the chart");
+        Assert.True(await Eventually(() => atlas.VisibilityText.Contains("alt")), atlas.VisibilityText);
         Assert.Equal(5.588, atlas.CenterRa, 2);
         Assert.True(await Eventually(() => atlas.Dsos.Any(d => d.Id == "M 42")), "the zoomed view fetched its deep-sky objects");
         Assert.True(await Eventually(() => atlas.Pointers.Contains("eq")));
@@ -204,6 +222,12 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         Assert.Contains("going to M 42", atlas.Message);
         Assert.True(await Eventually(() => atlas.Markers.Any(m => !m.IsSelection && Math.Abs(m.RaHours - 5.588) < 0.05 && Math.Abs(m.DecDegrees + 5.39) < 0.3), 120000),
             "the mount's reticle should arrive on M 42");
+        atlas.SearchText = "Jupiter";
+        await atlas.SearchCommand.ExecuteAsync(null);
+        Assert.Equal("Planet", atlas.Results.First().Kind);
+        atlas.SearchText = "M42";
+        await atlas.SearchCommand.ExecuteAsync(null);
+        Assert.True(await Eventually(() => atlas.Selection?.Label == "M 42"));
         atlas.UseAsMosaicCentreCommand.Execute(null);
         Assert.Equal("M42", vm.Mosaic.Label);
         Assert.Contains(atlas.Polygons, p => p.Label.StartsWith("mosaic"));

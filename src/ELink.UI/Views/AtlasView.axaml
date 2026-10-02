@@ -8,6 +8,7 @@
       <Button Content="−" Command="{Binding ZoomOutCommand}"/>
       <Button Content="+" Command="{Binding ZoomInCommand}"/>
       <CheckBox IsChecked="{Binding ShowConstellations}" Content="Constellations"/>
+      <CheckBox IsChecked="{Binding ShowHorizon}" Content="Horizon"/>
       <CheckBox IsChecked="{Binding ShowGrid}" Content="Grid"/>
       <Button Content="Centre on mount" Command="{Binding CenterOnMountCommand}"/>
       <TextBlock Classes="label" Text="{Binding Status}" VerticalAlignment="Center"/>
@@ -16,7 +17,7 @@
     <Border Grid.Row="1" CornerRadius="8" ClipToBounds="True" MinHeight="560">
       <c:SkyChart CenterRa="{Binding CenterRa}" CenterDec="{Binding CenterDec}" Fov="{Binding Fov}" StarLimit="{Binding StarLimit}"
                   Stars="{Binding Stars}" Dsos="{Binding Dsos}" Lines="{Binding Lines}" Labels="{Binding Labels}"
-                  Markers="{Binding Markers}" Polygons="{Binding Polygons}" PickCommand="{Binding PickCommand}"
+                  Markers="{Binding Markers}" Polygons="{Binding Polygons}" Horizon="{Binding Horizon}" Bodies="{Binding Bodies}" PickCommand="{Binding PickCommand}"
                   ShowGrid="{Binding ShowGrid}" ShowConstellations="{Binding ShowConstellations}"/>
     </Border>
 
@@ -26,6 +27,7 @@
           <StackPanel Spacing="8">
             <TextBlock Classes="section" Text="SELECTION"/>
             <TextBlock Text="{Binding SelectionText}" TextWrapping="Wrap"/>
+            <TextBlock Classes="label" Text="{Binding VisibilityText}" TextWrapping="Wrap" IsVisible="{Binding VisibilityText.Length}"/>
             <StackPanel><TextBlock Classes="label" Text="Pointer or scope"/><ComboBox ItemsSource="{Binding Pointers}" SelectedItem="{Binding SelectedPointer}" HorizontalAlignment="Stretch"/></StackPanel>
             <Button Content="Go to selection" Classes="primary" Command="{Binding GotoCommand}" HorizontalAlignment="Stretch"/>
             <Button Content="Use as mosaic centre" Command="{Binding UseAsMosaicCentreCommand}" HorizontalAlignment="Stretch"/>
