@@ -1,7 +1,15 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:c="using:ELink.UI.Controls" xmlns:i="using:ELink.UI.Infrastructure"
              x:Class="ELink.UI.Views.SkyView">
-  <Grid ColumnDefinitions="*,410">
+  <UserControl.KeyBindings>
+    <KeyBinding Gesture="Escape" Command="{Binding Atlas.CloseResultsCommand}"/>
+    <KeyBinding Gesture="OemPlus" Command="{Binding Atlas.ZoomInCommand}"/>
+    <KeyBinding Gesture="Add" Command="{Binding Atlas.ZoomInCommand}"/>
+    <KeyBinding Gesture="OemMinus" Command="{Binding Atlas.ZoomOutCommand}"/>
+    <KeyBinding Gesture="Subtract" Command="{Binding Atlas.ZoomOutCommand}"/>
+    <KeyBinding Gesture="F" Command="{Binding ZoomToFrameCommand}"/>
+  </UserControl.KeyBindings>
+  <Grid ColumnDefinitions="*,Auto">
     <!-- the sky -->
     <Grid Grid.Column="0">
       <c:SkyChart CenterRa="{Binding Atlas.CenterRa, Mode=TwoWay}" CenterDec="{Binding Atlas.CenterDec, Mode=TwoWay}" Fov="{Binding Atlas.Fov, Mode=TwoWay}" StarLimit="{Binding Atlas.StarLimit}"
@@ -58,11 +66,38 @@
         </DockPanel>
       </Border>
 
+      <Button Content="{Binding PanelToggleText}" Command="{Binding TogglePanelCommand}" VerticalAlignment="Bottom" HorizontalAlignment="Right" Margin="0,0,12,34"
+              ToolTip.Tip="Fold the panel away to see more sky"/>
+
+      <!-- what is still to set up, until it is done -->
+      <Border IsVisible="{Binding ShowGettingStarted}" VerticalAlignment="Bottom" HorizontalAlignment="Left" Margin="12,0,0,34" Padding="14" MaxWidth="420"
+              CornerRadius="10" Background="#F2131822" BorderBrush="#2B3548" BorderThickness="1">
+        <StackPanel Spacing="6">
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Classes="section" Text="BEFORE YOU IMAGE" VerticalAlignment="Center" Margin="0"/>
+            <Button Grid.Column="1" Content="Not now" Classes="ghost" Padding="8,2" Command="{Binding DismissGettingStartedCommand}"/>
+          </Grid>
+          <ItemsControl ItemsSource="{Binding Status.Readiness}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Button Classes="ghost" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="4,4"
+                        Command="{Binding $parent[UserControl].DataContext.Status.FixCommand}" CommandParameter="{Binding}">
+                  <StackPanel Classes="row" Spacing="8">
+                    <TextBlock Text="{Binding Mark}" FontWeight="Bold" Foreground="#8AA0C8" Width="14"/>
+                    <TextBlock Text="{Binding Text}" TextWrapping="Wrap" MaxWidth="360"/>
+                  </StackPanel>
+                </Button>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
+
       <TextBlock Text="{Binding Atlas.Status}" Classes="hint" VerticalAlignment="Bottom" HorizontalAlignment="Right" Margin="0,0,12,8"/>
     </Grid>
 
     <!-- what to image, and how it is going -->
-    <Border Grid.Column="1" Classes="panel" BorderBrush="#2B3548" BorderThickness="1,0,0,0">
+    <Border Grid.Column="1" Classes="panel" Width="410" IsVisible="{Binding PanelOpen}" BorderBrush="#2B3548" BorderThickness="1,0,0,0">
       <ScrollViewer HorizontalScrollBarVisibility="Disabled">
         <StackPanel Margin="14" Spacing="0">
 

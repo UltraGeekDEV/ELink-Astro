@@ -32,6 +32,13 @@
 
     <ScrollViewer Grid.Column="1" HorizontalScrollBarVisibility="Disabled">
       <StackPanel MaxWidth="960" HorizontalAlignment="Stretch" Margin="16" Spacing="0">
+        <Border Classes="card" IsVisible="{Binding HasNoScopes}">
+          <StackPanel Spacing="8">
+            <TextBlock Classes="h2" Text="Nothing here yet"/>
+            <TextBlock Classes="hint" Text="Once you have set up a scope, this is where you watch it work: what it is doing now, the latest frame, how well it guides, and the sensor cooling. You ask it for images from the Sky view; it does the rest."/>
+            <Button Content="Set up a scope" Classes="primary" Command="{Binding GoToRigCommand}" HorizontalAlignment="Left"/>
+          </StackPanel>
+        </Border>
         <ContentControl Content="{Binding Selected}"/>
         <Border Classes="card" IsVisible="{Binding HasScopes}">
           <Expander Header="Autofocus">

@@ -226,7 +226,21 @@ public sealed class SkyChart : Control
 
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
     {
-        Fov = Math.Clamp(Fov * Math.Pow(0.85, e.Delta.Y), 0.1, 180);
+        // zoom towards the pointer: the sky point under it stays under it
+        var at = e.GetPosition(this);
+        var before = Projection;
+        var (sra, sdec) = before.Unproject(at.X, at.Y);
+        double fov = Math.Clamp(Fov * Math.Pow(0.85, e.Delta.Y), 0.1, 180);
+        double cra = CenterRa, cdec = CenterDec;
+        for (int k = 0; k < 4; k++)       // each shift of the centre changes the projection a little: settle on it
+        {
+            var after = new SkyProjection(cra, cdec, fov, before.Width, before.Height);
+            if (!after.TryProject(sra, sdec, out var qx, out var qy)) break;
+            (cra, cdec) = after.Unproject(before.Width / 2 + (qx - at.X), before.Height / 2 + (qy - at.Y));
+            cdec = Math.Clamp(cdec, -90, 90);
+        }
+        CenterRa = cra; CenterDec = cdec;
+        Fov = fov;
         e.Handled = true;
     }
 

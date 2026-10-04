@@ -197,6 +197,7 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         Assert.Contains(image.Workers, w => w.StartsWith("main: Done"));
         Assert.True(await Eventually(() => image.Stack.Image is not null, 120000), image.Stack.Info);
         // the picture and how far each part has got are drawn on the sky chart, where the image is
+        vm.CloseDrawerCommand.Execute(null);
         vm.Navigate(AppView.Sky);
         Assert.True(await Eventually(() => vm.Sky.Images.Count == 2), $"layers on the chart: {vm.Sky.Images.Count}");
         vm.Sky.ZoomToFrameCommand.Execute(null);

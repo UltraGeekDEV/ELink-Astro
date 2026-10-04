@@ -4,7 +4,7 @@ An astronomy control stack in the spirit of Ekos and N.I.N.A., built differently
 smart scope and the UI is an endpoint on **EVent**, a distributed event/dRPC mesh. C# / .NET 8, Avalonia UI, INDI for
 the hardware.
 
-![Sky atlas](docs/images/atlas.png)
+![The sky: the image frame on the chart, the panel beside it](docs/images/sky.png)
 
 > **Status:** early. Everything below runs and is tested against the INDI simulators (240 automated tests, including a
 > headless run of the whole UI), but it has not yet had a night on real hardware. Expect rough edges.
@@ -42,7 +42,7 @@ the hardware.
 
 | | |
 |---|---|
-| ![Image](docs/images/image.png) | ![Live stack](docs/images/live-stack.png) |
+| ![The picture builds on the sky](docs/images/image-built.png) | ![Setting up a telescope](docs/images/setup.png) |
 
 ## Quick start
 
@@ -63,7 +63,7 @@ indiserver indi_simulator_telescope indi_simulator_ccd indi_simulator_wheel indi
 dotnet run --project src/ELink.Station -- --indi localhost:7624
 ```
 
-With your own rig, list its drivers once on the **Profiles** tab and start them from there (or
+With your own rig, list its drivers once under **Rig › Drivers** and start them from there (or
 `elink --profile NAME`): ELink runs its own indiserver. The bridge and the UI can also run as separate processes on
 one mesh:
 
@@ -72,12 +72,13 @@ dotnet run --project src/ELink.Bridge -- --indi localhost --port 5698
 dotnet run --project src/ELink.App -- --host 127.0.0.1 --port 5698
 ```
 
-Then compose your rig on the **Compose** tab (pointer from the mount, imaging trains, a smart scope) and ask for an
-image on the **Image** tab, or pick a target on the **Sky atlas** and press *Image this*.
+Then connect your equipment and set up a telescope and a scope under **Rig**, and ask for an image on the **Sky**: pick a
+target, press *Frame this*, drag the frame where you want it, press *Start*. The status strip along the top says what is
+still to set up.
 
 ## Documentation
 
-- [User guide](docs/user-guide.md): every tab, a typical night, troubleshooting.
+- [User guide](docs/user-guide.md): the four views, setting up a rig, imaging an area, troubleshooting.
 - [Developer guide](docs/development.md): architecture and the design spec, patterns, IDs, adding devices and services, testing.
 - [Roadmap](TODO.md).
 

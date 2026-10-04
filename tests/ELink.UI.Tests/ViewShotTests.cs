@@ -37,6 +37,18 @@ public class ViewShotTests : IClassFixture<IndiServerFixture>
             rig.Shot($"empty-{name}");
         }
 
+        // nothing is set up yet: the sky says what is left, and it can be put away; the panel can be folded
+        vm.Navigate(AppView.Sky);
+        Assert.True(vm.Sky.ShowGettingStarted);
+        rig.Shot("sky-getting-started");
+        Assert.True(vm.StatusBar.Readiness.Count(r => !r.Done) >= 3);   // (the plate solver may be installed)
+        vm.Sky.TogglePanelCommand.Execute(null);
+        Assert.False(vm.Sky.PanelOpen);
+        rig.Shot("sky-panel-folded");
+        vm.Sky.TogglePanelCommand.Execute(null);
+        vm.Sky.DismissGettingStartedCommand.Execute(null);
+        Assert.False(vm.Sky.ShowGettingStarted);
+
         // connect everything from the Equipment page, as a person would
         vm.Navigate(AppView.Rig, "Equipment");
         await vm.Equipment.ConnectAllCommand.ExecuteAsync(null);

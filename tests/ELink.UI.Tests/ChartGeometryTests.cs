@@ -106,6 +106,26 @@ public class ChartGeometryTests
     }
 
     [AvaloniaFact]
+    public void TheWheelZoomsTowardsThePointer()
+    {
+        var chart = new SkyChart { CenterRa = 5.6, CenterDec = 10, Fov = 40, StarLimit = 6, ShowGrid = false, ShowConstellations = false };
+        var window = new Window { Width = 900, Height = 650, Content = chart };
+        window.Show();
+        var at = new Point(700, 180);
+        var (ra, dec) = chart.Projection.Unproject(at.X, at.Y);
+        for (int i = 0; i < 6; i++)
+        {
+            window.MouseWheel(at, new Vector(0, 1));
+            Assert.True(chart.Projection.TryProject(ra, dec, out var x, out var y));
+            Assert.True(Math.Abs(x - at.X) < 1.5 && Math.Abs(y - at.Y) < 1.5, $"step {i}: the sky point under the pointer moved to ({x:0.0},{y:0.0})");
+        }
+        Assert.True(chart.Fov < 20, $"zoomed in to {chart.Fov:0.#}°");
+        for (int i = 0; i < 10; i++) window.MouseWheel(at, new Vector(0, -1));
+        Assert.True(chart.Fov > 40);
+        Assert.True(chart.Projection.TryProject(ra, dec, out var ax, out var ay) && Math.Abs(ax - at.X) < 2 && Math.Abs(ay - at.Y) < 2);
+    }
+
+    [AvaloniaFact]
     public void AWideFrameIsDrawnCurvedAndCanBeDraggedTurnedAndResizedNearThePole()
     {
         var edits = new List<FrameEdit>();

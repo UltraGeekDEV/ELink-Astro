@@ -6,6 +6,13 @@
         xmlns:c="using:ELink.UI.Controls"
         x:Class="ELink.UI.Views.MainWindow"
         Title="ELink" Background="#0F131A" Width="1280" Height="820" MinWidth="960" MinHeight="620">
+  <Window.KeyBindings>
+    <KeyBinding Gesture="Ctrl+1" Command="{Binding GoSkyCommand}"/>
+    <KeyBinding Gesture="Ctrl+2" Command="{Binding GoScopesCommand}"/>
+    <KeyBinding Gesture="Ctrl+3" Command="{Binding GoRigCommand}"/>
+    <KeyBinding Gesture="Ctrl+4" Command="{Binding GoAdvancedCommand}"/>
+    <KeyBinding Gesture="Escape" Command="{Binding CloseDrawerCommand}"/>
+  </Window.KeyBindings>
   <Grid RowDefinitions="Auto,Auto,*">
     <!-- joining a mesh: only when the UI runs on its own -->
     <Border Grid.Row="0" Background="#171C27" Padding="14,8" IsVisible="{Binding ShowConnectionBar}" BorderBrush="#2B3548" BorderThickness="0,0,0,1">
@@ -28,10 +35,10 @@
           <TextBlock DockPanel.Dock="Top" Text="ELink" Classes="title" Margin="12,0,0,18"/>
           <TextBlock DockPanel.Dock="Bottom" Classes="hint" Text="{Binding ConnectionStatus}" Margin="12,0" IsVisible="{Binding !ShowConnectionBar}"/>
           <StackPanel Spacing="4">
-            <Button Classes="nav" Classes.active="{Binding IsSky}" Command="{Binding GoSkyCommand}" Content="Sky" ToolTip.Tip="Pick a target, frame the image, watch it build"/>
-            <Button Classes="nav" Classes.active="{Binding IsScopes}" Command="{Binding GoScopesCommand}" Content="Scopes" ToolTip.Tip="What each scope is doing"/>
-            <Button Classes="nav" Classes.active="{Binding IsRig}" Command="{Binding GoRigCommand}" Content="Rig" ToolTip.Tip="Set up and look after your equipment"/>
-            <Button Classes="nav" Classes.active="{Binding IsAdvanced}" Command="{Binding GoAdvancedCommand}" Content="Advanced" ToolTip.Tip="Raw INDI properties, saving frames, manual tools"/>
+            <Button Classes="nav" Classes.active="{Binding IsSky}" Command="{Binding GoSkyCommand}" Content="Sky" ToolTip.Tip="Pick a target, frame the image, watch it build  (Ctrl+1)"/>
+            <Button Classes="nav" Classes.active="{Binding IsScopes}" Command="{Binding GoScopesCommand}" Content="Scopes" ToolTip.Tip="What each scope is doing  (Ctrl+2)"/>
+            <Button Classes="nav" Classes.active="{Binding IsRig}" Command="{Binding GoRigCommand}" Content="Rig" ToolTip.Tip="Set up and look after your equipment  (Ctrl+3)"/>
+            <Button Classes="nav" Classes.active="{Binding IsAdvanced}" Command="{Binding GoAdvancedCommand}" Content="Advanced" ToolTip.Tip="Raw INDI properties, saving frames, manual tools  (Ctrl+4)"/>
           </StackPanel>
         </DockPanel>
       </Border>

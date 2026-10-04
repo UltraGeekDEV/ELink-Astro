@@ -74,11 +74,11 @@ public sealed partial class AtlasViewModel : ObservableObject, IDisposable
     public bool HasResults => ResultsOpen && Results.Count > 0;
     [RelayCommand] private void CloseResults() => ResultsOpen = false;
     [ObservableProperty] private AtlasHitItem? _selectedResult;
-    [ObservableProperty] private AtlasHitItem? _selection;
+    [ObservableProperty] [NotifyCanExecuteChangedFor(nameof(GotoCommand), nameof(ImageThisCommand), nameof(ShowInStellariumCommand))] private AtlasHitItem? _selection;
     [ObservableProperty] private string _selectionText = "Click the chart or search to select an object.";
     // acting on the selection
     public ObservableCollection<string> Pointers { get; } = new();
-    [ObservableProperty] private string? _selectedPointer;
+    [ObservableProperty] [NotifyCanExecuteChangedFor(nameof(GotoCommand))] private string? _selectedPointer;
     [ObservableProperty] private string _message = "";
     [ObservableProperty] private string _messageKind = "error";
     private void Say(string text, string kind = "error") { MessageKind = kind; Message = text; }
@@ -352,7 +352,10 @@ public sealed partial class AtlasViewModel : ObservableObject, IDisposable
 
     private SkyTarget? Target() => Selection is { } s ? new SkyTarget { RaHours = s.RaHours, DecDegrees = s.DecDegrees, Epoch = "J2000" } : null;
 
-    [RelayCommand]
+    private bool CanGoto() => Selection is not null && SelectedPointer is not null;
+    private bool HasSelection() => Selection is not null;
+
+    [RelayCommand(CanExecute = nameof(CanGoto))]
     private async Task GotoAsync()
     {
         if (Target() is not { } t) { Say("select something first"); return; }
@@ -361,7 +364,7 @@ public sealed partial class AtlasViewModel : ObservableObject, IDisposable
         if (r.Ok.Value) Say($"{SelectedPointer}: going to {Selection!.Label}", "ok"); else Say(r.Error.Text);
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(HasSelection))]
     private void ImageThis()
     {
         if (Selection is not { } s || _image is null) { Say("select something first"); return; }
@@ -381,7 +384,7 @@ public sealed partial class AtlasViewModel : ObservableObject, IDisposable
         CenterRa = m.RaHours; CenterDec = m.DecDegrees;
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(HasSelection))]
     private async Task ShowInStellariumAsync()
     {
         if (Target() is not { } t) { Say("select something first"); return; }

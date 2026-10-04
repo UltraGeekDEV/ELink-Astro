@@ -101,7 +101,7 @@ focus triggers/offsets -> live-stack rejection/calibration -> the rest.
 - [x] Live stacking into a fixed field (e.g. the mosaic's virtual FOV) at any pixel scale: WCS/solve/pointing registration, exact homography resampling, bicubic upscaling, area-averaged downscaling, sky-level matching, float FITS + WCS out
 - [x] Debayering of one-shot-colour frames (BAYERPAT + offsets or a given pattern): interpolated and super pixel; colour stacks and colour previews
 - [x] Live stack: running outlier rejection, flux matching between frames/cameras, one stack per filter, background and colour balance
-- [x] Calibration library: darks, biases and flats per camera combined into masters (min/max-rejected mean), flats find their own exposure and have the bias taken off, matching by camera, size, binning, exposure, gain/ISO, temperature, filter; Calibration tab
+- [x] Calibration library: darks, biases and flats per camera combined into masters (min/max-rejected mean), flats find their own exposure and have the bias taken off, matching by camera, size, binning, exposure, gain/ISO, temperature, filter; Calibration page
 - [x] Live stack: darks and flats from the library applied to every raw frame before debayering
 - [x] Image request (replaces the mosaic and single-target special cases): an area to a depth, any number of scopes pulling work from one shared coverage plan with their own train fields, dither on every shot, failed scopes fail alone, live stack of all frames
 - [x] Images kept across nights: coverage and live stacks saved under the image's name and carried on; list/forget kept images
@@ -117,7 +117,7 @@ focus triggers/offsets -> live-stack rejection/calibration -> the rest.
 - [x] Meridian flip inside the scope: hour angle from the site, pier side from the mount, waits for the flip point between exposures, verifies the turn-over, flips idle scopes too
 - [x] Scheduler of image requests (priority, altitude/horizon, darkness, Moon distance and brightness, time windows; stops what becomes impossible; carries on night after night); replaces the old Observe-block sequencer
 - [x] Camera angles learned from plate solves and used for planning
-- [x] Equipment profiles: ELink runs the INDI drivers (own indiserver with a control pipe), connects devices, restarts a dying server; driver catalogue; --profile; Profiles tab
+- [x] Equipment profiles: ELink runs the INDI drivers (own indiserver with a control pipe), connects devices, restarts a dying server; driver catalogue; --profile; Rig › Drivers
 - [ ] Dome interlock
 - [x] Frame storage (FITS headers stamped, night folders, JSON-lines session log)
 
@@ -134,6 +134,16 @@ focus triggers/offsets -> live-stack rejection/calibration -> the rest.
 - [x] App shell, mesh connection/discovery panel, device browser (from directory + descriptions)
 - [x] Generic property panel (works for any NON endpoint), then typed panels: mount, camera, focuser, ...
 - [x] Smart scope composer (form based; drag/compose canvas later) (drag/compose), live image viewer (FITS stretch), sequence editor
+
+### Phase 5b — UI redesign (docs/ux-review.md)
+- [x] Four views (Sky, Scopes, Rig, Advanced) instead of twelve tabs; status strip (night, a chip per scope, what is left to set up); device panels in a drawer; toasts
+- [x] Sky: one chart with the image frame (drag, resize, turn), each scope's field, mosaic panels, progress, the stacked picture, the queue, kept images, Stellarium
+- [x] Large areas: one plan-to-sky mapping for the service, the chart and the stack; great-circle edges; rasters in tiles
+- [x] Set up: add/edit/remove telescopes and scopes, pointers made for you, labelled camera settings, explained fields
+- [x] Greyed-out actions that cannot work, messages that say what is wrong next to where it went wrong
+- [ ] Night timeline on the Site page; horizon drawn as a picture
+- [ ] Per-scope colour and a short log of what each scope did tonight
+- [ ] Glossary / help for the terms (scope, telescope, depth per spot, panel)
 
 ## Notes / decisions
 - EVent package in `~/ELink/package` has no nuget/ folder; real feed is `~/Desktop/EVent/EVent/dist/EVent/nuget`.

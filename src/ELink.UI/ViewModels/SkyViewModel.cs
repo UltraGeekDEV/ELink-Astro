@@ -17,9 +17,11 @@ public sealed partial class SkyViewModel : ObservableObject
     private readonly MeshSession _mesh;
     private bool _rebuildQueued;
 
-    public SkyViewModel(MeshSession mesh, AtlasViewModel atlas, ImageViewModel image, ScheduleViewModel schedule, LiveStackViewModel liveStack)
+    public SkyViewModel(MeshSession mesh, AtlasViewModel atlas, ImageViewModel image, ScheduleViewModel schedule, LiveStackViewModel liveStack, StatusBarViewModel status)
     {
-        _mesh = mesh; Atlas = atlas; Image = image; Schedule = schedule; LiveStack = liveStack;
+        _mesh = mesh; Atlas = atlas; Image = image; Schedule = schedule; LiveStack = liveStack; Status = status;
+        atlas.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(AtlasViewModel.Selection)) FrameSelectionCommand.NotifyCanExecuteChanged(); };
+        status.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(StatusBarViewModel.NeedsSetup)) OnPropertyChanged(nameof(ShowGettingStarted)); };
         image.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName is nameof(ImageViewModel.CenterRa) or nameof(ImageViewModel.CenterDec) or nameof(ImageViewModel.Width) or nameof(ImageViewModel.Height)
@@ -37,6 +39,17 @@ public sealed partial class SkyViewModel : ObservableObject
     public ImageViewModel Image { get; }
     public ScheduleViewModel Schedule { get; }
     public LiveStackViewModel LiveStack { get; }
+    public StatusBarViewModel Status { get; }
+
+    // the side panel can be folded away to give the chart the whole width
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(PanelToggleText))] private bool _panelOpen = true;
+    public string PanelToggleText => PanelOpen ? "Hide panel ▸" : "◂ Panel";
+    [RelayCommand] private void TogglePanel() => PanelOpen = !PanelOpen;
+
+    // a short list of what is still to do, over the chart, until it is done or put away
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(ShowGettingStarted))] private bool _gettingStartedDismissed;
+    public bool ShowGettingStarted => !GettingStartedDismissed && Status.NeedsSetup;
+    [RelayCommand] private void DismissGettingStarted() => GettingStartedDismissed = true;
 
     // what the chart is given
     [ObservableProperty] private ChartFrame? _frame;
@@ -166,7 +179,8 @@ public sealed partial class SkyViewModel : ObservableObject
         if (Image.TargetMinutes > 0 && scopes > 0)
         {
             double minutes = panels * Image.TargetMinutes / scopes;
-            parts.Add($"roughly {(minutes >= 90 ? $"{minutes / 60:0.#} h" : $"{minutes:0} min")} with {scopes} scope{(scopes == 1 ? "" : "s")}");
+            string roughly = minutes >= 90 ? $"{minutes / 60:0.#} h" : minutes >= 1 ? $"{minutes:0} min" : "under a minute";
+            parts.Add($"roughly {roughly} with {scopes} scope{(scopes == 1 ? "" : "s")}");
         }
         PlanText = string.Join("  ·  ", parts); PlanClass = "info";
     }
@@ -219,8 +233,10 @@ public sealed partial class SkyViewModel : ObservableObject
     }
     [RelayCommand] private void CentreHere() { Atlas.CenterRa = ContextRa; Atlas.CenterDec = ContextDec; }
 
+    private bool HasSelection() => Atlas.Selection is not null;
+
     /// <summary>The selected object becomes the frame (big ones an area, small ones one frame) and the chart zooms to it.</summary>
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(HasSelection))]
     private void FrameSelection()
     {
         Atlas.ImageThisCommand.Execute(null);

@@ -77,11 +77,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Site = new SiteViewModel(mesh, Catalog);
         Equipment = new EquipmentViewModel(mesh, Catalog, OpenDeviceAsync);
 
-        Sky = new SkyViewModel(mesh, Atlas, Image, Schedule, LiveStack);
         Scopes = new ScopesViewModel(mesh, Catalog, Autofocus, Centering) { OpenRig = () => Navigate(AppView.Rig, "Set up") };
+        StatusBar = new StatusBarViewModel(mesh, Catalog, Scopes) { Navigate = Navigate };
+        Sky = new SkyViewModel(mesh, Atlas, Image, Schedule, LiveStack, StatusBar);
         Rig = new RigViewModel(Composer, Site, Equipment, Profiles, Calibration);
         Advanced = new AdvancedViewModel(IndiBrowser, Storage, LiveStack);
-        StatusBar = new StatusBarViewModel(mesh, Catalog, Scopes) { Navigate = Navigate };
 
         mesh.Notices.Posted += OnNotice;
         Mesh.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(MeshSession.Status)) OnPropertyChanged(nameof(ConnectionStatus)); };
