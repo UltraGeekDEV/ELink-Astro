@@ -75,13 +75,9 @@ public sealed partial class SkyViewModel : ObservableObject
         Color.FromRgb(120, 220, 255), Color.FromRgb(255, 140, 200), Color.FromRgb(160, 255, 140), Color.FromRgb(255, 170, 90), Color.FromRgb(200, 160, 255),
     };
 
-    /// <summary>The area's own axes (x along its width, y along its height) to a sky position: the same convention the imaging
-    /// service uses, so what is drawn is what will be shot.</summary>
-    private static (double Ra, double Dec) AreaToSky(double ra, double dec, double angle, double x, double y)
-    {
-        var (e, n) = SkyChart.LocalToSky(angle, x, y);
-        return Gnomonic.ToSky(ra, dec, e, n);
-    }
+    /// <summary>The area's own axes (x along its width, y along its height) to a sky position: the mapping the imaging service uses
+    /// (<see cref="PlanProjection"/>), so what is drawn is what will be shot, also for large areas.</summary>
+    private static (double Ra, double Dec) AreaToSky(double ra, double dec, double angle, double x, double y) => PlanProjection.ToSky(ra, dec, angle, x, y);
 
     private IEnumerable<Footprint> Fields(ImageViewModel.PlanScope scope) =>
         CoverageMap.Footprints(new Pose(0, 0, 0), scope.Frames, Image.PositionAngle);
@@ -146,15 +142,19 @@ public sealed partial class SkyViewModel : ObservableObject
         var images = new List<ChartImage>();
         if (ShowStack && Image.Stack.Image is { } stack && Image.Stack.Wcs is { } wcs && Image.Stack.PixelsWide > 0)
         {
-            double pw = Image.Stack.PixelsWide, ph = Image.Stack.PixelsHigh;
-            (double Ra, double Dec) At(double x, double y) { var (r, d) = wcs.PixelToSky(x, y); return (r / 15, d); }
-            // the first row of the picture is the top one: the last row of the data unless the file says otherwise
-            double topY = Image.Stack.TopDown ? -0.5 : ph - 0.5, bottomY = Image.Stack.TopDown ? ph - 0.5 : -0.5;
-            images.Add(new ChartImage(stack, At(-0.5, topY), At(pw - 0.5, topY), At(-0.5, bottomY), 0.92));
+            double ph = Image.Stack.PixelsHigh; bool topDown = Image.Stack.TopDown;
+            // picture pixel (x right, y down) to the stack's pixel: the first row of the picture is the top one, the last row of the data unless the file says otherwise
+            (double, double) At(double px, double py) { var (r, d) = wcs.PixelToSky(px - 0.5, topDown ? py - 0.5 : ph - 0.5 - py); return (r / 15, d); }
+            images.Add(new ChartImage(stack, At, 0.92));
         }
         double aw = Image.AreaWidthDegrees, ah = Image.AreaHeightDegrees;
-        if (ShowCoverage && Image.Map is { } map && aw > 0 && ah > 0 && Image.IsActive | Image.Phase is "Done" or "Aborted")
-            images.Add(new ChartImage(map, AreaToSky(ra, dec, angle, -aw / 2, ah / 2), AreaToSky(ra, dec, angle, aw / 2, ah / 2), AreaToSky(ra, dec, angle, -aw / 2, -ah / 2), images.Count > 0 ? 0.30 : 0.55));
+        if (ShowCoverage && Image.Map is { } map && aw > 0 && ah > 0 && (Image.IsActive || Image.Phase is "Done" or "Aborted"))
+        {
+            double mw = Math.Max(1, map.Size.Width), mh = Math.Max(1, map.Size.Height);
+            // picture pixel to the area's own axes (x along the width, y up the height)
+            (double, double) At(double px, double py) => AreaToSky(ra, dec, angle, (px / mw - 0.5) * aw, (0.5 - py / mh) * ah);
+            images.Add(new ChartImage(map, At, images.Count > 0 ? 0.30 : 0.55));
+        }
         Images = images;
 
         // the plan in words
@@ -198,7 +198,7 @@ public sealed partial class SkyViewModel : ObservableObject
     {
         if (Frame is not { } f) return;
         Atlas.CenterRa = f.RaHours; Atlas.CenterDec = f.DecDegrees;
-        Atlas.Fov = Math.Clamp(Math.Max(f.WidthDegrees, f.HeightDegrees) * 2.6, 0.5, 60);
+        Atlas.Fov = Math.Clamp(Math.Max(f.WidthDegrees, f.HeightDegrees) * 2.6, 0.5, 170);
     }
 
     // ---- the context menu ----------------------------------------------------------------------------------------

@@ -232,7 +232,8 @@ public sealed class ImagingService : IAsyncDisposable
             var stack = new LiveStackRequest
             {
                 Label = r.Label.Text, Center = new SkyTarget { RaHours = r.Center.RaHours.Value, DecDegrees = r.Center.DecDegrees.Value, Epoch = "J2000" },
-                FovWidthDegrees = plan.Width, FovHeightDegrees = plan.Height, PositionAngleDegrees = r.PositionAngleDegrees.Value, PixelScaleArcsec = plan.Scale,
+                // the stack is a tangent grid: it must be as wide as the area's edges are on the tangent plane (see PlanProjection)
+                FovWidthDegrees = PlanProjection.TangentSpan(plan.Width), FovHeightDegrees = PlanProjection.TangentSpan(plan.Height), PositionAngleDegrees = r.PositionAngleDegrees.Value, PixelScaleArcsec = plan.Scale,
                 // with one kind of frame, its scale lets frames be placed by their pointing when they cannot be solved
                 FramePixelScaleArcsec = plan.Scopes.Select(s => s.FinestScale).Distinct().Count() == 1 && plan.Scopes[0].FinestScale > 0 ? plan.Scopes[0].FinestScale : 0,
                 SessionKey = runDir is null ? "" : r.Label.Text, Resume = r.Resume.Value,
@@ -372,8 +373,7 @@ public sealed class ImagingService : IAsyncDisposable
 
     private async Task<string> ShootOnceAsync(ImagingRequest r, string scope, RemoteState<ScopeState> state, Pose at, List<ShotEvent> frames, CancellationToken ct)
     {
-        var (east, north) = ToSkyOffsets(at.X, at.Y, r.PositionAngleDegrees.Value);
-        var (ra, dec) = Gnomonic.ToSky(r.Center.RaHours.Value, r.Center.DecDegrees.Value, east, north);
+        var (ra, dec) = PlanProjection.ToSky(r.Center.RaHours.Value, r.Center.DecDegrees.Value, r.PositionAngleDegrees.Value, at.X, at.Y);
         var start = await Commands.CallAsync(_node, ScopeIds.Command(scope, "Observe"), new ObserveRequest
         {
             Target = new SkyTarget { RaHours = ra, DecDegrees = dec, Epoch = "J2000" }, Exposure = r.Exposure, Count = 1,
@@ -472,13 +472,6 @@ public sealed class ImagingService : IAsyncDisposable
         if (!Directory.Exists(dir)) return CommandResult.Fail($"no kept image '{label}'");
         Directory.Delete(dir, true);
         return CommandResult.Success();
-    }
-
-    /// <summary>The area's own axes (x along its width, y along its height) to sky east/north offsets.</summary>
-    public static (double East, double North) ToSkyOffsets(double x, double y, double positionAngleDegrees)
-    {
-        double pa = positionAngleDegrees * Math.PI / 180;
-        return (x * Math.Cos(pa) + y * Math.Sin(pa), -x * Math.Sin(pa) + y * Math.Cos(pa));
     }
 
     private async Task WaitUntilAllowedAsync(RemoteState<WeatherState>? weather, CancellationToken ct)

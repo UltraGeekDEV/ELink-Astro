@@ -118,8 +118,7 @@ public class ViewShotTests : IClassFixture<IndiServerFixture>
 
         // resize: pull the top-right corner outwards
         frame = vm.Sky.Frame!;
-        var (e, n) = SkyChart.LocalToSky(frame.AngleDegrees, -frame.WidthDegrees / 2, frame.HeightDegrees / 2);   // the frame's +x is east, which is left on the chart: its top right is local (-w/2, +h/2)
-        var (cra, cdec) = Gnomonic.ToSky(frame.RaHours, frame.DecDegrees, e, n);
+        var (cra, cdec) = PlanProjection.ToSky(frame.RaHours, frame.DecDegrees, frame.AngleDegrees, -frame.WidthDegrees / 2, frame.HeightDegrees / 2);   // the frame's +x is east, which is left on the chart: its top right is local (-w/2, +h/2)
         var corner = Screen(chart, cra, cdec, window);
         window.MouseDown(corner, MouseButton.Left); window.MouseMove(corner + new Vector(30, -30)); window.MouseMove(corner + new Vector(60, -50)); window.MouseUp(corner + new Vector(60, -50), MouseButton.Left);
         Assert.True(vm.Image.Width > 1.3 && vm.Image.Height > 0.85, $"resized to {vm.Image.Width} x {vm.Image.Height}");
@@ -127,8 +126,7 @@ public class ViewShotTests : IClassFixture<IndiServerFixture>
         // turn: take the round handle (above the top edge) and swing it a quarter turn to the east (the chart's left)
         frame = vm.Sky.Frame!;
         var centreNow = Screen(chart, frame.RaHours, frame.DecDegrees, window);
-        var (te, tn) = SkyChart.LocalToSky(frame.AngleDegrees, 0, frame.HeightDegrees / 2);
-        var (tra, tdec) = Gnomonic.ToSky(frame.RaHours, frame.DecDegrees, te, tn);
+        var (tra, tdec) = PlanProjection.ToSky(frame.RaHours, frame.DecDegrees, frame.AngleDegrees, 0, frame.HeightDegrees / 2);
         var top = Screen(chart, tra, tdec, window);
         var dir = top - centreNow; double len = Math.Sqrt(dir.X * dir.X + dir.Y * dir.Y);
         var handle = top + new Vector(dir.X / len * 28, dir.Y / len * 28);

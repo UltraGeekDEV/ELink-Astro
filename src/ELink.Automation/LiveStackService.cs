@@ -510,7 +510,7 @@ public sealed class LiveStackService : IAsyncDisposable
         var meta = System.Text.Json.JsonSerializer.Deserialize<SavedSession>(File.ReadAllText(Path.Combine(dir, "session.json"))) ?? throw new FormatException("empty");
         // the same field: centre, size and angle, and the scale if one is asked for
         if (Sky.SeparationDegrees(meta.CenterRaHours, meta.CenterDecDegrees, r.Center.RaHours.Value, r.Center.DecDegrees.Value) * 3600 > 1
-            || Math.Abs(meta.Width - r.FovWidthDegrees.Value) > 1e-6 || Math.Abs(meta.Height - r.FovHeightDegrees.Value) > 1e-6 || Math.Abs(meta.PositionAngle - r.PositionAngleDegrees.Value) > 1e-6)
+            || Math.Abs(meta.Width - r.FovWidthDegrees.Value) > 1e-3 * Math.Max(1, meta.Width) || Math.Abs(meta.Height - r.FovHeightDegrees.Value) > 1e-3 * Math.Max(1, meta.Height) || Math.Abs(meta.PositionAngle - r.PositionAngleDegrees.Value) > 1e-6)
             throw new InvalidOperationException("it covers another field");
         if (r.PixelScaleArcsec.Value > 0 && Math.Abs(meta.Scale - r.PixelScaleArcsec.Value) > 1e-9) throw new InvalidOperationException(FormattableString.Invariant($"it was made at {meta.Scale:0.###}\"/px"));
         var stacks = new Dictionary<string, FilterStack>();
