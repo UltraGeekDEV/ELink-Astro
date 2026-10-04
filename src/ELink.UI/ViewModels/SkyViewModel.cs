@@ -185,7 +185,8 @@ public sealed partial class SkyViewModel : ObservableObject
         {
             // a single frame stays a single frame until it is resized
             bool resized = Math.Abs(e.WidthDegrees - f.WidthDegrees) > 1e-9 || Math.Abs(e.HeightDegrees - f.HeightDegrees) > 1e-9;
-            if (resized || Image.Width > 0) { Image.Width = Math.Round(e.WidthDegrees, 3); Image.Height = Math.Round(e.HeightDegrees, 3); }
+            // (the imaging service takes areas up to 60° on a side)
+            if (resized || Image.Width > 0) { Image.Width = Math.Clamp(Math.Round(e.WidthDegrees, 3), 0.01, 60); Image.Height = Math.Clamp(Math.Round(e.HeightDegrees, 3), 0.01, 60); }
         }
         Image.PositionAngle = Math.Round(e.AngleDegrees, 1);
     }

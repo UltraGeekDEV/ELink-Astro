@@ -110,6 +110,42 @@ public class ImagingTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AWideAreaGetsAStackGridAsWideAsItsEdgesAndEveryShotLandsInsideIt()
+    {
+        // a 60° x 40° area turned 37° at declination 25°, shot with a 30° x 20° wide-angle field: the curved sky must not push shots off the stack
+        await AddScopeAsync("wide-lens", 30, 20, slewMs: 5);
+        LiveStackRequest? stack = null;
+        await _fakes.AddAsync<LiveStackRequest, CommandResult>(LiveStackIds.Start, r => { stack = r; return Task.FromResult(CommandResult.Success()); }, "fake live stack");
+        var req = Request(60, 40, 0.05, "wide-lens");
+        req.Center = new SkyTarget { RaHours = 12, DecDegrees = 25, Epoch = "J2000" }; req.PositionAngleDegrees = 37; req.LiveStack = true; req.DitherArcsec = 0; req.OutputPixelScaleArcsec = 3600;   // 1°/px keeps the grid small
+        var started = await Commands.CallAsync(_node, ImagingIds.Start, req, TimeSpan.FromSeconds(60));
+        Assert.True(started.Ok.Value, started.Error.Text);
+        Assert.True(await Eventually(() => _last is { Phase.Text: "Done" or "Error" }), $"{_last?.Phase.Text} {_last?.Message.Text}");
+        Assert.Equal("Done", _last!.Phase.Text);
+        Assert.NotNull(stack);
+        Assert.Equal(PlanProjection.TangentSpan(60), stack!.FovWidthDegrees.Value, 6);
+        Assert.Equal(PlanProjection.TangentSpan(40), stack.FovHeightDegrees.Value, 6);
+        Assert.True(PlanProjection.TangentSpan(60) > 66);                          // wider than the plain 60: the sky is curved
+        // the area's four corners are the grid's four corners (within a pixel of rounding): nothing of the area is cut off
+        int w = (int)Math.Round(stack.FovWidthDegrees.Value * 3600 / stack.PixelScaleArcsec.Value), h = (int)Math.Round(stack.FovHeightDegrees.Value * 3600 / stack.PixelScaleArcsec.Value);
+        var wcs = ELink.Imaging.TanWcs.Centered(stack.Center.RaHours.Value * 15, stack.Center.DecDegrees.Value, stack.PositionAngleDegrees.Value, stack.PixelScaleArcsec.Value, w, h);
+        foreach (var (cx, cy) in new[] { (-30.0, 20.0), (30.0, 20.0), (30.0, -20.0), (-30.0, -20.0) })
+        {
+            var (ra, dec) = PlanProjection.ToSky(12, 25, 37, cx, cy);
+            var (px, py) = wcs.SkyToPixel(ra * 15, dec);
+            Assert.True(Math.Min(Math.Abs(px + 0.5), Math.Abs(px - w + 0.5)) < 1.5 && Math.Min(Math.Abs(py + 0.5), Math.Abs(py - h + 0.5)) < 1.5, $"the area corner ({cx},{cy}) falls at pixel ({px:0.0},{py:0.0}) of a {w}x{h} grid");
+        }
+        // the scope was sent where the plan says: every pose is within the area plus the reach of its field
+        var gotos = _pointers["wide-lens"].Gotos;
+        Assert.NotEmpty(gotos);
+        foreach (var g in gotos)
+        {
+            Assert.True(PlanProjection.TryFromSky(12, 25, 37, g.RaHours.Value, g.DecDegrees.Value, out var planX, out var planY));
+            Assert.True(Math.Abs(planX) <= 30 + 15 + 0.5 && Math.Abs(planY) <= 20 + 10 + 0.5, $"a shot at plan ({planX:0.0}°, {planY:0.0}°) is further out than the area and a field's reach");
+        }
+    }
+
+    [Fact]
     public async Task ASingleTargetIsJustASmallAreaFilledWithDitheredShots()
     {
         await AddScopeAsync("solo", 0.5, 0.35);
