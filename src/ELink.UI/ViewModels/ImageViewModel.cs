@@ -72,7 +72,7 @@ public sealed partial class ImageViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string? _selectedWeather = "";
 
     [ObservableProperty, NotifyPropertyChangedFor(nameof(IsRunning), nameof(IsPaused), nameof(IsActive), nameof(PhaseText), nameof(PhaseClass))]
-    [NotifyCanExecuteChangedFor(nameof(StartRunCommand), nameof(PauseCommand), nameof(ResumeCommand), nameof(AbortCommand))]
+    [NotifyCanExecuteChangedFor(nameof(StartRunCommand), nameof(PauseCommand), nameof(ResumeCommand), nameof(AbortCommand), nameof(ApplyTargetCommand))]
     private string _phase = "Idle";
     /// <summary>Working on it (or waiting for the sky or the weather to allow it).</summary>
     public bool IsRunning => Phase is "Running" or "WaitingForSky" or "WaitingForWeather";
@@ -334,7 +334,7 @@ public sealed partial class ImageViewModel : ObservableObject, IDisposable
         if (!TryRequest(out var req)) return;
         Say("");
         _shownVisits = -1;
-        var r = await Commands.CallAsync(_mesh.Node, ImagingIds.Start, req, TimeSpan.FromSeconds(60));
+        var r = await Commands.CallAsync(_mesh.Node, ImagingIds.Start, req, TimeSpan.FromSeconds(240));   // (it may first learn the cameras' angles)
         if (!r.Ok.Value) Say(r.Error.Text);
         await RefreshSavedAsync();
     }
@@ -356,7 +356,7 @@ public sealed partial class ImageViewModel : ObservableObject, IDisposable
         if (schedule.Message != "") Say(schedule.Message); else Say($"{req.Label.Text} is in the queue", "ok");
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(IsActive))]
     private async Task ApplyTargetAsync()
     {
         var r = await Commands.CallAsync(_mesh.Node, ImagingIds.SetTarget, (BinaryConvertibleDouble)(TargetMinutes * 60));

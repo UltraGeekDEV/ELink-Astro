@@ -389,23 +389,35 @@ public sealed class ImagingService : IAsyncDisposable
     }
 
     /// <summary>Cameras whose angle on the sky is not known yet (no solve since they were set up): one plate solve each,
-    /// if a solver is on the mesh, so the plan lays their frames out as they really are. Failures only cost accuracy.</summary>
+    /// if a solver is on the mesh, so the plan lays their frames out as they really are. The solve is of where the scope points
+    /// now (it need not be at the target: only the camera's angle is wanted), with the camera's scale as a hint, so it is quick.
+    /// Failures only cost accuracy: the plan then assumes no turn, and says so.</summary>
     private async Task LearnAnglesAsync(ImagingRequest r)
     {
         try
         {
             var snap = await SnapshotAsync();
-            var unknown = new List<string>();
+            var unknown = new List<(string Shooter, string Scope)>();
             foreach (var id in r.ScopeIds.Select(s => s.Text).Distinct())
-                if (await FramesOfAsync(id, snap) is { Error: null } f) unknown.AddRange(f.UnknownAngles);
+                if (await FramesOfAsync(id, snap) is { Error: null } f) unknown.AddRange(f.UnknownAngles.Select(u => (u, id)));
             if (unknown.Count == 0) return;
-            await Set(s => s.Message = $"learning the camera angle of {string.Join(", ", unknown)}");
-            await Task.WhenAll(unknown.Distinct().Select(shooter => _node.CallFunctionAsync<SolveRequest, SolveResult>(SolveIds.Solve, new SolveRequest
+            await Set(s => s.Message = $"learning the camera angle of {string.Join(", ", unknown.Select(u => u.Shooter).Distinct())}");
+            var solves = unknown.GroupBy(u => u.Shooter).Select(async g =>
             {
-                ShooterId = shooter, ExposureSeconds = Math.Clamp(r.Exposure.Seconds.Value, 1, 10), TimeoutSeconds = 90,
-                HintRaHours = r.Center.RaHours.Value, HintDecDegrees = r.Center.DecDegrees.Value, HintRadiusDegrees = 30,
-            }, TimeSpan.FromSeconds(200))));
+                double ra = double.NaN, dec = double.NaN, radius = 10;
+                var pointer = (await _node.CallFunctionAsync<NOTESVoid, PointerState>(PointerIds.GetState(g.First().Scope), NOTESVoid.Void, TimeSpan.FromSeconds(5)))?.FirstOrDefault();
+                if (pointer is { Phase.Text: not ("Disconnected" or "Error") }) { ra = pointer.RaHours.Value; dec = pointer.DecDegrees.Value; }
+                var answers = await _node.CallFunctionAsync<SolveRequest, SolveResult>(SolveIds.Solve, new SolveRequest
+                {
+                    ShooterId = g.Key, ExposureSeconds = Math.Clamp(r.Exposure.Seconds.Value, 1, 10), TimeoutSeconds = 45,
+                    HintRaHours = ra, HintDecDegrees = dec, HintRadiusDegrees = radius,
+                }, TimeSpan.FromSeconds(120));
+                return (g.Key, Solved: answers?.FirstOrDefault()?.Solved.Value == true);
+            }).ToList();
+            var results = await Task.WhenAll(solves);
             await Task.Delay(300);   // the trains publish what they learned
+            var failed = results.Where(x => !x.Solved).Select(x => x.Key).ToList();
+            if (failed.Count > 0) await Set(s => s.Message = $"could not learn the camera angle of {string.Join(", ", failed)}: planning as if it were not turned");
         }
         catch (Exception) { }
     }

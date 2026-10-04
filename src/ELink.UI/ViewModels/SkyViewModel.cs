@@ -139,7 +139,8 @@ public sealed partial class SkyViewModel : ObservableObject
         double w = Image.Width, h = Image.Height;
         bool single = !(w > 0 && h > 0);
         if (single) { (w, h) = first is { } f0 ? (2 * f0.HalfWidth, 2 * f0.HalfHeight) : (1.0, 0.7); }
-        Frame = new ChartFrame(ra, dec, w, h, angle, Image.Label, true);
+        // (what is being taken stays where it is: the frame can be moved again when it stops)
+        Frame = new ChartFrame(ra, dec, w, h, angle, Image.Label, !Image.IsActive);
 
         // each scope's own field at the centre, and the panels of a mosaic
         int panels = 1, cols = 1, rows = 1;

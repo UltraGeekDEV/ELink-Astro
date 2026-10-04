@@ -256,4 +256,44 @@ public class ViewShotTests : IClassFixture<IndiServerFixture>
         Press(Key.F, PhysicalKey.F, "f");
         Assert.Equal(vm.Sky.Frame!.RaHours, vm.Atlas.CenterRa, 6);
     }
+
+    /// <summary>What the buttons do while an image is taken: Start is out of the way, the frame and the form stay put, Pause / Resume / Stop
+    /// appear when they apply, and everything is back afterwards.</summary>
+    [AvaloniaFact]
+    public async Task AnImageCanBePausedResumedAndStoppedAndTheFormStaysPutMeanwhile()
+    {
+        Assert.True(_server.Available);
+        await using var rig = await UiRig.StartAsync(_server);
+        var vm = rig.Vm; var image = vm.Image;
+        await vm.Equipment.ConnectAllCommand.ExecuteAsync(null);
+        Assert.True(await UiRig.Eventually(() => vm.Catalog.Equipment.All(d => d.Connected)));
+        await rig.DefineSimulatedRigAsync(guided: false);
+        vm.Navigate(AppView.Sky);
+        Assert.True(await UiRig.Eventually(() => image.Scopes.Any(c => c.Id == "main" && c.Selected)));
+        image.Label = "RunState"; image.CenterRa = "06:00:00"; image.CenterDec = "10:00:00"; image.Width = 0.5; image.Height = 0.4;
+        image.ExposureSeconds = 1; image.TargetMinutes = 30; image.DitherArcsec = 0; image.LiveStack = false;
+        Assert.True(await UiRig.Eventually(() => vm.Sky.StartImageCommand.CanExecute(null)), vm.Sky.StartHint + " / " + image.PlanProblem);
+        Assert.True(vm.Sky.Frame!.Editable);
+        Assert.False(image.PauseCommand.CanExecute(null)); Assert.False(image.ResumeCommand.CanExecute(null)); Assert.False(image.AbortCommand.CanExecute(null));
+
+        await vm.Sky.StartImageCommand.ExecuteAsync(null);
+        Assert.True(await UiRig.Eventually(() => image.IsRunning), image.Phase + " " + image.Message);
+        Assert.True(await UiRig.Eventually(() => !vm.Sky.Frame!.Editable), "the frame stays where it is while the image is taken");
+        Assert.False(vm.Sky.StartImageCommand.CanExecute(null)); Assert.Contains("being taken", vm.Sky.StartHint);
+        Assert.True(image.PauseCommand.CanExecute(null)); Assert.False(image.ResumeCommand.CanExecute(null)); Assert.True(image.AbortCommand.CanExecute(null));
+        Assert.Equal("Imaging", image.PhaseText);
+
+        await image.PauseCommand.ExecuteAsync(null);
+        Assert.True(await UiRig.Eventually(() => image.IsPaused), image.Phase);
+        Assert.True(image.ResumeCommand.CanExecute(null)); Assert.False(image.PauseCommand.CanExecute(null));
+        Assert.Equal("Paused", image.PhaseText);
+        await image.ResumeCommand.ExecuteAsync(null);
+        Assert.True(await UiRig.Eventually(() => image.IsRunning), image.Phase);
+
+        await image.AbortCommand.ExecuteAsync(null);
+        Assert.True(await UiRig.Eventually(() => !image.IsActive, 60000), image.Phase);
+        Assert.True(await UiRig.Eventually(() => vm.Sky.Frame!.Editable), "the frame can be moved again");
+        Assert.True(await UiRig.Eventually(() => vm.Sky.StartImageCommand.CanExecute(null)), vm.Sky.StartHint);
+        Assert.False(image.AbortCommand.CanExecute(null));
+    }
 }

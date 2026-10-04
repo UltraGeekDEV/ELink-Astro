@@ -121,30 +121,35 @@
                 <TextBlock Classes="section" Text="IMAGE"/>
                 <Border Grid.Column="1" Classes="chip" Background="{Binding Image.PhaseClass, Converter={x:Static i:Chips.Background}}"><TextBlock Text="{Binding Image.PhaseText}"/></Border>
               </Grid>
-              <TextBox Text="{Binding Image.Label}" Watermark="Name of this image"/>
-              <c:Notice Text="{Binding PlanText}" Kind="{Binding PlanClass}"/>
-              <TextBlock Classes="hint" Text="Drag the frame on the chart to move it, a corner to resize it, the round handle to turn it. Or type the numbers."/>
+              <StackPanel Spacing="10" IsEnabled="{Binding !Image.IsActive}">
+                <TextBox Text="{Binding Image.Label}" Watermark="Name of this image"/>
+                <c:Notice Text="{Binding PlanText}" Kind="{Binding PlanClass}"/>
+                <TextBlock Classes="hint" Text="Drag the frame on the chart to move it, a corner to resize it, the round handle to turn it. Or type the numbers."/>
 
-              <Grid ColumnDefinitions="*,8,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="8">
-                <StackPanel><TextBlock Classes="label" Text="Centre RA"/><TextBox Text="{Binding Image.CenterRa}"/></StackPanel>
-                <StackPanel Grid.Column="2"><TextBlock Classes="label" Text="Centre Dec"/><TextBox Text="{Binding Image.CenterDec}"/></StackPanel>
-                <StackPanel Grid.Row="1"><TextBlock Classes="label" Text="Width (°)"/><NumericUpDown Value="{Binding Image.Width}" Minimum="0" Maximum="60" Increment="0.1" FormatString="0.###" ToolTip.Tip="0 = one frame of the scope"/></StackPanel>
-                <StackPanel Grid.Row="1" Grid.Column="2"><TextBlock Classes="label" Text="Height (°)"/><NumericUpDown Value="{Binding Image.Height}" Minimum="0" Maximum="60" Increment="0.1" FormatString="0.###"/></StackPanel>
-                <StackPanel Grid.Row="2"><TextBlock Classes="label" Text="Turn (°)"/><NumericUpDown Value="{Binding Image.PositionAngle}" Minimum="-180" Maximum="180" FormatString="0.#" ToolTip.Tip="Where the top of the image points, east of north"/></StackPanel>
-                <Button Grid.Row="2" Grid.Column="2" Content="Just one frame" Command="{Binding OneFrameCommand}" VerticalAlignment="Bottom" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"/>
-                <StackPanel Grid.Row="3"><TextBlock Classes="label" Text="Each shot (s)"/><NumericUpDown Value="{Binding Image.ExposureSeconds}" Minimum="0.01" FormatString="0.##"/></StackPanel>
-                <StackPanel Grid.Row="3" Grid.Column="2"><TextBlock Classes="label" Text="Depth per spot (min)"/><NumericUpDown Value="{Binding Image.TargetMinutes}" Minimum="0" Increment="10" FormatString="0.##" ToolTip.Tip="How long every part of the image should be exposed in total. 0 = keep going until stopped."/></StackPanel>
-              </Grid>
+                <Grid ColumnDefinitions="*,8,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="8">
+                  <StackPanel><TextBlock Classes="label" Text="Centre RA"/><TextBox Text="{Binding Image.CenterRa}"/></StackPanel>
+                  <StackPanel Grid.Column="2"><TextBlock Classes="label" Text="Centre Dec"/><TextBox Text="{Binding Image.CenterDec}"/></StackPanel>
+                  <StackPanel Grid.Row="1"><TextBlock Classes="label" Text="Width (°)"/><NumericUpDown Value="{Binding Image.Width}" Minimum="0" Maximum="60" Increment="0.1" FormatString="0.###" ToolTip.Tip="0 = one frame of the scope"/></StackPanel>
+                  <StackPanel Grid.Row="1" Grid.Column="2"><TextBlock Classes="label" Text="Height (°)"/><NumericUpDown Value="{Binding Image.Height}" Minimum="0" Maximum="60" Increment="0.1" FormatString="0.###"/></StackPanel>
+                  <StackPanel Grid.Row="2"><TextBlock Classes="label" Text="Turn (°)"/><NumericUpDown Value="{Binding Image.PositionAngle}" Minimum="-180" Maximum="180" FormatString="0.#" ToolTip.Tip="Where the top of the image points, east of north"/></StackPanel>
+                  <Button Grid.Row="2" Grid.Column="2" Content="Just one frame" Command="{Binding OneFrameCommand}" VerticalAlignment="Bottom" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"/>
+                  <StackPanel Grid.Row="3"><TextBlock Classes="label" Text="Each shot (s)"/><NumericUpDown Value="{Binding Image.ExposureSeconds}" Minimum="0.01" FormatString="0.##"/></StackPanel>
+                </Grid>
 
-              <StackPanel IsVisible="{Binding Image.Scopes.Count}" Spacing="4">
-                <TextBlock Classes="label" Text="Scopes that share the work"/>
-                <ItemsControl ItemsSource="{Binding Image.Scopes}">
-                  <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-                  <ItemsControl.ItemTemplate><DataTemplate><CheckBox IsChecked="{Binding Selected}" Content="{Binding Id}" Margin="0,0,14,0"/></DataTemplate></ItemsControl.ItemTemplate>
-                </ItemsControl>
+                <StackPanel IsVisible="{Binding Image.Scopes.Count}" Spacing="4">
+                  <TextBlock Classes="label" Text="Scopes that share the work"/>
+                  <ItemsControl ItemsSource="{Binding Image.Scopes}">
+                    <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate><DataTemplate><CheckBox IsChecked="{Binding Selected}" Content="{Binding Id}" Margin="0,0,14,0"/></DataTemplate></ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
+                <TextBlock Classes="hint" IsVisible="{Binding !Image.Scopes.Count}" Text="No scope yet: set one up in Rig › Set up."/>
               </StackPanel>
-              <TextBlock Classes="hint" IsVisible="{Binding !Image.Scopes.Count}" Text="No scope yet: set one up in Rig › Set up."/>
-
+              <Grid ColumnDefinitions="*,8,*">
+                <StackPanel><TextBlock Classes="label" Text="Depth per spot (min)"/><NumericUpDown Value="{Binding Image.TargetMinutes}" Minimum="0" Increment="10" FormatString="0.##" ToolTip.Tip="How long every part of the image should be exposed in total. 0 = keep going until stopped. It can be changed while the image is being taken."/></StackPanel>
+                <Button Grid.Column="2" Content="Apply to the running image" Command="{Binding Image.ApplyTargetCommand}" IsVisible="{Binding Image.IsActive}" VerticalAlignment="Bottom" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                        ToolTip.Tip="Change the depth of the image that is being taken"/>
+              </Grid>
               <StackPanel Classes="row">
                 <Button Content="Start" Classes="primary" Command="{Binding StartImageCommand}"/>
                 <Button Content="Add to queue" Command="{Binding Image.AddToScheduleCommand}" ToolTip.Tip="Let the queue take it when it is possible (dark, high enough, Moon far enough)"/>
@@ -169,7 +174,6 @@
                   <CheckBox IsChecked="{Binding Image.LiveStack}" Content="Build the picture while shooting"/>
                   <CheckBox IsChecked="{Binding Image.StartAfresh}" Content="Start afresh: forget what this name already has"/>
                   <StackPanel Classes="row">
-                    <Button Content="Apply depth now" Command="{Binding Image.ApplyTargetCommand}" ToolTip.Tip="Change the depth of the running image"/>
                     <Button Content="Check the plan" Command="{Binding Image.PreviewCommand}"/>
                   </StackPanel>
                   <TextBlock Classes="hint" Text="{Binding Image.Summary}" IsVisible="{Binding Image.Summary.Length}"/>
