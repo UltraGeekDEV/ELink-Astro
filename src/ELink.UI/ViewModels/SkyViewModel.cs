@@ -28,11 +28,15 @@ public sealed partial class SkyViewModel : ObservableObject
                 or nameof(ImageViewModel.PositionAngle) or nameof(ImageViewModel.Label) or nameof(ImageViewModel.Map) or nameof(ImageViewModel.Stepover) or nameof(ImageViewModel.TargetMinutes)
                 or nameof(ImageViewModel.Phase)) QueueRebuild();
         };
-        image.PlanChanged += QueueRebuild;
+        image.PlanChanged += () => { QueueRebuild(); UpdateStart(); };
+        image.PropertyChanged += (_, e) => { if (e.PropertyName is nameof(ImageViewModel.Phase) or nameof(ImageViewModel.PlanProblem)) UpdateStart(); };
+        status.Readiness[0].PropertyChanged += (_, _) => UpdateStart();
+        image.Scopes.CollectionChanged += (_, _) => UpdateStart();
         image.Stack.PropertyChanged += (_, e) => { if (e.PropertyName is nameof(FrameDisplay.Image) or nameof(FrameDisplay.Wcs)) QueueRebuild(); };
-        foreach (var c in image.Scopes) c.PropertyChanged += (_, _) => QueueRebuild();
+        foreach (var c in image.Scopes) c.PropertyChanged += (_, _) => { QueueRebuild(); UpdateStart(); };
         image.Scopes.CollectionChanged += (_, _) => QueueRebuild();
         Rebuild();
+        UpdateStart();
     }
 
     public AtlasViewModel Atlas { get; }
@@ -64,6 +68,27 @@ public sealed partial class SkyViewModel : ObservableObject
     partial void OnShowFieldsChanged(bool value) => QueueRebuild();
     partial void OnShowCoverageChanged(bool value) => QueueRebuild();
     partial void OnShowStackChanged(bool value) => QueueRebuild();
+    // why Start cannot be pressed yet, if it cannot
+    [ObservableProperty] private string _startHint = "";
+    private string _startBlockedBy = "";
+    private bool CanStartImage() => _startBlockedBy == "";
+
+    private void UpdateStart()
+    {
+        string hint = Image.IsActive ? "An image is being taken: stop it first."
+            : Image.Scopes.Count == 0 ? "Set up a scope first (Rig › Set up)."
+            : !Image.Scopes.Any(c => c.Selected) ? "Tick a scope that should take it."
+            : !Status.Readiness[0].Done ? "Connect your mount and camera first (Rig › Equipment)."
+            : "";
+        _startBlockedBy = hint != "" ? hint : Image.PlanProblem;     // (a problem with the plan is already said above the form)
+        StartHint = hint;
+        StartImageCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>Starts the image, when nothing stands in the way.</summary>
+    [RelayCommand(CanExecute = nameof(CanStartImage))]
+    private Task StartImageAsync() => Image.StartRunCommand.ExecuteAsync(null);
+
     // the sky position under the pointer when the context menu was opened
     [ObservableProperty] private double _contextRa;
     [ObservableProperty] private double _contextDec;

@@ -1,0 +1,29 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="ELink.UI.Views.HelpView">
+  <StackPanel Spacing="0">
+    <Border Classes="card">
+      <StackPanel Spacing="10">
+        <TextBlock Classes="section" Text="WORDS"/>
+        <ItemsControl ItemsSource="{Binding Terms}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <StackPanel Margin="0,0,0,10"><TextBlock Text="{Binding Term}" FontWeight="SemiBold"/><TextBlock Text="{Binding Meaning}" Classes="hint"/></StackPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </Border>
+    <Border Classes="card">
+      <StackPanel Spacing="8">
+        <TextBlock Classes="section" Text="KEYS AND MOUSE"/>
+        <ItemsControl ItemsSource="{Binding Keys}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Grid ColumnDefinitions="220,*" Margin="0,0,0,6"><TextBlock Text="{Binding Term}" FontWeight="SemiBold"/><TextBlock Grid.Column="1" Text="{Binding Meaning}" Classes="hint"/></Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </Border>
+  </StackPanel>
+</UserControl>

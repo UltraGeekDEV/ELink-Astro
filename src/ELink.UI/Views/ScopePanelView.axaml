@@ -44,13 +44,15 @@
         </Grid>
         <TextBlock Text="{Binding GuideText}" TextWrapping="Wrap"/>
         <TextBlock Classes="hint" Text="{Binding GuideCalibration}"/>
-        <Border Background="#0B1220" CornerRadius="6" Width="600" Height="120" HorizontalAlignment="Left" ClipToBounds="True">
-          <Canvas Width="600" Height="120">
-            <Line StartPoint="0,60" EndPoint="600,60" Stroke="#33557A" StrokeThickness="1"/>
-            <Polyline Points="{Binding RaGraph}" Stroke="#5AA9FF" StrokeThickness="1.6"/>
-            <Polyline Points="{Binding DecGraph}" Stroke="#FF6B6B" StrokeThickness="1.6"/>
-          </Canvas>
-        </Border>
+        <Viewbox Stretch="Uniform" StretchDirection="DownOnly" MaxWidth="600" HorizontalAlignment="Left">
+          <Border Background="#0B1220" CornerRadius="6" Width="600" Height="120" ClipToBounds="True">
+            <Canvas Width="600" Height="120">
+              <Line StartPoint="0,60" EndPoint="600,60" Stroke="#33557A" StrokeThickness="1"/>
+              <Polyline Points="{Binding RaGraph}" Stroke="#5AA9FF" StrokeThickness="1.6"/>
+              <Polyline Points="{Binding DecGraph}" Stroke="#FF6B6B" StrokeThickness="1.6"/>
+            </Canvas>
+          </Border>
+        </Viewbox>
         <TextBlock Classes="hint" Text="RA (blue) and Dec (red) error, ±4&quot; full height, last 100 guide frames. The scope guides, settles and dithers by itself; these are for testing."/>
         <StackPanel Classes="row">
           <Button Content="Start guiding" Command="{Binding StartGuidingCommand}"/>

@@ -6,6 +6,7 @@ using ELink.Contracts.Equipment;
 using ELink.Contracts.Site;
 using ELink.Core;
 using ELink.Core.Astro;
+using ELink.UI.Controls;
 using ELink.UI.Infrastructure;
 using Event.Connections.Models.BaseBinaryConvertibles;
 
@@ -45,7 +46,10 @@ public sealed partial class SiteViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _nightText = "";
     [ObservableProperty] private string _moonText = "";
     [ObservableProperty] private string _stateMessage = "";
-    [ObservableProperty] private string _message = "";
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(MessageKind))] private string _message = "";
+    public string MessageKind => Message == "saved" ? "ok" : "error";
+    /// <summary>The next 24 hours: dark hours and the Moon's, for the bar on the page.</summary>
+    [ObservableProperty] private NightTimeline? _night;
 
     private void RebuildGps()
     {
@@ -74,7 +78,8 @@ public sealed partial class SiteViewModel : ObservableObject, IDisposable
             }
             Known = s.Known.Value;
             StateMessage = s.Message.Text;
-            if (!s.Known.Value) { Where = "site unknown"; SkyText = NightText = MoonText = ""; return; }
+            if (!s.Known.Value) { Where = "site unknown"; SkyText = NightText = MoonText = ""; Night = null; return; }
+            Night = Timeline(s);
             Where = $"{s.Config.Label.Text}: {Sexagesimal.Format(s.Config.LatitudeDegrees.Value, 0)}  {Sexagesimal.Format(s.Config.LongitudeDegrees.Value, 0)}  {s.Config.ElevationMeters.Value:0} m   ·   from {s.Source.Text}" +
                     (double.IsNaN(s.ClockOffsetSeconds.Value) ? "" : $"   ·   clock {s.ClockOffsetSeconds.Value:+0.0;-0.0} s vs GPS");
             SkyText = $"{Spaced(s.Sky.Text)}   ·   Sun at {s.SunAltitude.Value:0.0}°   ·   local sidereal time {Sexagesimal.Format(s.LocalSiderealHours.Value, 0)}";
@@ -84,6 +89,31 @@ public sealed partial class SiteViewModel : ObservableObject, IDisposable
         });
         await _follower.StartAsync();
         _timer = new Timer(_ => _ = RefreshBodiesAsync(), null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
+    }
+
+    private static DateTime? Parse(string iso) => iso == "" ? null : DateTime.Parse(iso, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal).ToLocalTime();
+
+    /// <summary>When it is dark and when the Moon is up over the next 24 hours, from what the site service says of the next events.</summary>
+    public static NightTimeline Timeline(SiteState s, DateTime? now = null)
+    {
+        var at = now ?? DateTime.Now; var from = at.AddHours(-2); var to = at.AddHours(22);
+        var dark = new List<(DateTime, DateTime)>();
+        var dusk = Parse(s.DuskUtc.Text); var dawn = Parse(s.DawnUtc.Text);
+        if (s.Sky.Text == "Night")
+        {
+            if (dawn is { } d) { dark.Add((from, d)); if (dusk is { } u && u > d) dark.Add((u, to)); } else dark.Add((from, to));
+        }
+        else if (dusk is { } u2) dark.Add((u2, dawn is { } d2 && d2 > u2 ? d2 : to));
+        var moon = new List<(DateTime, DateTime)>();
+        var rise = Parse(s.MoonRiseUtc.Text); var set = Parse(s.MoonSetUtc.Text);
+        if (s.MoonAltitude.Value > 0)
+        {
+            var end = set ?? to; moon.Add((from, end));
+            if (rise is { } r && r > end) moon.Add((r, to));
+        }
+        else if (rise is { } r2) moon.Add((r2, set is { } s2 && s2 > r2 ? s2 : to));
+        static (DateTime, DateTime) Clip((DateTime A, DateTime B) x, DateTime lo, DateTime hi) => (x.A < lo ? lo : x.A, x.B > hi ? hi : x.B);
+        return new NightTimeline(at, from, to, dark.Select(x => Clip(x, from, to)).Where(x => x.Item2 > x.Item1).ToList(), moon.Select(x => Clip(x, from, to)).Where(x => x.Item2 > x.Item1).ToList());
     }
 
     private static string Spaced(string phase) => string.Concat(phase.Select((ch, i) => i > 0 && char.IsUpper(ch) ? " " + char.ToLowerInvariant(ch) : ch.ToString()));

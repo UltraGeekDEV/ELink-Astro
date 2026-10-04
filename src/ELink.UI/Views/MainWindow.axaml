@@ -7,10 +7,10 @@
         x:Class="ELink.UI.Views.MainWindow"
         Title="ELink" Background="#0F131A" Width="1280" Height="820" MinWidth="960" MinHeight="620">
   <Window.KeyBindings>
-    <KeyBinding Gesture="Ctrl+1" Command="{Binding GoSkyCommand}"/>
-    <KeyBinding Gesture="Ctrl+2" Command="{Binding GoScopesCommand}"/>
-    <KeyBinding Gesture="Ctrl+3" Command="{Binding GoRigCommand}"/>
-    <KeyBinding Gesture="Ctrl+4" Command="{Binding GoAdvancedCommand}"/>
+    <KeyBinding Gesture="Ctrl+D1" Command="{Binding GoSkyCommand}"/>
+    <KeyBinding Gesture="Ctrl+D2" Command="{Binding GoScopesCommand}"/>
+    <KeyBinding Gesture="Ctrl+D3" Command="{Binding GoRigCommand}"/>
+    <KeyBinding Gesture="Ctrl+D4" Command="{Binding GoAdvancedCommand}"/>
     <KeyBinding Gesture="Escape" Command="{Binding CloseDrawerCommand}"/>
   </Window.KeyBindings>
   <Grid RowDefinitions="Auto,Auto,*">

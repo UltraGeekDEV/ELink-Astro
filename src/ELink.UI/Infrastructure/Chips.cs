@@ -23,4 +23,6 @@ public static class Chips
     public static readonly IValueConverter IsError = new FuncValueConverter<string?, bool>(c => c == "error");
     /// <summary>"" shown as "none" (for lists where the empty entry means no device).</summary>
     public static readonly IValueConverter NoneText = new FuncValueConverter<string?, string>(t => string.IsNullOrEmpty(t) ? "none" : t);
+    /// <summary>The Sky's side panel: about a third of the window, between 330 and 410.</summary>
+    public static readonly IValueConverter PanelWidth = new FuncValueConverter<double, double>(w => Math.Clamp(w * 0.36, 330, 410));
 }

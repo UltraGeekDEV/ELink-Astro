@@ -77,7 +77,8 @@ public sealed class UiRig : IAsyncDisposable
         rig.Session = await MeshSession.CreateAsync(null, "UI-Test");
         rig.Vm = new MainViewModel(rig.Session) { Port = bridgePort };
         int height = int.TryParse(Environment.GetEnvironmentVariable("ELINK_SHOT_HEIGHT"), out var sh) && sh >= 600 ? sh : 820;
-        rig.Window = new MainWindow { DataContext = rig.Vm, Width = 1280, Height = height };
+        int width = int.TryParse(Environment.GetEnvironmentVariable("ELINK_SHOT_WIDTH"), out var sw) && sw >= 900 ? sw : 1280;
+        rig.Window = new MainWindow { DataContext = rig.Vm, Width = width, Height = height };
         rig.Window.Show();
         await rig.Vm.ConnectCommand.ExecuteAsync(null);
         await rig.Vm.StartAsync();

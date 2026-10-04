@@ -88,12 +88,8 @@
       <Thickness x:Key="ExpanderContentPadding">0</Thickness>
     </Style.Resources>
   </Style>
-  <Style Selector="ListBox">
-    <Style.Resources>
-      <SolidColorBrush x:Key="ListBoxItemBackgroundSelected" Color="#243556"/>
-      <SolidColorBrush x:Key="ListBoxItemBackgroundSelectedPointerOver" Color="#2A3E66"/>
-      <SolidColorBrush x:Key="ListBoxItemBackgroundSelectedPressed" Color="#2A3E66"/>
-      <SolidColorBrush x:Key="ListBoxItemBackgroundPointerOver" Color="#1D2535"/>
-    </Style.Resources>
-  </Style>
+  <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Background" Value="#1D2535"/></Style>
+  <Style Selector="ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Background" Value="#243556"/></Style>
+  <Style Selector="ListBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Background" Value="#2A3E66"/></Style>
+  <Style Selector="ListBoxItem:selected:focus /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Background" Value="#243556"/></Style>
 </Styles>

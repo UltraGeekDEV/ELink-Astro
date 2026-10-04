@@ -30,8 +30,8 @@
 
       <!-- search and view controls over the chart -->
       <Border VerticalAlignment="Top" HorizontalAlignment="Left" Margin="12" Padding="8" CornerRadius="10" Background="#E6131822" BorderBrush="#2B3548" BorderThickness="1">
-        <StackPanel Classes="row" Spacing="6">
-          <TextBox Text="{Binding Atlas.SearchText}" Watermark="Find: M42, NGC 7000, Vega, Jupiter…" Width="260"/>
+        <WrapPanel Classes="row">
+          <TextBox Text="{Binding Atlas.SearchText}" Watermark="Find: M42, NGC 7000, Vega, Jupiter…" Width="240"/>
           <Button Content="Find" Classes="primary" Command="{Binding Atlas.SearchCommand}" IsDefault="True"/>
           <Button Content="−" Command="{Binding Atlas.ZoomOutCommand}" ToolTip.Tip="Zoom out (mouse wheel)"/>
           <Button Content="+" Command="{Binding Atlas.ZoomInCommand}" ToolTip.Tip="Zoom in (mouse wheel)"/>
@@ -52,7 +52,7 @@
               </Flyout>
             </Button.Flyout>
           </Button>
-        </StackPanel>
+        </WrapPanel>
       </Border>
 
       <!-- several matches: pick one -->
@@ -97,7 +97,7 @@
     </Grid>
 
     <!-- what to image, and how it is going -->
-    <Border Grid.Column="1" Classes="panel" Width="410" IsVisible="{Binding PanelOpen}" BorderBrush="#2B3548" BorderThickness="1,0,0,0">
+    <Border Grid.Column="1" Classes="panel" Width="{Binding $parent[UserControl].Bounds.Width, Converter={x:Static i:Chips.PanelWidth}}" IsVisible="{Binding PanelOpen}" BorderBrush="#2B3548" BorderThickness="1,0,0,0">
       <ScrollViewer HorizontalScrollBarVisibility="Disabled">
         <StackPanel Margin="14" Spacing="0">
 
@@ -146,12 +146,13 @@
               <TextBlock Classes="hint" IsVisible="{Binding !Image.Scopes.Count}" Text="No scope yet: set one up in Rig › Set up."/>
 
               <StackPanel Classes="row">
-                <Button Content="Start" Classes="primary" Command="{Binding Image.StartRunCommand}"/>
+                <Button Content="Start" Classes="primary" Command="{Binding StartImageCommand}"/>
                 <Button Content="Add to queue" Command="{Binding Image.AddToScheduleCommand}" ToolTip.Tip="Let the queue take it when it is possible (dark, high enough, Moon far enough)"/>
                 <Button Content="Pause" Command="{Binding Image.PauseCommand}" IsVisible="{Binding Image.IsRunning}"/>
                 <Button Content="Resume" Command="{Binding Image.ResumeCommand}" IsVisible="{Binding Image.IsPaused}"/>
                 <Button Content="Stop" Classes="danger" Command="{Binding Image.AbortCommand}" IsVisible="{Binding Image.IsActive}"/>
               </StackPanel>
+              <c:Notice Text="{Binding StartHint}" Kind="warn"/>
               <c:Notice Text="{Binding Image.Message}" Kind="{Binding Image.MessageKind}"/>
 
               <Expander Header="More options">

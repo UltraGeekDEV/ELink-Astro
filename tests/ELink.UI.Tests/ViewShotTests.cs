@@ -30,7 +30,7 @@ public class ViewShotTests : IClassFixture<IndiServerFixture>
         {
             (AppView.Sky, null, "sky"), (AppView.Scopes, null, "scopes"), (AppView.Rig, "Set up", "rig-setup"), (AppView.Rig, "Equipment", "rig-equipment"),
             (AppView.Rig, "Site", "rig-site"), (AppView.Rig, "Drivers", "rig-drivers"), (AppView.Rig, "Calibration", "rig-calibration"),
-            (AppView.Advanced, "INDI properties", "adv-indi"), (AppView.Advanced, "Saving frames", "adv-saving"), (AppView.Advanced, "Manual live stack", "adv-stack"),
+            (AppView.Advanced, "Help", "adv-help"), (AppView.Advanced, "INDI properties", "adv-indi"), (AppView.Advanced, "Saving frames", "adv-saving"), (AppView.Advanced, "Manual live stack", "adv-stack"),
         })
         {
             vm.Navigate(view, section);
@@ -41,6 +41,8 @@ public class ViewShotTests : IClassFixture<IndiServerFixture>
         vm.Navigate(AppView.Sky);
         Assert.True(vm.Sky.ShowGettingStarted);
         rig.Shot("sky-getting-started");
+        Assert.Contains("Set up a scope first", vm.Sky.StartHint);                        // and Start says why it cannot be pressed
+        Assert.False(vm.Sky.StartImageCommand.CanExecute(null));
         Assert.True(vm.StatusBar.Readiness.Count(r => !r.Done) >= 3);   // (the plate solver may be installed)
         vm.Sky.TogglePanelCommand.Execute(null);
         Assert.False(vm.Sky.PanelOpen);
@@ -60,7 +62,7 @@ public class ViewShotTests : IClassFixture<IndiServerFixture>
         {
             (AppView.Sky, null, "sky"), (AppView.Scopes, null, "scopes"), (AppView.Rig, "Set up", "rig-setup"), (AppView.Rig, "Equipment", "rig-equipment"),
             (AppView.Rig, "Site", "rig-site"), (AppView.Rig, "Drivers", "rig-drivers"), (AppView.Rig, "Calibration", "rig-calibration"),
-            (AppView.Advanced, "INDI properties", "adv-indi"), (AppView.Advanced, "Saving frames", "adv-saving"), (AppView.Advanced, "Manual live stack", "adv-stack"),
+            (AppView.Advanced, "Help", "adv-help"), (AppView.Advanced, "INDI properties", "adv-indi"), (AppView.Advanced, "Saving frames", "adv-saving"), (AppView.Advanced, "Manual live stack", "adv-stack"),
         })
         {
             vm.Navigate(view, section);
@@ -85,6 +87,7 @@ public class ViewShotTests : IClassFixture<IndiServerFixture>
         Assert.True(await UiRig.Eventually(() => vm.Sky.Frame is { WidthDegrees: > 0 } && vm.Image.PlanScopes.Count > 0), "no plan: " + vm.Image.PlanProblem);
         await Task.Delay(500);
         rig.Shot("sky-framed");
+        Assert.True(await UiRig.Eventually(() => vm.Sky.StartImageCommand.CanExecute(null)), vm.Sky.StartHint);   // connected, a scope, a plan: it can start
 
         // a device's panel in the drawer
         var mount = vm.Catalog.Equipment.First(d => d.Kind == "Mount");
@@ -111,6 +114,7 @@ public class ViewShotTests : IClassFixture<IndiServerFixture>
         var vm = rig.Vm;
         await rig.DefineSimulatedRigAsync(guided: false);
         vm.Navigate(AppView.Sky);
+        vm.Sky.DismissGettingStartedCommand.Execute(null);      // (its card would sit over the part of the chart the pan below starts on, on a small window)
         vm.Image.CenterRa = "05:35:17"; vm.Image.CenterDec = "-05:23:28"; vm.Image.Width = 1.2; vm.Image.Height = 0.8; vm.Image.PositionAngle = 0;
         Assert.True(await UiRig.Eventually(() => vm.Sky.Frame is { WidthDegrees: 1.2 }), "frame");
         vm.Atlas.CenterRa = 5.588; vm.Atlas.CenterDec = -5.39; vm.Atlas.Fov = 4;
@@ -221,5 +225,35 @@ public class ViewShotTests : IClassFixture<IndiServerFixture>
         Assert.True(await UiRig.Eventually(() => vm.Scopes.Cards.Count == 0));
         composer.RemoveTrainCommand.Execute(composer.Trains.First());
         Assert.True(await UiRig.Eventually(() => vm.Catalog.Composition.Trains.Count == 0));
+    }
+
+    [AvaloniaFact]
+    public async Task TheKeysMoveBetweenViewsAndCloseThePanel()
+    {
+        Assert.True(_server.Available);
+        await using var rig = await UiRig.StartAsync(_server);
+        var vm = rig.Vm; var window = rig.Window;
+        window.GetVisualDescendants().OfType<Avalonia.Controls.Button>().First(b => Equals(b.Content, "Sky")).Focus();
+        void Press(Key key, PhysicalKey physical, string symbol, RawInputModifiers mods = RawInputModifiers.None) => window.KeyPress(key, mods, physical, symbol);
+        Press(Key.D2, PhysicalKey.Digit2, "2", RawInputModifiers.Control); Assert.Equal(AppView.Scopes, vm.View);
+        Press(Key.D3, PhysicalKey.Digit3, "3", RawInputModifiers.Control); Assert.Equal(AppView.Rig, vm.View);
+        Press(Key.D4, PhysicalKey.Digit4, "4", RawInputModifiers.Control); Assert.Equal(AppView.Advanced, vm.View);
+        Press(Key.D1, PhysicalKey.Digit1, "1", RawInputModifiers.Control); Assert.Equal(AppView.Sky, vm.View);
+        Assert.True(await UiRig.Eventually(() => vm.Catalog.Equipment.Any()));
+        await vm.OpenDeviceAsync(vm.Catalog.Equipment.First(d => d.Kind == "Mount"));
+        Assert.NotNull(vm.Drawer);
+        Press(Key.Escape, PhysicalKey.Escape, "");
+        Assert.Null(vm.Drawer);
+
+        // on the sky: + and - zoom the chart, F goes to the frame
+        vm.Navigate(AppView.Sky);
+        var chart = window.GetVisualDescendants().OfType<ELink.UI.Controls.SkyChart>().First();
+        chart.Focus();
+        double fov = vm.Atlas.Fov;
+        Press(Key.OemPlus, PhysicalKey.Equal, "+"); Assert.True(vm.Atlas.Fov < fov, "+ zooms in");
+        Press(Key.OemMinus, PhysicalKey.Minus, "-"); Press(Key.OemMinus, PhysicalKey.Minus, "-"); Assert.True(vm.Atlas.Fov > fov, "- zooms out");
+        vm.Atlas.CenterRa = 20; vm.Atlas.CenterDec = 40;
+        Press(Key.F, PhysicalKey.F, "f");
+        Assert.Equal(vm.Sky.Frame!.RaHours, vm.Atlas.CenterRa, 6);
     }
 }

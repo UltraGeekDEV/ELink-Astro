@@ -81,7 +81,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         StatusBar = new StatusBarViewModel(mesh, Catalog, Scopes) { Navigate = Navigate };
         Sky = new SkyViewModel(mesh, Atlas, Image, Schedule, LiveStack, StatusBar);
         Rig = new RigViewModel(Composer, Site, Equipment, Profiles, Calibration);
-        Advanced = new AdvancedViewModel(IndiBrowser, Storage, LiveStack);
+        Advanced = new AdvancedViewModel(IndiBrowser, Storage, LiveStack, new HelpViewModel());
 
         mesh.Notices.Posted += OnNotice;
         Mesh.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(MeshSession.Status)) OnPropertyChanged(nameof(ConnectionStatus)); };
