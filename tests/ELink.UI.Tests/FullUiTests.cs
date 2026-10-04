@@ -82,7 +82,9 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         var session = await MeshSession.CreateAsync(null, "UI-Test");
         var vm = new MainViewModel(session);
         vm.Port = bridgePort;
-        var window = new MainWindow { DataContext = vm, Width = 1280, Height = 820 };
+        // ELINK_SHOT_HEIGHT=2600 renders every page at full length (for design review); the default keeps the usual laptop-sized window
+        int shotHeight = int.TryParse(Environment.GetEnvironmentVariable("ELINK_SHOT_HEIGHT"), out var sh) && sh >= 600 ? sh : 820;
+        var window = new MainWindow { DataContext = vm, Width = 1280, Height = shotHeight };
         window.Show();
         await vm.ConnectCommand.ExecuteAsync(null);
         await vm.StartAsync();
