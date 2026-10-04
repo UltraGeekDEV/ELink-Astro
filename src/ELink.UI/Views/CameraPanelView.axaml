@@ -1,16 +1,8 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:ELink.UI.Controls"
              x:Class="ELink.UI.Views.CameraPanelView">
-  <StackPanel MaxWidth="900" Spacing="0">
-    <Border Classes="card">
-      <Grid ColumnDefinitions="*,Auto">
-        <StackPanel>
-          <TextBlock Classes="title" Text="{Binding DisplayName}"/>
-          <TextBlock Classes="label" Text="{Binding Id}"/>
-        </StackPanel>
-        <Button Grid.Column="1" Content="{Binding ConnectButtonText}" Command="{Binding ConnectCommand}" VerticalAlignment="Center"/>
-      </Grid>
-    </Border>
-    <Border Classes="card">
+  <StackPanel Spacing="0" IsEnabled="{Binding Connected}">
+        <Border Classes="card">
       <Grid ColumnDefinitions="*,*,*,*">
         <StackPanel><TextBlock Classes="label" Text="STATE"/><TextBlock Classes="value" Text="{Binding Phase}"/><TextBlock Classes="label" Text="{Binding RemainingText}"/></StackPanel>
         <StackPanel Grid.Column="1"><TextBlock Classes="label" Text="TEMPERATURE"/><TextBlock Classes="value" Text="{Binding TemperatureText}"/></StackPanel>
@@ -21,20 +13,20 @@
     <Border Classes="card">
       <StackPanel Spacing="10">
         <TextBlock Classes="section" Text="EXPOSE"/>
-        <StackPanel Classes="row">
+        <WrapPanel Classes="row">
           <StackPanel><TextBlock Classes="label" Text="Seconds"/><NumericUpDown Value="{Binding ExposureSeconds}" Minimum="0" Maximum="3600" Increment="0.5" FormatString="0.###" Width="140"/></StackPanel>
           <StackPanel><TextBlock Classes="label" Text="Frame"/><ComboBox ItemsSource="{Binding FrameTypes}" SelectedItem="{Binding FrameType}" Width="110"/></StackPanel>
           <StackPanel><TextBlock Classes="label" Text="Bin"/><ComboBox ItemsSource="{Binding Binnings}" SelectedItem="{Binding Binning}" Width="80"/></StackPanel>
           <Button Content="Expose" Classes="primary" Command="{Binding ExposeCommand}" VerticalAlignment="Bottom"/>
           <Button Content="Abort" Classes="danger" Command="{Binding AbortCommand}" VerticalAlignment="Bottom"/>
-        </StackPanel>
-        <StackPanel Classes="row">
+        </WrapPanel>
+        <WrapPanel Classes="row">
           <StackPanel><TextBlock Classes="label" Text="Cooling target °C"/><NumericUpDown Value="{Binding TargetTemperature}" Minimum="-50" Maximum="40" FormatString="0.#" Width="140"/></StackPanel>
           <Button Content="Cool" Command="{Binding CoolCommand}" VerticalAlignment="Bottom"/>
-        </StackPanel>
+        </WrapPanel>
       </StackPanel>
     </Border>
-    <TextBlock Classes="error" Text="{Binding Message}" IsVisible="{Binding Message.Length}"/>
+    <c:Notice Text="{Binding Message}"/>
     <Border Classes="card">
       <StackPanel Spacing="6">
         <TextBlock Classes="section" Text="LAST FRAME"/>

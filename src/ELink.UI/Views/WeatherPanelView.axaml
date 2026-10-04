@@ -1,21 +1,13 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:ELink.UI.Controls"
              x:Class="ELink.UI.Views.WeatherPanelView">
-  <StackPanel MaxWidth="760" Spacing="0">
-    <Border Classes="card">
-      <Grid ColumnDefinitions="*,Auto">
-        <StackPanel>
-          <TextBlock Classes="title" Text="{Binding DisplayName}"/>
-          <TextBlock Classes="label" Text="{Binding Id}"/>
-        </StackPanel>
-        <Button Grid.Column="1" Content="{Binding ConnectButtonText}" Command="{Binding ConnectCommand}" VerticalAlignment="Center"/>
-      </Grid>
-    </Border>
-    <Border Classes="card">
+  <StackPanel Spacing="0" IsEnabled="{Binding Connected}">
+        <Border Classes="card">
       <StackPanel Spacing="8">
-        <StackPanel Classes="row">
+        <WrapPanel Classes="row">
           <StackPanel><TextBlock Classes="label" Text="SAFE TO OBSERVE"/><TextBlock Classes="value" Text="{Binding Safety}"/></StackPanel>
           <Button Content="Refresh" Command="{Binding RefreshCommand}" VerticalAlignment="Bottom" Margin="24,0,0,0"/>
-        </StackPanel>
+        </WrapPanel>
         <ItemsControl ItemsSource="{Binding Parameters}">
           <ItemsControl.ItemTemplate>
             <DataTemplate>
@@ -29,6 +21,6 @@
         </ItemsControl>
       </StackPanel>
     </Border>
-    <TextBlock Classes="error" Text="{Binding Message}" IsVisible="{Binding Message.Length}"/>
+    <c:Notice Text="{Binding Message}"/>
   </StackPanel>
 </UserControl>

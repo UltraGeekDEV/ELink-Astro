@@ -4,9 +4,11 @@ using EVent.Connections.Models.BaseBinaryConvertibles;
 
 namespace ELink.UI.Infrastructure;
 
+public interface IFollower : IDisposable { Task StartAsync(); }
+
 /// <summary>Follows a remote state (event + GetState) and applies each value on the UI thread: how a view model
 /// mirrors a device without knowing anything about it but the IDs and the contract type.</summary>
-public sealed class Follower<T> : IDisposable where T : IBinaryConvertible, new()
+public sealed class Follower<T> : IFollower where T : IBinaryConvertible, new()
 {
     private readonly RemoteState<T> _state;
 

@@ -1,0 +1,61 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:i="using:ELink.UI.Infrastructure"
+             x:Class="ELink.UI.Views.StatusBarView">
+  <Border Background="#171C27" BorderBrush="#2B3548" BorderThickness="0,0,0,1" Padding="14,7">
+    <Grid ColumnDefinitions="Auto,*,Auto">
+      <!-- how dark it is -->
+      <Button Classes="ghost" Command="{Binding OpenSiteCommand}" Padding="6,2" ToolTip.Tip="The night at your site (Rig › Site)">
+        <StackPanel Classes="row" Spacing="8">
+          <Ellipse Classes="dot" Fill="{Binding NightClass, Converter={x:Static i:Chips.Dot}}"/>
+          <TextBlock Text="{Binding NightText}" VerticalAlignment="Center"/>
+          <TextBlock Classes="label" Text="{Binding MoonText}" VerticalAlignment="Center" IsVisible="{Binding MoonText.Length}"/>
+        </StackPanel>
+      </Button>
+
+      <!-- what each scope is doing -->
+      <ItemsControl Grid.Column="1" ItemsSource="{Binding Scopes.Cards}" Margin="16,0">
+        <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="8"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Button Classes="ghost" Padding="4,2" Command="{Binding $parent[UserControl].DataContext.OpenScopeCommand}" CommandParameter="{Binding}"
+                    ToolTip.Tip="{Binding ScopeMessage}">
+              <Border Classes="chip" Background="{Binding ChipClass, Converter={x:Static i:Chips.Background}}">
+                <StackPanel Classes="row" Spacing="6">
+                  <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold"/>
+                  <TextBlock Text="{Binding ChipText}"/>
+                </StackPanel>
+              </Border>
+            </Button>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+      <!-- is there anything left to set up -->
+      <Button Grid.Column="2" Classes="ghost" Padding="4,2">
+        <Border Classes="chip" Background="{Binding SetupClass, Converter={x:Static i:Chips.Background}}">
+          <TextBlock Text="{Binding SetupText}"/>
+        </Border>
+        <Button.Flyout>
+          <Flyout Placement="BottomEdgeAlignedRight">
+            <StackPanel Spacing="4" MinWidth="360">
+              <TextBlock Classes="section" Text="BEFORE YOU IMAGE"/>
+              <ItemsControl ItemsSource="{Binding Readiness}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Button Classes="ghost" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="6,5"
+                            Command="{Binding $parent[UserControl].DataContext.FixCommand}" CommandParameter="{Binding}">
+                      <StackPanel Classes="row" Spacing="8">
+                        <TextBlock Text="{Binding Mark}" FontWeight="Bold" Foreground="#8AA0C8" Width="14"/>
+                        <TextBlock Text="{Binding Text}" TextWrapping="Wrap" MaxWidth="330"/>
+                      </StackPanel>
+                    </Button>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </Flyout>
+        </Button.Flyout>
+      </Button>
+    </Grid>
+  </Border>
+</UserControl>

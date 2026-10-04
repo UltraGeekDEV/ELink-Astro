@@ -15,13 +15,15 @@
     <DataTemplate DataType="vm:GpsPanelViewModel"><v:GpsPanelView/></DataTemplate>
     <DataTemplate DataType="vm:ScopePanelViewModel"><v:ScopePanelView/></DataTemplate>
     <DataTemplate DataType="vm:ComposerViewModel"><v:ComposerView/></DataTemplate>
+    <DataTemplate DataType="vm:SkyViewModel"><v:SkyView/></DataTemplate>
+    <DataTemplate DataType="vm:ScopesViewModel"><v:ScopesView/></DataTemplate>
+    <DataTemplate DataType="vm:RigViewModel"><v:SectionHostView/></DataTemplate>
+    <DataTemplate DataType="vm:AdvancedViewModel"><v:SectionHostView/></DataTemplate>
+    <DataTemplate DataType="vm:EquipmentViewModel"><v:EquipmentView/></DataTemplate>
     <DataTemplate DataType="vm:AutofocusViewModel"><v:AutofocusView/></DataTemplate>
-    <DataTemplate DataType="vm:ScheduleViewModel"><v:ScheduleView/></DataTemplate>
     <DataTemplate DataType="vm:ProfilesViewModel"><v:ProfilesView/></DataTemplate>
     <DataTemplate DataType="vm:CalibrationViewModel"><v:CalibrationView/></DataTemplate>
     <DataTemplate DataType="vm:StorageViewModel"><v:StorageView/></DataTemplate>
-    <DataTemplate DataType="vm:ImageViewModel"><v:ImageView/></DataTemplate>
-    <DataTemplate DataType="vm:AtlasViewModel"><v:AtlasView/></DataTemplate>
     <DataTemplate DataType="vm:CenteringViewModel"><v:CenteringView/></DataTemplate>
     <DataTemplate DataType="vm:LiveStackViewModel"><v:LiveStackView/></DataTemplate>
     <DataTemplate DataType="vm:SiteViewModel"><v:SiteView/></DataTemplate>
@@ -30,23 +32,6 @@
 
   <Application.Styles>
     <FluentTheme />
-    <Style Selector="Border.card">
-      <Setter Property="Background" Value="#1F2530"/>
-      <Setter Property="BorderBrush" Value="#2E3646"/>
-      <Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="CornerRadius" Value="8"/>
-      <Setter Property="Padding" Value="14"/>
-      <Setter Property="Margin" Value="0,0,0,12"/>
-    </Style>
-    <Style Selector="TextBlock.title"><Setter Property="FontSize" Value="20"/><Setter Property="FontWeight" Value="SemiBold"/></Style>
-    <Style Selector="TextBlock.section"><Setter Property="FontSize" Value="12"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Opacity" Value="0.55"/><Setter Property="Margin" Value="0,0,0,8"/></Style>
-    <Style Selector="TextBlock.label"><Setter Property="FontSize" Value="11"/><Setter Property="Opacity" Value="0.55"/></Style>
-    <Style Selector="TextBlock.value"><Setter Property="FontSize" Value="22"/><Setter Property="FontWeight" Value="Medium"/><Setter Property="FontFamily" Value="Cascadia Mono,Consolas,DejaVu Sans Mono,monospace"/></Style>
-    <Style Selector="TextBlock.ok"><Setter Property="Foreground" Value="#7FD99A"/><Setter Property="TextWrapping" Value="Wrap"/></Style>
-    <Style Selector="TextBlock.error"><Setter Property="Foreground" Value="#FF8A80"/><Setter Property="TextWrapping" Value="Wrap"/></Style>
-    <Style Selector="Button.primary"><Setter Property="Background" Value="#2F6FED"/><Setter Property="Foreground" Value="White"/></Style>
-    <Style Selector="Button.danger"><Setter Property="Background" Value="#B3372F"/><Setter Property="Foreground" Value="White"/></Style>
-    <Style Selector="Border.pill"><Setter Property="CornerRadius" Value="10"/><Setter Property="Padding" Value="8,2"/><Setter Property="Background" Value="#2E3646"/></Style>
-    <Style Selector="StackPanel.row"><Setter Property="Orientation" Value="Horizontal"/><Setter Property="Spacing" Value="8"/></Style>
+    <StyleInclude Source="avares://ELink.UI/Styles/Theme.axaml"/>
   </Application.Styles>
 </Application>

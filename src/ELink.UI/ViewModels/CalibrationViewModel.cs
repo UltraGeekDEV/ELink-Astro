@@ -40,6 +40,10 @@ public sealed partial class CalibrationViewModel : ObservableObject, IDisposable
     [ObservableProperty] private int _flatLevelPercent = 50;
     [ObservableProperty] private MasterRow? _selectedMaster;
     [ObservableProperty] private string _status = "";
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(IsBusy))] [NotifyCanExecuteChangedFor(nameof(CaptureCommand), nameof(AbortCommand))] private string _phase = "Idle";
+    /// <summary>Frames are being taken or combined.</summary>
+    public bool IsBusy => Phase is "Capturing" or "FindingExposure" or "Combining";
+    private bool CanCapture() => !IsBusy;
     [ObservableProperty] private string _message = "";
     public string Hint => Kind switch
     {
@@ -64,6 +68,7 @@ public sealed partial class CalibrationViewModel : ObservableObject, IDisposable
     {
         _follower = new Follower<CalibrationState>(_mesh.Node, CalibrationIds.State, CalibrationIds.GetState, s =>
         {
+            Phase = s.Phase.Text;
             Status = s.Phase.Text switch
             {
                 "Capturing" => $"capturing {s.Done.Value}/{s.Count.Value} at {s.ExposureSeconds.Value.ToString("0.###", CultureInfo.InvariantCulture)} s",
@@ -91,7 +96,7 @@ public sealed partial class CalibrationViewModel : ObservableObject, IDisposable
         UiThread.Post(() => { Masters.Clear(); foreach (var r in rows) Masters.Add(r); });
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanCapture))]
     private async Task CaptureAsync()
     {
         if (SelectedCamera is null) { Message = "choose a camera"; return; }
@@ -104,7 +109,7 @@ public sealed partial class CalibrationViewModel : ObservableObject, IDisposable
         Message = res.Ok.Value ? "" : res.Error.Text;
     }
 
-    [RelayCommand] private async Task AbortAsync() => await Commands.CallAsync(_mesh.Node, CalibrationIds.Abort, NOTESVoid.Void);
+    [RelayCommand(CanExecute = nameof(IsBusy))] private async Task AbortAsync() => await Commands.CallAsync(_mesh.Node, CalibrationIds.Abort, NOTESVoid.Void);
 
     [RelayCommand]
     private async Task DeleteAsync()

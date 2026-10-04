@@ -40,7 +40,10 @@ public sealed partial class AutofocusViewModel : ObservableObject, IDisposable
     [ObservableProperty] private int _samples = 7;
     [ObservableProperty] private string _filter = "";
 
-    [ObservableProperty] private string _phase = "Idle";
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(IsBusy))] [NotifyCanExecuteChangedFor(nameof(RunCommand), nameof(AbortCommand))] private string _phase = "Idle";
+    /// <summary>A focus run is under way.</summary>
+    public bool IsBusy => Phase is not ("Idle" or "Done" or "Error" or "Aborted");
+    private bool CanRun() => !IsBusy;
     [ObservableProperty] private string _message = "";
     [ObservableProperty] private string _result = "";
     public ObservableCollection<FocusRow> Points { get; } = new();
@@ -87,10 +90,10 @@ public sealed partial class AutofocusViewModel : ObservableObject, IDisposable
         ChartCaption = $"HFR {pts.Min(p => p.Hfr.Value):0.0}..{pts.Max(p => p.Hfr.Value):0.0} px over focus {x0:0}..{x1:0}";
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanRun))]
     private async Task RunAsync()
     {
-        if (SelectedShooter is null || SelectedFocuser is null) { Message = "pick a shooter and a focuser (compose a shooter first)"; return; }
+        if (SelectedShooter is null || SelectedFocuser is null) { Message = "pick a camera and a focuser (set up a scope first)"; return; }
         var r = await Commands.CallAsync(_mesh.Node, AutofocusIds.Run, new AutofocusRequest
         {
             ShooterId = SelectedShooter, FocuserId = SelectedFocuser, ExposureSeconds = ExposureSeconds, StepSize = StepSize, Samples = Samples, Filter = Filter,
@@ -98,7 +101,7 @@ public sealed partial class AutofocusViewModel : ObservableObject, IDisposable
         if (!r.Ok.Value) Message = r.Error.Text;
     }
 
-    [RelayCommand] private Task AbortAsync() => Commands.CallAsync(_mesh.Node, AutofocusIds.Abort, NOTESVoid.Void);
+    [RelayCommand(CanExecute = nameof(IsBusy))] private Task AbortAsync() => Commands.CallAsync(_mesh.Node, AutofocusIds.Abort, NOTESVoid.Void);
 
     public void Dispose() => _follower?.Dispose();
 }

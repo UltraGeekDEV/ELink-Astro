@@ -1,11 +1,10 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="ELink.UI.Views.AutofocusView">
-  <StackPanel MaxWidth="900" Spacing="0">
+  <StackPanel Spacing="0">
     <Border Classes="card">
       <Grid ColumnDefinitions="*,Auto">
         <StackPanel>
-          <TextBlock Classes="title" Text="Autofocus"/>
-          <TextBlock Classes="label" Text="Sweeps a focuser, measures star sharpness (HFR) at each position, fits the focus curve and moves to its minimum."/>
+          <TextBlock Classes="hint" Text="Sweeps a focuser, measures star sharpness (HFR) at each position, fits the focus curve and moves to its minimum."/>
         </StackPanel>
         <StackPanel Grid.Column="1" HorizontalAlignment="Right">
           <TextBlock Classes="value" Text="{Binding Phase}" HorizontalAlignment="Right"/>
@@ -15,18 +14,18 @@
     </Border>
     <Border Classes="card">
       <StackPanel Spacing="10">
-        <StackPanel Classes="row">
+        <WrapPanel Classes="row">
           <StackPanel><TextBlock Classes="label" Text="Shooter"/><ComboBox ItemsSource="{Binding Shooters}" SelectedItem="{Binding SelectedShooter}" Width="200"/></StackPanel>
           <StackPanel><TextBlock Classes="label" Text="Focuser"/><ComboBox ItemsSource="{Binding Focusers}" SelectedItem="{Binding SelectedFocuser}" Width="220"/></StackPanel>
           <StackPanel><TextBlock Classes="label" Text="Filter (optional)"/><TextBox Text="{Binding Filter}" Width="120"/></StackPanel>
-        </StackPanel>
-        <StackPanel Classes="row">
+        </WrapPanel>
+        <WrapPanel Classes="row">
           <StackPanel><TextBlock Classes="label" Text="Exposure s"/><NumericUpDown Value="{Binding ExposureSeconds}" Minimum="0.1" FormatString="0.##" Width="130"/></StackPanel>
           <StackPanel><TextBlock Classes="label" Text="Step size"/><NumericUpDown Value="{Binding StepSize}" Minimum="1" FormatString="0" Width="130"/></StackPanel>
           <StackPanel><TextBlock Classes="label" Text="Samples"/><NumericUpDown Value="{Binding Samples}" Minimum="5" Maximum="15" FormatString="0" Width="110"/></StackPanel>
           <Button Content="Run" Classes="primary" Command="{Binding RunCommand}" VerticalAlignment="Bottom"/>
           <Button Content="Abort" Classes="danger" Command="{Binding AbortCommand}" VerticalAlignment="Bottom"/>
-        </StackPanel>
+        </WrapPanel>
         <TextBlock Classes="error" Text="{Binding Message}" IsVisible="{Binding Message.Length}"/>
       </StackPanel>
     </Border>
@@ -40,7 +39,7 @@
         <ItemsControl ItemsSource="{Binding Points}">
           <ItemsControl.ItemTemplate>
             <DataTemplate>
-              <StackPanel Classes="row"><TextBlock Text="{Binding Position}" Width="90"/><TextBlock Text="{Binding Hfr}" Width="70"/><TextBlock Text="{Binding Stars}" Opacity="0.6"/></StackPanel>
+              <WrapPanel Classes="row"><TextBlock Text="{Binding Position}" Width="90"/><TextBlock Text="{Binding Hfr}" Width="70"/><TextBlock Text="{Binding Stars}" Opacity="0.6"/></WrapPanel>
             </DataTemplate>
           </ItemsControl.ItemTemplate>
         </ItemsControl>

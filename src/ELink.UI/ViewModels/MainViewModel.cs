@@ -6,15 +6,15 @@ using ELink.UI.Infrastructure;
 
 namespace ELink.UI.ViewModels;
 
-/// <summary>A tab of the workspace: a view model shown with its view (picked by data template).</summary>
-public sealed partial class WorkspaceTab : ObservableObject
+/// <summary>A message shown for a few seconds in the corner of the window.</summary>
+public sealed record Toast(Notice Notice)
 {
-    public WorkspaceTab(string title, object content, bool closable) { Title = title; Content = content; Closable = closable; }
-    public string Title { get; }
-    public object Content { get; }
-    public bool Closable { get; }
+    public string Text => Notice.Text;
+    public string Css => Notice.Css;
 }
 
+/// <summary>The window: four views (Sky, Scopes, Rig, Advanced) behind a side rail, a status strip that is always there,
+/// a drawer for one device's panel, and toasts. Each view is its own view model; this only moves between them.</summary>
 public sealed partial class MainViewModel : ObservableObject, IDisposable
 {
     public MeshSession Mesh { get; }
@@ -31,9 +31,26 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public CenteringViewModel Centering { get; }
     public LiveStackViewModel LiveStack { get; }
     public SiteViewModel Site { get; }
+    public EquipmentViewModel Equipment { get; }
 
-    public ObservableCollection<WorkspaceTab> Tabs { get; } = new();
-    [ObservableProperty] private WorkspaceTab? _selectedTab;
+    public SkyViewModel Sky { get; }
+    public ScopesViewModel Scopes { get; }
+    public RigViewModel Rig { get; }
+    public AdvancedViewModel Advanced { get; }
+    public StatusBarViewModel StatusBar { get; }
+
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(Current), nameof(IsSky), nameof(IsScopes), nameof(IsRig), nameof(IsAdvanced))]
+    private AppView _view = AppView.Sky;
+    public object Current => View switch { AppView.Scopes => Scopes, AppView.Rig => Rig, AppView.Advanced => Advanced, _ => Sky };
+    public bool IsSky => View == AppView.Sky;
+    public bool IsScopes => View == AppView.Scopes;
+    public bool IsRig => View == AppView.Rig;
+    public bool IsAdvanced => View == AppView.Advanced;
+
+    /// <summary>One device's panel, slid in over the right edge (null = closed).</summary>
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasDrawer))] private DevicePanelViewModel? _drawer;
+    public bool HasDrawer => Drawer is not null;
+    public ObservableCollection<Toast> Toasts { get; } = new();
 
     [ObservableProperty] private string _host = "127.0.0.1";
     [ObservableProperty] private int _port = 5698;
@@ -58,21 +75,30 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Centering = new CenteringViewModel(mesh, Catalog);
         LiveStack = new LiveStackViewModel(mesh, Catalog, Image);
         Site = new SiteViewModel(mesh, Catalog);
-        Tabs.Add(new WorkspaceTab("Compose", Composer, false));
-        Tabs.Add(new WorkspaceTab("Sky atlas", Atlas, false));
-        Tabs.Add(new WorkspaceTab("Site", Site, false));
-        Tabs.Add(new WorkspaceTab("Centring", Centering, false));
-        Tabs.Add(new WorkspaceTab("Image", Image, false));
-        Tabs.Add(new WorkspaceTab("Live stack", LiveStack, false));
-        Tabs.Add(new WorkspaceTab("Schedule", Schedule, false));
-        Tabs.Add(new WorkspaceTab("Calibration", Calibration, false));
-        Tabs.Add(new WorkspaceTab("Autofocus", Autofocus, false));
-        Tabs.Add(new WorkspaceTab("Storage", Storage, false));
-        Tabs.Add(new WorkspaceTab("Profiles", Profiles, false));
-        Tabs.Add(new WorkspaceTab("INDI", IndiBrowser, false));
-        SelectedTab = Tabs[0];
+        Equipment = new EquipmentViewModel(mesh, Catalog, OpenDeviceAsync);
+
+        Sky = new SkyViewModel(mesh, Atlas, Image, Schedule, LiveStack);
+        Scopes = new ScopesViewModel(mesh, Catalog, Autofocus, Centering) { OpenRig = () => Navigate(AppView.Rig, "Set up") };
+        Rig = new RigViewModel(Composer, Site, Equipment, Profiles, Calibration);
+        Advanced = new AdvancedViewModel(IndiBrowser, Storage, LiveStack);
+        StatusBar = new StatusBarViewModel(mesh, Catalog, Scopes) { Navigate = Navigate };
+
+        mesh.Notices.Posted += OnNotice;
         Mesh.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(MeshSession.Status)) OnPropertyChanged(nameof(ConnectionStatus)); };
     }
+
+    /// <summary>Goes to a view, and to a section of it when it has sections.</summary>
+    public void Navigate(AppView view, string? section = null)
+    {
+        View = view;
+        if (view == AppView.Rig) Rig.Show(section);
+        else if (view == AppView.Advanced) Advanced.Show(section);
+    }
+
+    [RelayCommand] private void GoSky() => Navigate(AppView.Sky);
+    [RelayCommand] private void GoScopes() => Navigate(AppView.Scopes);
+    [RelayCommand] private void GoRig() => Navigate(AppView.Rig);
+    [RelayCommand] private void GoAdvanced() => Navigate(AppView.Advanced);
 
     public async Task StartAsync()
     {
@@ -87,25 +113,24 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         await Centering.StartAsync();
         await LiveStack.StartAsync();
         await Site.StartAsync();
+        await StatusBar.StartAsync();
+        await Sky.StartAsync();
         await IndiBrowser.RefreshServersAsync();
     }
 
     [RelayCommand]
     private async Task ConnectAsync()
     {
-        await Mesh.ConnectAsync(Host.Trim(), Port);
-        await Catalog.RefreshAsync();
-        await IndiBrowser.RefreshServersAsync();
+        await Mesh.ConnectAsync(Host, Port);
+        if (Mesh.IsConnected) await Catalog.RefreshAsync();
     }
 
     [RelayCommand] private Task RefreshAsync() => Catalog.RefreshAsync();
 
-    [RelayCommand]
-    private async Task OpenDeviceAsync(DeviceItem? item)
+    /// <summary>Shows a device's own panel in the drawer.</summary>
+    public async Task OpenDeviceAsync(DeviceItem item)
     {
-        if (item is null) return;
-        var existing = Tabs.FirstOrDefault(t => t.Content is DevicePanelViewModel p && p.Kind == item.Kind && p.Id == item.Id);
-        if (existing is not null) { SelectedTab = existing; return; }
+        if (Drawer is { } open && open.Kind == item.Kind && open.Id == item.Id) return;
         DevicePanelViewModel? panel = item.Kind switch
         {
             DeviceKinds.Mount => new MountPanelViewModel(Mesh, item.Id, item.DisplayName),
@@ -120,39 +145,29 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         };
         if (panel is null) return;
         await panel.StartAsync();
-        var tab = new WorkspaceTab($"{item.Kind}: {item.DisplayName}", panel, true);
-        Tabs.Add(tab); SelectedTab = tab;
+        var old = Drawer;
+        Drawer = panel;
+        old?.Dispose();
     }
 
     [RelayCommand]
-    private async Task OpenScopeAsync(ScopeItem? item)
-    {
-        if (item is null) return;
-        var existing = Tabs.FirstOrDefault(t => t.Content is ScopePanelViewModel s && s.ScopeId == item.Id);
-        if (existing is not null) { SelectedTab = existing; return; }
-        var def = Catalog.Composition.Scopes.FirstOrDefault(s => s.Id.Text == item.Id);
-        // a named guider, or the one the scope owns through its own guide settings
-        string guider = def is null ? "" : def.GuiderId.Text != "" ? def.GuiderId.Text : def.GuideShooterId.Text != "" ? def.Id.Text + "-guider" : "";
-        var trains = def is null ? new List<string>() : def.Shooters.Select(x => x.Id.Text).Where(id => Catalog.Composition.Trains.Any(t => t.Id.Text == id)).ToList();
-        var panel = new ScopePanelViewModel(Mesh, item.Id, item.DisplayName, guider, trains);
-        await panel.StartAsync();
-        var tab = new WorkspaceTab($"Scope: {item.DisplayName}", panel, true);
-        Tabs.Add(tab); SelectedTab = tab;
-    }
+    private void CloseDrawer() { var old = Drawer; Drawer = null; old?.Dispose(); }
 
-    [RelayCommand]
-    private void CloseTab(WorkspaceTab? tab)
+    private void OnNotice(Notice n) => UiThread.Post(() =>
     {
-        if (tab is null || !tab.Closable) return;
-        int i = Tabs.IndexOf(tab);
-        Tabs.Remove(tab);
-        (tab.Content as IDisposable)?.Dispose();
-        SelectedTab = Tabs.Count > 0 ? Tabs[Math.Min(i, Tabs.Count - 1)] : null;
-    }
+        var toast = new Toast(n);
+        Toasts.Add(toast);
+        while (Toasts.Count > 4) Toasts.RemoveAt(0);
+        _ = Task.Delay(n.Kind == NoticeKind.Error ? TimeSpan.FromSeconds(14) : TimeSpan.FromSeconds(6)).ContinueWith(_ => UiThread.Post(() => Toasts.Remove(toast)));
+    });
+
+    [RelayCommand] private void DismissToast(Toast? toast) { if (toast is not null) Toasts.Remove(toast); }
 
     public void Dispose()
     {
-        foreach (var t in Tabs) (t.Content as IDisposable)?.Dispose();
+        Mesh.Notices.Posted -= OnNotice;
+        Drawer?.Dispose();
+        Scopes.Dispose(); StatusBar.Dispose();
         Catalog.Dispose(); IndiBrowser.Dispose(); Autofocus.Dispose(); Schedule.Dispose(); Profiles.Dispose(); Calibration.Dispose(); Storage.Dispose(); Image.Dispose(); Atlas.Dispose(); Centering.Dispose(); LiveStack.Dispose(); Site.Dispose(); Mesh.Dispose();
     }
 }

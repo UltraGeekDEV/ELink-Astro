@@ -1,11 +1,10 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="ELink.UI.Views.StorageView">
-  <StackPanel MaxWidth="900" Spacing="0">
+  <StackPanel Spacing="0">
     <Border Classes="card">
       <Grid ColumnDefinitions="*,Auto">
         <StackPanel>
-          <TextBlock Classes="title" Text="Storage"/>
-          <TextBlock Classes="label" Text="Saves every frame of the shooters you pick: one folder per night, FITS headers filled in, plus a session log."/>
+          <TextBlock Classes="hint" Text="Saves every frame of the shooters you pick: one folder per night, FITS headers filled in, plus a session log."/>
         </StackPanel>
         <StackPanel Grid.Column="1" HorizontalAlignment="Right">
           <TextBlock Classes="value" Text="{Binding FramesSaved}" HorizontalAlignment="Right"/>
@@ -16,21 +15,21 @@
     <Border Classes="card">
       <StackPanel Spacing="10">
         <TextBlock Classes="section" Text="DIRECTORY"/>
-        <StackPanel Classes="row">
+        <WrapPanel Classes="row">
           <TextBox Text="{Binding DirectoryInput}" Width="520"/>
           <Button Content="Use" Classes="primary" Command="{Binding SetDirectoryCommand}"/>
-        </StackPanel>
+        </WrapPanel>
         <TextBlock Classes="label" Text="{Binding Directory}"/>
         <TextBlock Classes="section" Text="SAVED SHOOTERS" Margin="0,8,0,0"/>
-        <StackPanel Classes="row">
+        <WrapPanel Classes="row">
           <ComboBox ItemsSource="{Binding Shooters}" SelectedItem="{Binding SelectedShooter}" Width="220"/>
           <Button Content="Save its frames" Command="{Binding WatchCommand}"/>
-        </StackPanel>
+        </WrapPanel>
         <ItemsControl ItemsSource="{Binding Watching}">
           <ItemsControl.ItemTemplate>
             <DataTemplate>
-              <StackPanel Classes="row"><TextBlock Text="{Binding}" VerticalAlignment="Center" Width="220"/>
-                <Button Content="Stop" Padding="10,2" Command="{Binding $parent[UserControl].DataContext.UnwatchCommand}" CommandParameter="{Binding}"/></StackPanel>
+              <WrapPanel Classes="row"><TextBlock Text="{Binding}" VerticalAlignment="Center" Width="220"/>
+                <Button Content="Stop" Padding="10,2" Command="{Binding $parent[UserControl].DataContext.UnwatchCommand}" CommandParameter="{Binding}"/></WrapPanel>
             </DataTemplate>
           </ItemsControl.ItemTemplate>
         </ItemsControl>

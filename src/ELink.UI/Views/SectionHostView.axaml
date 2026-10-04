@@ -1,0 +1,30 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="ELink.UI.Views.SectionHostView">
+  <Grid ColumnDefinitions="210,*">
+    <Border Classes="panel" Padding="10">
+      <StackPanel Spacing="2">
+        <TextBlock Classes="title" Text="{Binding Heading}" Margin="8,4,0,10"/>
+        <ItemsControl ItemsSource="{Binding Sections}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Button Classes="sub" Classes.active="{Binding Active}" Command="{Binding $parent[UserControl].DataContext.SelectCommand}" CommandParameter="{Binding}">
+                <StackPanel>
+                  <TextBlock Text="{Binding Title}" FontSize="14"/>
+                </StackPanel>
+              </Button>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </Border>
+    <ScrollViewer Grid.Column="1" HorizontalScrollBarVisibility="Disabled">
+      <StackPanel HorizontalAlignment="Stretch" MaxWidth="1000" Margin="20,16" Spacing="12">
+        <StackPanel>
+          <TextBlock Classes="title" Text="{Binding Selected.Title}"/>
+          <TextBlock Classes="hint" Text="{Binding Selected.Description}"/>
+        </StackPanel>
+        <ContentControl Content="{Binding Selected.Content}"/>
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

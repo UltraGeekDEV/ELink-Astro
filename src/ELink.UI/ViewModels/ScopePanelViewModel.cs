@@ -71,7 +71,8 @@ public partial class ScopePanelViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _scopeMessage = "";
     [ObservableProperty] private int _shotsDone;
     [ObservableProperty] private int _shotsPlanned;
-    [ObservableProperty] private bool _observing;
+    [ObservableProperty] [NotifyCanExecuteChangedFor(nameof(ObserveCommand), nameof(GotoCommand), nameof(ExposeCommand), nameof(AbortCommand))] private bool _observing;
+    private bool CanStartWork() => !Observing;
     // where it points
     [ObservableProperty] private string _pointerPhase = "--";
     [ObservableProperty] private string _raText = "--";
@@ -96,10 +97,37 @@ public partial class ScopePanelViewModel : ObservableObject, IDisposable
 
     public FrameDisplay Preview { get; } = new();
     public ObservableCollection<string> Shots { get; } = new();
-    public string Progress => Observing ? $"{ShotsDone} / {ShotsPlanned} rounds" : "";
-    partial void OnObservingChanged(bool value) => OnPropertyChanged(nameof(Progress));
-    partial void OnShotsDoneChanged(int value) => OnPropertyChanged(nameof(Progress));
-    partial void OnShotsPlannedChanged(int value) => OnPropertyChanged(nameof(Progress));
+    public string Progress => Observing ? $"{ShotsDone} of {ShotsPlanned}" : "";
+    /// <summary>0..1 of the running observation, for the progress bar.</summary>
+    public double ProgressFraction => Observing && ShotsPlanned > 0 ? Math.Clamp((double)ShotsDone / ShotsPlanned, 0, 1) : 0;
+
+    /// <summary>The scope's state in plain words, and the style class of its chip: idle | busy | ok | warn | error.</summary>
+    public string ChipText => ScopePhase switch
+    {
+        "Disconnected" => "Not connected", "Idle" => "Idle", "Pointing" => "Slewing", "OnTarget" => "On target", "Centering" => "Centring",
+        "Focusing" => "Focusing", "Cooling" => "Cooling down", "WaitingForFlip" => "Waiting to flip", "Flipping" => "Flipping", "Guiding" => "Guiding",
+        "Dithering" => "Dithering", "Exposing" => Observing && ShotsPlanned > 0 ? $"Exposing {ShotsDone + 1} of {ShotsPlanned}" : "Exposing", "Error" => "Error", var other => other,
+    };
+    public string ChipClass => ScopePhase switch
+    {
+        "Idle" => "idle", "OnTarget" => "ok", "Error" => "error", "Disconnected" => "warn", _ => "busy",
+    };
+    /// <summary>One line on where the pointing stands.</summary>
+    public string PointerLine => PointerPhase switch
+    {
+        "--" or "Disconnected" => "mount not connected", "Slewing" => "slewing…", "Tracking" when OnTarget => "on target, tracking", "Tracking" => "tracking",
+        "Parked" => "parked", var other => OnTarget ? $"{other}, on target" : other,
+    };
+    private void ScopeChanged()
+    {
+        foreach (var n in new[] { nameof(Progress), nameof(ProgressFraction), nameof(ChipText), nameof(ChipClass), nameof(PointerLine) }) OnPropertyChanged(n);
+    }
+    partial void OnObservingChanged(bool value) => ScopeChanged();
+    partial void OnShotsDoneChanged(int value) => ScopeChanged();
+    partial void OnShotsPlannedChanged(int value) => ScopeChanged();
+    partial void OnScopePhaseChanged(string value) => ScopeChanged();
+    partial void OnPointerPhaseChanged(string value) => ScopeChanged();
+    partial void OnOnTargetChanged(bool value) => ScopeChanged();
 
     public async Task StartAsync()
     {
@@ -193,15 +221,15 @@ public partial class ScopePanelViewModel : ObservableObject, IDisposable
 
     private async Task Run(Task<CommandResult> call) { var r = await call; Message = r.Ok.Value ? "" : r.Error.Text; }
 
-    [RelayCommand] private async Task ObserveAsync()
+    [RelayCommand(CanExecute = nameof(CanStartWork))] private async Task ObserveAsync()
     {
         if (!TryTarget(out var t)) return;
         await Run(Commands.CallAsync(_mesh.Node, ScopeIds.Command(ScopeId, "Observe"),
             new ObserveRequest { Target = t, Exposure = Exposure(), Count = Math.Max(1, Count) }));
     }
-    [RelayCommand] private async Task GotoAsync() { if (TryTarget(out var t)) await Run(Commands.CallAsync(_mesh.Node, PointerIds.Goto(ScopeId), t)); }
-    [RelayCommand] private Task ExposeAsync() => Run(Commands.CallAsync(_mesh.Node, ShooterIds.Expose(ScopeId), Exposure()));
-    [RelayCommand] private Task AbortAsync() => Run(Commands.CallAsync(_mesh.Node, ScopeIds.Command(ScopeId, "Abort"), NOTESVoid.Void));
+    [RelayCommand(CanExecute = nameof(CanStartWork))] private async Task GotoAsync() { if (TryTarget(out var t)) await Run(Commands.CallAsync(_mesh.Node, PointerIds.Goto(ScopeId), t)); }
+    [RelayCommand(CanExecute = nameof(CanStartWork))] private Task ExposeAsync() => Run(Commands.CallAsync(_mesh.Node, ShooterIds.Expose(ScopeId), Exposure()));
+    [RelayCommand(CanExecute = nameof(Observing))] private Task AbortAsync() => Run(Commands.CallAsync(_mesh.Node, ScopeIds.Command(ScopeId, "Abort"), NOTESVoid.Void));
 
     public void Dispose()
     {

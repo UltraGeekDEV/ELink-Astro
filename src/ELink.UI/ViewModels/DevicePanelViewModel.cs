@@ -29,7 +29,9 @@ public abstract partial class DevicePanelViewModel : ObservableObject, IDisposab
     [ObservableProperty] private string _message = "";
 
     public string ConnectButtonText => Connected ? "Disconnect" : "Connect";
-    partial void OnConnectedChanged(bool value) => OnPropertyChanged(nameof(ConnectButtonText));
+    /// <summary>Said above the panel while the device is not connected (its controls are greyed out).</summary>
+    public string ConnectionHint => Connected ? "" : "Not connected: press Connect.";
+    partial void OnConnectedChanged(bool value) { OnPropertyChanged(nameof(ConnectButtonText)); OnPropertyChanged(nameof(ConnectionHint)); }
 
     public abstract Task StartAsync();
 

@@ -1,0 +1,99 @@
+<Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- Palette: page #0F131A, rail #131822, cards #1B2230 (edge #2B3548), text #E6EBF5 / #A9B5CB / #8A98B3, accent #3A78F2.
+       Text hierarchy is by size and weight, not by fading, so labels stay readable on the dark background. -->
+
+  <Style Selector="Window"><Setter Property="FontSize" Value="14"/></Style>
+
+  <Style Selector="Border.card">
+    <Setter Property="Background" Value="#1B2230"/>
+    <Setter Property="BorderBrush" Value="#2B3548"/>
+    <Setter Property="BorderThickness" Value="1"/>
+    <Setter Property="CornerRadius" Value="10"/>
+    <Setter Property="Padding" Value="16"/>
+    <Setter Property="Margin" Value="0,0,0,12"/>
+  </Style>
+  <Style Selector="Border.panel"><Setter Property="Background" Value="#131822"/></Style>
+
+  <Style Selector="TextBlock.title"><Setter Property="FontSize" Value="19"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Foreground" Value="#EEF2FA"/></Style>
+  <Style Selector="TextBlock.h2"><Setter Property="FontSize" Value="15"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Foreground" Value="#DCE3F0"/></Style>
+  <Style Selector="TextBlock.section"><Setter Property="FontSize" Value="11"/><Setter Property="FontWeight" Value="Bold"/><Setter Property="Foreground" Value="#7E8FB0"/><Setter Property="Margin" Value="0,0,0,8"/></Style>
+  <Style Selector="TextBlock.label"><Setter Property="FontSize" Value="12"/><Setter Property="Foreground" Value="#A9B5CB"/></Style>
+  <Style Selector="TextBlock.hint"><Setter Property="FontSize" Value="12"/><Setter Property="Foreground" Value="#8A98B3"/><Setter Property="TextWrapping" Value="Wrap"/></Style>
+  <Style Selector="TextBlock.value"><Setter Property="FontSize" Value="20"/><Setter Property="FontWeight" Value="Medium"/><Setter Property="Foreground" Value="#EEF2FA"/><Setter Property="FontFamily" Value="Cascadia Mono,Consolas,DejaVu Sans Mono,monospace"/></Style>
+  <Style Selector="TextBlock.mono"><Setter Property="FontFamily" Value="Cascadia Mono,Consolas,DejaVu Sans Mono,monospace"/><Setter Property="FontSize" Value="12"/></Style>
+  <Style Selector="TextBlock.ok"><Setter Property="Foreground" Value="#6EDB9A"/><Setter Property="TextWrapping" Value="Wrap"/></Style>
+  <Style Selector="TextBlock.warn"><Setter Property="Foreground" Value="#F4C15D"/><Setter Property="TextWrapping" Value="Wrap"/></Style>
+  <Style Selector="TextBlock.info"><Setter Property="Foreground" Value="#7FB4FF"/><Setter Property="TextWrapping" Value="Wrap"/></Style>
+  <Style Selector="TextBlock.error"><Setter Property="Foreground" Value="#FF8B82"/><Setter Property="TextWrapping" Value="Wrap"/></Style>
+
+  <Style Selector="StackPanel.row"><Setter Property="Orientation" Value="Horizontal"/><Setter Property="Spacing" Value="10"/></Style>
+  <Style Selector="WrapPanel.row"><Setter Property="Orientation" Value="Horizontal"/></Style>
+  <Style Selector="WrapPanel.row > :is(Control)"><Setter Property="Margin" Value="0,0,10,8"/></Style>
+
+  <!-- Buttons: one primary action per card, the rest quiet. -->
+  <Style Selector="Button"><Setter Property="Padding" Value="12,6"/><Setter Property="CornerRadius" Value="6"/></Style>
+  <Style Selector="Button.primary"><Setter Property="Background" Value="#3A78F2"/><Setter Property="Foreground" Value="White"/><Setter Property="FontWeight" Value="SemiBold"/></Style>
+  <Style Selector="Button.primary:pointerover /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Background" Value="#5088F5"/><Setter Property="Foreground" Value="White"/></Style>
+  <Style Selector="Button.primary:disabled /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Background" Value="#2B4272"/><Setter Property="Foreground" Value="#8FA3C9"/></Style>
+  <Style Selector="Button.danger"><Setter Property="Background" Value="#8E2F2A"/><Setter Property="Foreground" Value="White"/></Style>
+  <Style Selector="Button.danger:pointerover /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Background" Value="#B3372F"/><Setter Property="Foreground" Value="White"/></Style>
+  <Style Selector="Button.ghost"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0"/></Style>
+  <Style Selector="Button.ghost:pointerover /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Background" Value="#252E40"/></Style>
+  <Style Selector="Button:disabled"><Setter Property="Opacity" Value="0.5"/></Style>
+
+  <!-- Navigation rail -->
+  <Style Selector="Button.nav">
+    <Setter Property="Background" Value="Transparent"/><Setter Property="HorizontalAlignment" Value="Stretch"/><Setter Property="HorizontalContentAlignment" Value="Left"/>
+    <Setter Property="Padding" Value="14,10"/><Setter Property="FontSize" Value="15"/><Setter Property="Foreground" Value="#B7C2D8"/><Setter Property="CornerRadius" Value="8"/>
+  </Style>
+  <Style Selector="Button.nav:pointerover /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Background" Value="#1D2535"/><Setter Property="Foreground" Value="White"/></Style>
+  <Style Selector="Button.nav.active /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Background" Value="#243556"/><Setter Property="Foreground" Value="White"/></Style>
+  <Style Selector="Button.nav.active"><Setter Property="FontWeight" Value="SemiBold"/></Style>
+  <Style Selector="Button.sub">
+    <Setter Property="Background" Value="Transparent"/><Setter Property="HorizontalAlignment" Value="Stretch"/><Setter Property="HorizontalContentAlignment" Value="Left"/>
+    <Setter Property="Padding" Value="12,8"/><Setter Property="Foreground" Value="#B7C2D8"/>
+  </Style>
+  <Style Selector="Button.sub:pointerover /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Background" Value="#1D2535"/></Style>
+  <Style Selector="Button.sub.active /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Background" Value="#243556"/><Setter Property="Foreground" Value="White"/></Style>
+
+  <!-- Status chips and dots -->
+  <Style Selector="Border.chip"><Setter Property="CornerRadius" Value="11"/><Setter Property="Padding" Value="9,3"/><Setter Property="Background" Value="#2B3548"/></Style>
+  <Style Selector="Border.chip.ok"><Setter Property="Background" Value="#1B3A2E"/></Style>
+  <Style Selector="Border.chip.busy"><Setter Property="Background" Value="#1F3558"/></Style>
+  <Style Selector="Border.chip.warn"><Setter Property="Background" Value="#43361A"/></Style>
+  <Style Selector="Border.chip.error"><Setter Property="Background" Value="#4A2226"/></Style>
+  <Style Selector="Border.chip.idle"><Setter Property="Background" Value="#272F40"/></Style>
+  <Style Selector="Border.chip TextBlock"><Setter Property="FontSize" Value="12"/><Setter Property="Foreground" Value="#DCE6F7"/></Style>
+  <Style Selector="Ellipse.dot"><Setter Property="Width" Value="9"/><Setter Property="Height" Value="9"/><Setter Property="Fill" Value="#5A667C"/><Setter Property="VerticalAlignment" Value="Center"/></Style>
+  <Style Selector="Ellipse.dot.ok"><Setter Property="Fill" Value="#4CC980"/></Style>
+  <Style Selector="Ellipse.dot.busy"><Setter Property="Fill" Value="#5C9DFF"/></Style>
+  <Style Selector="Ellipse.dot.warn"><Setter Property="Fill" Value="#F2B94B"/></Style>
+  <Style Selector="Ellipse.dot.error"><Setter Property="Fill" Value="#FF7B72"/></Style>
+
+  <!-- Inputs: no spinner arrows eating the width (typing, the wheel and the arrow keys still work) -->
+  <Style Selector="NumericUpDown"><Setter Property="ShowButtonSpinner" Value="False"/><Setter Property="MinWidth" Value="84"/></Style>
+  <Style Selector="TextBox"><Setter Property="MinWidth" Value="84"/></Style>
+  <Style Selector="Expander">
+    <Setter Property="HorizontalAlignment" Value="Stretch"/>
+    <Style.Resources>
+      <SolidColorBrush x:Key="ExpanderHeaderBackground" Color="Transparent"/>
+      <SolidColorBrush x:Key="ExpanderHeaderBackgroundPointerOver" Color="#222B3C"/>
+      <SolidColorBrush x:Key="ExpanderHeaderBackgroundPressed" Color="#2A3550"/>
+      <SolidColorBrush x:Key="ExpanderHeaderBorderBrush" Color="Transparent"/>
+      <SolidColorBrush x:Key="ExpanderHeaderBorderBrushPointerOver" Color="Transparent"/>
+      <SolidColorBrush x:Key="ExpanderHeaderBorderBrushPressed" Color="Transparent"/>
+      <SolidColorBrush x:Key="ExpanderContentBackground" Color="Transparent"/>
+      <SolidColorBrush x:Key="ExpanderContentBorderBrush" Color="Transparent"/>
+      <Thickness x:Key="ExpanderHeaderPadding">0,8,8,8</Thickness>
+      <Thickness x:Key="ExpanderContentPadding">0</Thickness>
+    </Style.Resources>
+  </Style>
+  <Style Selector="ListBox">
+    <Style.Resources>
+      <SolidColorBrush x:Key="ListBoxItemBackgroundSelected" Color="#243556"/>
+      <SolidColorBrush x:Key="ListBoxItemBackgroundSelectedPointerOver" Color="#2A3E66"/>
+      <SolidColorBrush x:Key="ListBoxItemBackgroundSelectedPressed" Color="#2A3E66"/>
+      <SolidColorBrush x:Key="ListBoxItemBackgroundPointerOver" Color="#1D2535"/>
+    </Style.Resources>
+  </Style>
+</Styles>

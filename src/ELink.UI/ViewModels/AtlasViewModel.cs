@@ -45,7 +45,6 @@ public sealed partial class AtlasViewModel : ObservableObject, IDisposable
         _mesh = mesh; _catalog = catalog; _image = image;
         catalog.Devices.CollectionChanged += (_, _) => UiThread.Post(() => _ = FollowEquipmentAsync());
         catalog.CompositionChanged += () => UiThread.Post(() => { RebuildPointers(); _ = FollowEquipmentAsync(); });
-        if (image is not null) image.PropertyChanged += (_, e) => { if (e.PropertyName is nameof(ImageViewModel.CenterRa) or nameof(ImageViewModel.CenterDec) or nameof(ImageViewModel.Width) or nameof(ImageViewModel.Height) or nameof(ImageViewModel.PositionAngle)) UpdateOverlays(); };
         RebuildPointers();
     }
 
@@ -70,6 +69,10 @@ public sealed partial class AtlasViewModel : ObservableObject, IDisposable
     // search and selection
     [ObservableProperty] private string _searchText = "";
     public ObservableCollection<AtlasHitItem> Results { get; } = new();
+    /// <summary>The list of matches under the search box is shown until one is picked or it is dismissed.</summary>
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasResults))] private bool _resultsOpen;
+    public bool HasResults => ResultsOpen && Results.Count > 0;
+    [RelayCommand] private void CloseResults() => ResultsOpen = false;
     [ObservableProperty] private AtlasHitItem? _selectedResult;
     [ObservableProperty] private AtlasHitItem? _selection;
     [ObservableProperty] private string _selectionText = "Click the chart or search to select an object.";
@@ -77,6 +80,8 @@ public sealed partial class AtlasViewModel : ObservableObject, IDisposable
     public ObservableCollection<string> Pointers { get; } = new();
     [ObservableProperty] private string? _selectedPointer;
     [ObservableProperty] private string _message = "";
+    [ObservableProperty] private string _messageKind = "error";
+    private void Say(string text, string kind = "error") { MessageKind = kind; Message = text; }
     [ObservableProperty] private string _status = "";
     [ObservableProperty] private string _stellariumText = "Stellarium: not connected";
     [ObservableProperty] private string _stellariumOffer = "";
@@ -177,7 +182,7 @@ public sealed partial class AtlasViewModel : ObservableObject, IDisposable
     /// <summary>Altitude now, and when the selection rises, culminates and sets, from the site service.</summary>
     private async Task DescribeVisibilityAsync(AtlasHitItem item)
     {
-        if (Site is null) { VisibilityText = _siteState is null ? "" : "set the site (Site tab) to see when this is up"; return; }
+        if (Site is null) { VisibilityText = _siteState is null ? "" : "set your site (Rig › Site) to see when this is up"; return; }
         try
         {
             var answers = await _mesh.Node.CallFunctionAsync<ObservabilityRequest, ObservabilityResult>(SiteIds.Observability(SiteIds.Default),
@@ -280,18 +285,7 @@ public sealed partial class AtlasViewModel : ObservableObject, IDisposable
         var markers = _mounts.Values.ToList();
         if (Selection is { } sel) markers.Add(new ChartMarker(sel.RaHours, sel.DecDegrees, "", Color.FromRgb(120, 255, 140), IsSelection: true));
         Markers = markers;
-        var polys = new List<ChartPolygon>();
-        if (_image is not null && _image.Width > 0 && _image.Height > 0 && Sexagesimal.TryParse(_image.CenterRa, out var mra) && Sexagesimal.TryParse(_image.CenterDec, out var mdec))
-        {
-            double w = _image.Width / 2, h = _image.Height / 2, pa = _image.PositionAngle * Math.PI / 180;
-            var corners = new[] { (-w, h), (w, h), (w, -h), (-w, -h) }.Select(c =>
-            {
-                double east = c.Item1 * Math.Cos(pa) + c.Item2 * Math.Sin(pa), north = -c.Item1 * Math.Sin(pa) + c.Item2 * Math.Cos(pa);
-                return Gnomonic.ToSky(mra, mdec, east, north);
-            }).ToList();
-            polys.Add(new ChartPolygon(corners, Color.FromRgb(255, 213, 79), $"image {_image.Label}"));
-        }
-        Polygons = polys;
+
     }
 
     // ---- picking and search ----------------------------------------------------------------------------------------
@@ -339,11 +333,12 @@ public sealed partial class AtlasViewModel : ObservableObject, IDisposable
         var answers = await _mesh.Node.CallFunctionAsync<BinaryConvertibleString, AtlasHits>(AtlasIds.Search, (BinaryConvertibleString)SearchText.Trim());
         foreach (var h in (answers?.FirstOrDefault()?.Hits ?? new()).Where(h => !Results.Any(r => r.Label == h.Label.Text)))
             Results.Add(new AtlasHitItem(h.Label.Text, h.Kind.Text, h.Detail.Text, h.RaHours.Value, h.DecDegrees.Value, h.Magnitude.value, h.MajorArcmin.value));
-        Message = Results.Count == 0 ? $"nothing called '{SearchText}'" : "";
+        Say(Results.Count == 0 ? $"nothing called '{SearchText}'" : "");
+        ResultsOpen = Results.Count > 1;
         if (Results.Count > 0) SelectedResult = Results[0];
     }
 
-    partial void OnSelectedResultChanged(AtlasHitItem? value) { if (value is not null) CenterOn(value); }
+    partial void OnSelectedResultChanged(AtlasHitItem? value) { if (value is not null) { CenterOn(value); if (Results.Count > 1 && ResultsOpen) ResultsOpen = false; } }
 
     /// <summary>Centre the chart on an object at a sensible zoom, and select it.</summary>
     public void CenterOn(AtlasHitItem item)
@@ -360,39 +355,38 @@ public sealed partial class AtlasViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task GotoAsync()
     {
-        if (Target() is not { } t) { Message = "select something first"; return; }
-        if (SelectedPointer is null) { Message = "compose a pointer or scope first (Compose tab)"; return; }
+        if (Target() is not { } t) { Say("select something first"); return; }
+        if (SelectedPointer is null) { Say("set up a scope first (Rig › Set up)"); return; }
         var r = await Commands.CallAsync(_mesh.Node, PointerIds.Goto(SelectedPointer), t);
-        Message = r.Ok.Value ? $"{SelectedPointer}: going to {Selection!.Label}" : r.Error.Text;
+        if (r.Ok.Value) Say($"{SelectedPointer}: going to {Selection!.Label}", "ok"); else Say(r.Error.Text);
     }
 
     [RelayCommand]
     private void ImageThis()
     {
-        if (Selection is not { } s || _image is null) { Message = "select something first"; return; }
+        if (Selection is not { } s || _image is null) { Say("select something first"); return; }
         _image.CenterRa = Sexagesimal.Format(s.RaHours, 0); _image.CenterDec = Sexagesimal.Format(s.DecDegrees, 0);
         if (s.Label != "Position" && s.Label != "Star") _image.Label = s.Label.Replace(" ", "");
         // big objects become an area, small ones a single frame
         if (s.MajorArcmin > 30) { _image.Width = Math.Round(s.MajorArcmin / 60 * 1.3, 2); _image.Height = Math.Round(s.MajorArcmin / 60 * 1.0, 2); }
         else { _image.Width = 0; _image.Height = 0; }
-        Message = $"Image tab: {s.Label}";
-        UpdateOverlays();
+        Say($"Framing {s.Label}: drag the frame on the chart to adjust it", "info");
     }
 
     [RelayCommand]
     private void CenterOnMount()
     {
         var m = _mounts.Values.FirstOrDefault();
-        if (m is null) { Message = "no connected mount"; return; }
+        if (m is null) { Say("no connected mount"); return; }
         CenterRa = m.RaHours; CenterDec = m.DecDegrees;
     }
 
     [RelayCommand]
     private async Task ShowInStellariumAsync()
     {
-        if (Target() is not { } t) { Message = "select something first"; return; }
+        if (Target() is not { } t) { Say("select something first"); return; }
         var r = await Commands.CallAsync(_mesh.Node, StellariumIds.Show, t);
-        Message = r.Ok.Value ? "shown in Stellarium" : r.Error.Text;
+        if (r.Ok.Value) Say("shown in Stellarium", "ok"); else Say(r.Error.Text);
     }
 
     [RelayCommand]
@@ -400,17 +394,17 @@ public sealed partial class AtlasViewModel : ObservableObject, IDisposable
     {
         var answers = await _mesh.Node.CallFunctionAsync<NOTESVoid, AtlasHit>(StellariumIds.GetSelection, NOTESVoid.Void);
         var h = answers?.FirstOrDefault();
-        if (h is null || h.Label.Text == "") { Message = "nothing is selected in Stellarium (or it is not reachable)"; return; }
+        if (h is null || h.Label.Text == "") { Say("nothing is selected in Stellarium (or it is not reachable)"); return; }
         CenterOn(new AtlasHitItem(h.Label.Text, h.Kind.Text, "from Stellarium", h.RaHours.Value, h.DecDegrees.Value, h.Magnitude.value, 0));
-        Message = "";
+        Say("");
     }
 
     [RelayCommand]
     private async Task StellariumFollowsPointerAsync()
     {
-        if (SelectedPointer is null) { Message = "compose a pointer or scope first"; return; }
+        if (SelectedPointer is null) { Say("set up a scope first (Rig › Set up)"); return; }
         var r = await Commands.CallAsync(_mesh.Node, StellariumIds.BindPointer, (BinaryConvertibleString)SelectedPointer);
-        Message = r.Ok.Value ? $"Stellarium now shows and slews {SelectedPointer}" : r.Error.Text;
+        if (r.Ok.Value) Say($"Stellarium now shows and slews {SelectedPointer}", "ok"); else Say(r.Error.Text);
     }
 
     [RelayCommand] private void ZoomIn() => Fov = Math.Max(0.1, Fov / 1.6);

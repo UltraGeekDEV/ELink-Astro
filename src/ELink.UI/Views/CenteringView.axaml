@@ -1,11 +1,10 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="ELink.UI.Views.CenteringView">
-  <StackPanel MaxWidth="940" Spacing="0">
+  <StackPanel Spacing="0">
     <Border Classes="card">
       <Grid ColumnDefinitions="*,Auto">
         <StackPanel>
-          <TextBlock Classes="title" Text="Plate solving and centring"/>
-          <TextBlock Classes="label" TextWrapping="Wrap" Text="After every slew to a new target (from ELink, other software or a hand controller) the guide camera's frame is solved and the mount corrected until the target is centred. With a learned offset the primary, not the guide scope, lands on the target."/>
+          <TextBlock Classes="hint" Text="After every slew to a new target (from ELink, other software or a hand controller) the guide camera's frame is solved and the mount corrected until the target is centred. With a learned offset the primary, not the guide scope, lands on the target."/>
         </StackPanel>
         <StackPanel Grid.Column="1" HorizontalAlignment="Right">
           <TextBlock Classes="value" Text="{Binding Phase}" HorizontalAlignment="Right"/>
@@ -14,22 +13,22 @@
     </Border>
     <Border Classes="card">
       <StackPanel Spacing="10">
-        <StackPanel Classes="row">
+        <WrapPanel Classes="row">
           <StackPanel><TextBlock Classes="label" Text="Mount"/><ComboBox ItemsSource="{Binding Mounts}" SelectedItem="{Binding MountId}" Width="200"/></StackPanel>
           <StackPanel><TextBlock Classes="label" Text="Guide camera (solved)"/><ComboBox ItemsSource="{Binding Shooters}" SelectedItem="{Binding GuideShooter}" Width="170"/></StackPanel>
           <StackPanel><TextBlock Classes="label" Text="Primary camera"/><ComboBox ItemsSource="{Binding Shooters}" SelectedItem="{Binding PrimaryShooter}" Width="170"/></StackPanel>
-        </StackPanel>
-        <StackPanel Classes="row">
+        </WrapPanel>
+        <WrapPanel Classes="row">
           <StackPanel><TextBlock Classes="label" Text="Exposure s"/><NumericUpDown Value="{Binding ExposureSeconds}" Minimum="0.1" FormatString="0.##" Width="120"/></StackPanel>
           <StackPanel><TextBlock Classes="label" Text="Tolerance '"/><NumericUpDown Value="{Binding ToleranceArcmin}" Minimum="0.05" Increment="0.25" FormatString="0.##" Width="120"/></StackPanel>
           <StackPanel><TextBlock Classes="label" Text="Max tries"/><NumericUpDown Value="{Binding MaxIterations}" Minimum="1" Maximum="20" FormatString="0" Width="110"/></StackPanel>
           <CheckBox IsChecked="{Binding SyncMount}" Content="Sync the mount" VerticalAlignment="Bottom"/>
           <CheckBox IsChecked="{Binding UseOffset}" Content="Centre the primary (use offset)" VerticalAlignment="Bottom"/>
-        </StackPanel>
-        <StackPanel Classes="row">
+        </WrapPanel>
+        <WrapPanel Classes="row">
           <CheckBox IsChecked="{Binding Enabled}" Content="Centre automatically after every slew" FontWeight="SemiBold"/>
           <Button Content="Apply" Classes="primary" Command="{Binding ApplyCommand}"/>
-        </StackPanel>
+        </WrapPanel>
       </StackPanel>
     </Border>
     <Border Classes="card">
@@ -37,12 +36,12 @@
         <TextBlock Classes="section" Text="GUIDE SCOPE TO PRIMARY OFFSET"/>
         <TextBlock Text="{Binding OffsetText}" TextWrapping="Wrap"/>
         <TextBlock Classes="label" TextWrapping="Wrap" Text="Point anywhere with stars, then learn: both cameras are solved at the same pointing. It is kept per pier side and turned over after a meridian flip."/>
-        <StackPanel Classes="row">
+        <WrapPanel Classes="row">
           <Button Content="Learn offset" Command="{Binding CalibrateCommand}"/>
           <Button Content="Forget offset" Command="{Binding ClearOffsetCommand}"/>
           <Button Content="Centre now" Command="{Binding CenterNowCommand}"/>
           <Button Content="Solve guide frame" Command="{Binding SolveGuideCommand}"/>
-        </StackPanel>
+        </WrapPanel>
         <TextBlock Classes="label" Text="{Binding TargetText}"/>
         <TextBlock Text="{Binding StateMessage}" TextWrapping="Wrap"/>
         <TextBlock Classes="error" Text="{Binding Message}" IsVisible="{Binding Message.Length}"/>

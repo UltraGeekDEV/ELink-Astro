@@ -1,0 +1,232 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:ELink.UI.Controls" xmlns:i="using:ELink.UI.Infrastructure"
+             x:Class="ELink.UI.Views.SkyView">
+  <Grid ColumnDefinitions="*,410">
+    <!-- the sky -->
+    <Grid Grid.Column="0">
+      <c:SkyChart CenterRa="{Binding Atlas.CenterRa, Mode=TwoWay}" CenterDec="{Binding Atlas.CenterDec, Mode=TwoWay}" Fov="{Binding Atlas.Fov, Mode=TwoWay}" StarLimit="{Binding Atlas.StarLimit}"
+                  Stars="{Binding Atlas.Stars}" Dsos="{Binding Atlas.Dsos}" Lines="{Binding Atlas.Lines}" Labels="{Binding Atlas.Labels}"
+                  Markers="{Binding Atlas.Markers}" Polygons="{Binding Polygons}" Horizon="{Binding Atlas.Horizon}" Bodies="{Binding Atlas.Bodies}"
+                  PickCommand="{Binding Atlas.PickCommand}" ShowGrid="{Binding Atlas.ShowGrid}" ShowConstellations="{Binding Atlas.ShowConstellations}"
+                  Frame="{Binding Frame}" Images="{Binding Images}" FrameEditedCommand="{Binding FrameEditedCommand}"
+                  ContextRa="{Binding ContextRa, Mode=TwoWay}" ContextDec="{Binding ContextDec, Mode=TwoWay}">
+        <c:SkyChart.ContextMenu>
+          <ContextMenu>
+            <MenuItem Header="Frame the image here" Command="{Binding FrameHereCommand}"/>
+            <MenuItem Header="Send the scope here" Command="{Binding GoHereCommand}"/>
+            <MenuItem Header="What is here" Command="{Binding SelectHereCommand}"/>
+            <MenuItem Header="Centre the chart here" Command="{Binding CentreHereCommand}"/>
+          </ContextMenu>
+        </c:SkyChart.ContextMenu>
+      </c:SkyChart>
+
+      <!-- search and view controls over the chart -->
+      <Border VerticalAlignment="Top" HorizontalAlignment="Left" Margin="12" Padding="8" CornerRadius="10" Background="#E6131822" BorderBrush="#2B3548" BorderThickness="1">
+        <StackPanel Classes="row" Spacing="6">
+          <TextBox Text="{Binding Atlas.SearchText}" Watermark="Find: M42, NGC 7000, Vega, Jupiter…" Width="260"/>
+          <Button Content="Find" Classes="primary" Command="{Binding Atlas.SearchCommand}" IsDefault="True"/>
+          <Button Content="−" Command="{Binding Atlas.ZoomOutCommand}" ToolTip.Tip="Zoom out (mouse wheel)"/>
+          <Button Content="+" Command="{Binding Atlas.ZoomInCommand}" ToolTip.Tip="Zoom in (mouse wheel)"/>
+          <Button Content="Frame" Command="{Binding ZoomToFrameCommand}" ToolTip.Tip="Zoom to the image frame"/>
+          <Button Content="Mount" Command="{Binding Atlas.CenterOnMountCommand}" ToolTip.Tip="Centre the chart on where the mount points"/>
+          <Button Content="Layers">
+            <Button.Flyout>
+              <Flyout Placement="BottomEdgeAlignedLeft">
+                <StackPanel Spacing="6" MinWidth="230">
+                  <TextBlock Classes="section" Text="ON THE CHART"/>
+                  <CheckBox IsChecked="{Binding Atlas.ShowConstellations}" Content="Constellations"/>
+                  <CheckBox IsChecked="{Binding Atlas.ShowGrid}" Content="Coordinate grid"/>
+                  <CheckBox IsChecked="{Binding Atlas.ShowHorizon}" Content="Your horizon"/>
+                  <CheckBox IsChecked="{Binding ShowFields}" Content="Each scope's field, and the panels"/>
+                  <CheckBox IsChecked="{Binding ShowStack}" Content="The stacked image"/>
+                  <CheckBox IsChecked="{Binding ShowCoverage}" Content="How far each part has got"/>
+                </StackPanel>
+              </Flyout>
+            </Button.Flyout>
+          </Button>
+        </StackPanel>
+      </Border>
+
+      <!-- several matches: pick one -->
+      <Border IsVisible="{Binding Atlas.HasResults}" VerticalAlignment="Top" HorizontalAlignment="Left" Margin="12,72,0,0" Width="420" Padding="6" CornerRadius="10"
+              Background="#F2131822" BorderBrush="#2B3548" BorderThickness="1">
+        <DockPanel>
+          <Button DockPanel.Dock="Top" Content="✕ close" Classes="ghost" HorizontalAlignment="Right" Command="{Binding Atlas.CloseResultsCommand}" Padding="6,2"/>
+          <ListBox ItemsSource="{Binding Atlas.Results}" SelectedItem="{Binding Atlas.SelectedResult}" MaxHeight="260" Background="Transparent">
+            <ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Line}" TextTrimming="CharacterEllipsis"/></DataTemplate></ListBox.ItemTemplate>
+          </ListBox>
+        </DockPanel>
+      </Border>
+
+      <TextBlock Text="{Binding Atlas.Status}" Classes="hint" VerticalAlignment="Bottom" HorizontalAlignment="Right" Margin="0,0,12,8"/>
+    </Grid>
+
+    <!-- what to image, and how it is going -->
+    <Border Grid.Column="1" Classes="panel" BorderBrush="#2B3548" BorderThickness="1,0,0,0">
+      <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="14" Spacing="0">
+
+          <Border Classes="card">
+            <StackPanel Spacing="8">
+              <TextBlock Classes="section" Text="TARGET"/>
+              <TextBlock Text="{Binding Atlas.SelectionText}" TextWrapping="Wrap"/>
+              <TextBlock Classes="hint" Text="{Binding Atlas.VisibilityText}" IsVisible="{Binding Atlas.VisibilityText.Length}"/>
+              <StackPanel Classes="row">
+                <Button Content="Frame this" Classes="primary" Command="{Binding FrameSelectionCommand}" ToolTip.Tip="Make the selected object the image to take"/>
+                <Button Content="Go there" Command="{Binding Atlas.GotoCommand}" ToolTip.Tip="Send the chosen scope to the selection, without imaging"/>
+                <ComboBox ItemsSource="{Binding Atlas.Pointers}" SelectedItem="{Binding Atlas.SelectedPointer}" MinWidth="110" ToolTip.Tip="Which scope or mount"/>
+              </StackPanel>
+              <c:Notice Text="{Binding Atlas.Message}" Kind="{Binding Atlas.MessageKind}"/>
+            </StackPanel>
+          </Border>
+
+          <Border Classes="card">
+            <StackPanel Spacing="10">
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Classes="section" Text="IMAGE"/>
+                <Border Grid.Column="1" Classes="chip" Background="{Binding Image.PhaseClass, Converter={x:Static i:Chips.Background}}"><TextBlock Text="{Binding Image.PhaseText}"/></Border>
+              </Grid>
+              <TextBox Text="{Binding Image.Label}" Watermark="Name of this image"/>
+              <c:Notice Text="{Binding PlanText}" Kind="{Binding PlanClass}"/>
+              <TextBlock Classes="hint" Text="Drag the frame on the chart to move it, a corner to resize it, the round handle to turn it. Or type the numbers."/>
+
+              <Grid ColumnDefinitions="*,8,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="8">
+                <StackPanel><TextBlock Classes="label" Text="Centre RA"/><TextBox Text="{Binding Image.CenterRa}"/></StackPanel>
+                <StackPanel Grid.Column="2"><TextBlock Classes="label" Text="Centre Dec"/><TextBox Text="{Binding Image.CenterDec}"/></StackPanel>
+                <StackPanel Grid.Row="1"><TextBlock Classes="label" Text="Width (°)"/><NumericUpDown Value="{Binding Image.Width}" Minimum="0" Maximum="60" Increment="0.1" FormatString="0.###" ToolTip.Tip="0 = one frame of the scope"/></StackPanel>
+                <StackPanel Grid.Row="1" Grid.Column="2"><TextBlock Classes="label" Text="Height (°)"/><NumericUpDown Value="{Binding Image.Height}" Minimum="0" Maximum="60" Increment="0.1" FormatString="0.###"/></StackPanel>
+                <StackPanel Grid.Row="2"><TextBlock Classes="label" Text="Turn (°)"/><NumericUpDown Value="{Binding Image.PositionAngle}" Minimum="-180" Maximum="180" FormatString="0.#" ToolTip.Tip="Where the top of the image points, east of north"/></StackPanel>
+                <Button Grid.Row="2" Grid.Column="2" Content="Just one frame" Command="{Binding OneFrameCommand}" VerticalAlignment="Bottom" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"/>
+                <StackPanel Grid.Row="3"><TextBlock Classes="label" Text="Each shot (s)"/><NumericUpDown Value="{Binding Image.ExposureSeconds}" Minimum="0.01" FormatString="0.##"/></StackPanel>
+                <StackPanel Grid.Row="3" Grid.Column="2"><TextBlock Classes="label" Text="Depth per spot (min)"/><NumericUpDown Value="{Binding Image.TargetMinutes}" Minimum="0" Increment="10" FormatString="0.##" ToolTip.Tip="How long every part of the image should be exposed in total. 0 = keep going until stopped."/></StackPanel>
+              </Grid>
+
+              <StackPanel IsVisible="{Binding Image.Scopes.Count}" Spacing="4">
+                <TextBlock Classes="label" Text="Scopes that share the work"/>
+                <ItemsControl ItemsSource="{Binding Image.Scopes}">
+                  <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate><DataTemplate><CheckBox IsChecked="{Binding Selected}" Content="{Binding Id}" Margin="0,0,14,0"/></DataTemplate></ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+              <TextBlock Classes="hint" IsVisible="{Binding !Image.Scopes.Count}" Text="No scope yet: set one up in Rig › Set up."/>
+
+              <StackPanel Classes="row">
+                <Button Content="Start" Classes="primary" Command="{Binding Image.StartRunCommand}"/>
+                <Button Content="Add to queue" Command="{Binding Image.AddToScheduleCommand}" ToolTip.Tip="Let the queue take it when it is possible (dark, high enough, Moon far enough)"/>
+                <Button Content="Pause" Command="{Binding Image.PauseCommand}" IsVisible="{Binding Image.IsRunning}"/>
+                <Button Content="Resume" Command="{Binding Image.ResumeCommand}" IsVisible="{Binding Image.IsPaused}"/>
+                <Button Content="Stop" Classes="danger" Command="{Binding Image.AbortCommand}" IsVisible="{Binding Image.IsActive}"/>
+              </StackPanel>
+              <c:Notice Text="{Binding Image.Message}" Kind="{Binding Image.MessageKind}"/>
+
+              <Expander Header="More options">
+                <StackPanel Spacing="8" Margin="0,8,0,0">
+                  <Grid ColumnDefinitions="*,8,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="8">
+                    <StackPanel><TextBlock Classes="label" Text="Filter"/><TextBox Text="{Binding Image.Filter}"/></StackPanel>
+                    <StackPanel Grid.Column="2"><TextBlock Classes="label" Text="ISO (cameras that have it)"/><TextBox Text="{Binding Image.Iso}"/></StackPanel>
+                    <StackPanel Grid.Row="1"><TextBlock Classes="label" Text="Dither (″ every shot)"/><NumericUpDown Value="{Binding Image.DitherArcsec}" Minimum="0" Increment="5" FormatString="0"/></StackPanel>
+                    <StackPanel Grid.Row="1" Grid.Column="2"><TextBlock Classes="label" Text="Panel spacing (°)"/><NumericUpDown Value="{Binding Image.Stepover}" Minimum="0" Increment="0.01" FormatString="0.###" ToolTip.Tip="0 = automatic (a little overlap)"/></StackPanel>
+                    <StackPanel Grid.Row="2"><TextBlock Classes="label" Text="Stop after (shots)"/><NumericUpDown Value="{Binding Image.MaxVisits}" Minimum="0" FormatString="0" ToolTip.Tip="0 = no limit"/></StackPanel>
+                    <StackPanel Grid.Row="2" Grid.Column="2"><TextBlock Classes="label" Text="Output scale (″/px)"/><NumericUpDown Value="{Binding Image.OutputScale}" Minimum="0" Increment="0.5" FormatString="0.###" ToolTip.Tip="0 = as fine as the finest scope"/></StackPanel>
+                    <StackPanel Grid.Row="3"><TextBlock Classes="label" Text="Pause when this is unsafe"/><ComboBox ItemsSource="{Binding Image.Weather}" SelectedItem="{Binding Image.SelectedWeather}" HorizontalAlignment="Stretch"/></StackPanel>
+                  </Grid>
+                  <CheckBox IsChecked="{Binding Image.LiveStack}" Content="Build the picture while shooting"/>
+                  <CheckBox IsChecked="{Binding Image.StartAfresh}" Content="Start afresh: forget what this name already has"/>
+                  <StackPanel Classes="row">
+                    <Button Content="Apply depth now" Command="{Binding Image.ApplyTargetCommand}" ToolTip.Tip="Change the depth of the running image"/>
+                    <Button Content="Check the plan" Command="{Binding Image.PreviewCommand}"/>
+                  </StackPanel>
+                  <TextBlock Classes="hint" Text="{Binding Image.Summary}" IsVisible="{Binding Image.Summary.Length}"/>
+                </StackPanel>
+              </Expander>
+            </StackPanel>
+          </Border>
+
+          <Border Classes="card" IsVisible="{Binding Image.IsActive}">
+            <StackPanel Spacing="6">
+              <TextBlock Classes="section" Text="PROGRESS"/>
+              <TextBlock Text="{Binding Image.CoverageText}" TextWrapping="Wrap"/>
+              <ItemsControl ItemsSource="{Binding Image.Workers}">
+                <ItemsControl.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" Classes="hint"/></DataTemplate></ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <TextBlock Classes="hint" Text="{Binding Image.Stack.Info}"/>
+            </StackPanel>
+          </Border>
+
+          <Border Classes="card">
+            <StackPanel Spacing="8">
+              <Grid ColumnDefinitions="*,Auto,Auto">
+                <StackPanel>
+                  <TextBlock Classes="section" Text="QUEUE" Margin="0,0,0,2"/>
+                  <TextBlock Classes="hint" Text="{Binding Schedule.PhaseText}"/>
+                </StackPanel>
+                <Button Grid.Column="1" Content="Run" Classes="primary" Command="{Binding Schedule.RunCommand}" Margin="0,0,6,0"/>
+                <Button Grid.Column="2" Content="Stop" Command="{Binding Schedule.StopCommand}"/>
+              </Grid>
+              <TextBlock Classes="hint" IsVisible="{Binding !Schedule.HasRows}"
+                         Text="Nothing queued. Plan an image and press “Add to queue”: the queue starts whichever image is possible now (dark, high enough, away from the Moon), best first, and carries on night after night."/>
+              <ItemsControl ItemsSource="{Binding Schedule.Rows}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Border BorderBrush="#2B3548" BorderThickness="0,1,0,0" Padding="0,8">
+                      <StackPanel Spacing="4">
+                        <Grid ColumnDefinitions="Auto,*,Auto">
+                          <CheckBox IsChecked="{Binding Enabled}" ToolTip.Tip="Off = leave it in the queue but do not take it"/>
+                          <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Label}" Classes="h2"/>
+                            <TextBlock Text="{Binding Status}" Classes="hint"/>
+                          </StackPanel>
+                          <Button Grid.Column="2" Content="✕" Classes="ghost" ToolTip.Tip="Take it out of the queue"
+                                  Command="{Binding $parent[UserControl].DataContext.Schedule.RemoveRowCommand}" CommandParameter="{Binding}"/>
+                        </Grid>
+                        <Expander Header="When it may run">
+                          <Grid ColumnDefinitions="*,8,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="8" Margin="0,6,0,0">
+                            <StackPanel><TextBlock Classes="label" Text="Priority (higher first)"/><NumericUpDown Value="{Binding Priority}" FormatString="0"/></StackPanel>
+                            <StackPanel Grid.Column="2"><TextBlock Classes="label" Text="Higher than (°)"/><NumericUpDown Value="{Binding MinAltitude}" Minimum="0" Maximum="90" FormatString="0" ToolTip.Tip="0 = your site's horizon"/></StackPanel>
+                            <CheckBox Grid.Row="1" Grid.ColumnSpan="3" IsChecked="{Binding RequireDark}" Content="Only when it is dark"/>
+                            <StackPanel Grid.Row="2"><TextBlock Classes="label" Text="Moon at least this far (°)"/><NumericUpDown Value="{Binding MinMoonSeparation}" Minimum="0" Maximum="180" FormatString="0"/></StackPanel>
+                            <StackPanel Grid.Row="2" Grid.Column="2"><TextBlock Classes="label" Text="Moon at most (% lit)"/><NumericUpDown Value="{Binding MaxMoonPercent}" Minimum="0" Maximum="100" FormatString="0"/></StackPanel>
+                          </Grid>
+                        </Expander>
+                      </StackPanel>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <c:Notice Text="{Binding Schedule.Message}"/>
+            </StackPanel>
+          </Border>
+
+          <Border Classes="card">
+            <Expander Header="Images kept from earlier nights">
+              <StackPanel Spacing="6" Margin="0,8,0,0">
+                <TextBlock Classes="hint" Text="A named image keeps its coverage and its stack. Load one, then press Start to carry on."/>
+                <ListBox ItemsSource="{Binding Image.Saved}" SelectedItem="{Binding Image.SelectedSaved}" MaxHeight="160" Background="Transparent">
+                  <ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Line}" TextWrapping="Wrap"/></DataTemplate></ListBox.ItemTemplate>
+                </ListBox>
+                <StackPanel Classes="row">
+                  <Button Content="Load" Command="{Binding Image.LoadSavedCommand}"/>
+                  <Button Content="Forget" Classes="danger" Command="{Binding Image.DeleteSavedCommand}"/>
+                  <Button Content="↻" Command="{Binding Image.RefreshSavedCommand}" ToolTip.Tip="Look again"/>
+                </StackPanel>
+              </StackPanel>
+            </Expander>
+          </Border>
+
+          <Border Classes="card">
+            <Expander Header="Stellarium">
+              <StackPanel Spacing="8" Margin="0,8,0,0">
+                <TextBlock Classes="hint" Text="{Binding Atlas.StellariumText}"/>
+                <TextBlock Text="{Binding Atlas.StellariumOffer}" IsVisible="{Binding Atlas.StellariumOffer.Length}" TextWrapping="Wrap"/>
+                <Button Content="Show the selection in Stellarium" Command="{Binding Atlas.ShowInStellariumCommand}" HorizontalAlignment="Stretch"/>
+                <Button Content="Take Stellarium's selection" Command="{Binding Atlas.TakeStellariumSelectionCommand}" HorizontalAlignment="Stretch"/>
+                <Button Content="Stellarium follows this scope" Command="{Binding Atlas.StellariumFollowsPointerCommand}" HorizontalAlignment="Stretch"/>
+                <TextBlock Classes="hint" Text="In Stellarium: Telescope Control → add telescope → External software or a remote computer, host localhost, the port above, equinox J2000. Enable the Remote Control plugin for the other buttons."/>
+              </StackPanel>
+            </Expander>
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+    </Border>
+  </Grid>
+</UserControl>

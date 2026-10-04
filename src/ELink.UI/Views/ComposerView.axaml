@@ -1,140 +1,247 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:ELink.UI.Controls" xmlns:i="using:ELink.UI.Infrastructure"
              x:Class="ELink.UI.Views.ComposerView">
-  <StackPanel MaxWidth="940" Spacing="0">
-    <Border Classes="card">
-      <StackPanel Spacing="4">
-        <TextBlock Classes="title" Text="Compose"/>
-        <TextBlock TextWrapping="Wrap" Opacity="0.75"
-                   Text="A smart scope is point-to plus shoot-at. Turn mounts into pointers and optics plus cameras into imaging trains, then combine pointers and trains (several per mount, other scopes too) into a scope that guides itself."/>
-      </StackPanel>
-    </Border>
+  <StackPanel Spacing="0">
 
+    <!-- 1. telescopes -->
     <Border Classes="card">
-      <StackPanel Spacing="10">
-        <TextBlock Classes="section" Text="1 · POINTER FROM A MOUNT"/>
-        <StackPanel Classes="row">
-          <StackPanel><TextBlock Classes="label" Text="New pointer id"/><TextBox Text="{Binding NewPointerId}" Width="160" Watermark="e.g. eq6"/></StackPanel>
-          <StackPanel><TextBlock Classes="label" Text="Mount"/><ComboBox ItemsSource="{Binding Mounts}" SelectedItem="{Binding SelectedMount}" Width="240"/></StackPanel>
-          <Button Content="Define pointer" Command="{Binding DefinePointerCommand}" VerticalAlignment="Bottom"/>
-        </StackPanel>
-        <TextBlock Text="{Binding Message}" TextWrapping="Wrap" IsVisible="{Binding PointerMessage}" Classes.error="{Binding MessageFailed}" Classes.ok="{Binding !MessageFailed}"/>
-      </StackPanel>
-    </Border>
+      <StackPanel Spacing="12">
+        <Grid ColumnDefinitions="*,Auto">
+          <StackPanel>
+            <TextBlock Classes="h2" Text="1 · Your telescopes"/>
+            <TextBlock Classes="hint" Text="A telescope here is one optical path: the telescope or lens, the cameras behind it, and the filter wheel, focuser and rotator in between. A guide scope is a telescope too."/>
+          </StackPanel>
+          <Button Grid.Column="1" Content="Add a telescope" Classes.primary="{Binding NoTrains}" Command="{Binding NewTrainCommand}" VerticalAlignment="Top"
+                  IsVisible="{Binding !TrainFormOpen}"/>
+        </Grid>
 
-    <Border Classes="card">
-      <StackPanel Spacing="10">
-        <TextBlock Classes="section" Text="2 · IMAGING TRAIN"/>
-        <TextBlock Classes="label" TextWrapping="Wrap" Text="One telescope or lens and what sits behind it. Give each camera its role: Imaging, or Guiding for an off-axis guider behind the same optics. A train with only a guide scope's camera can be another scope's guider."/>
-        <StackPanel Classes="row">
-          <StackPanel><TextBlock Classes="label" Text="Train id"/><TextBox Text="{Binding NewTrainId}" Width="140" Watermark="e.g. main"/></StackPanel>
-          <StackPanel><TextBlock Classes="label" Text="Label"/><TextBox Text="{Binding TrainLabel}" Width="200" Watermark="e.g. 80/480 + ASI2600"/></StackPanel>
-          <StackPanel><TextBlock Classes="label" Text="Focal length mm"/><NumericUpDown Value="{Binding FocalLength}" Minimum="0" Increment="10" FormatString="0.#" Width="140"/></StackPanel>
-          <StackPanel><TextBlock Classes="label" Text="Aperture mm"/><NumericUpDown Value="{Binding Aperture}" Minimum="0" Increment="5" FormatString="0.#" Width="120"/></StackPanel>
-        </StackPanel>
-        <TextBlock Classes="label" TextWrapping="Wrap" Text="Cameras: role; for a DSLR its pixel size µm and sensor width × height px (0 = what the camera reports); gain and offset presets (empty = the camera's own); cooling set point °C and °C per minute (empty = no cooling: the train cools slowly once connected, the scope waits until cold)"/>
-        <ItemsControl ItemsSource="{Binding TrainCameras}">
+        <ItemsControl ItemsSource="{Binding Trains}">
           <ItemsControl.ItemTemplate>
             <DataTemplate>
-              <StackPanel Classes="row" Margin="0,0,0,2">
-                <TextBlock Text="{Binding CameraId}" Width="200" VerticalAlignment="Center"/>
-                <ComboBox ItemsSource="{Binding $parent[UserControl].DataContext.CameraRoles}" SelectedItem="{Binding Role}" Width="130"/>
-                <NumericUpDown Value="{Binding PixelSize}" Minimum="0" Increment="0.1" FormatString="0.##" Width="110" ShowButtonSpinner="False" ToolTip.Tip="pixel size µm, for DSLRs (0 = the camera's own)"/>
-                <NumericUpDown Value="{Binding SensorWidth}" Minimum="0" FormatString="0" Width="100" ShowButtonSpinner="False" ToolTip.Tip="sensor width px (0 = the camera's own)"/>
-                <NumericUpDown Value="{Binding SensorHeight}" Minimum="0" FormatString="0" Width="100" ShowButtonSpinner="False" ToolTip.Tip="sensor height px (0 = the camera's own)"/>
-                <TextBox Text="{Binding Gain}" Width="70" Watermark="gain" ToolTip.Tip="gain preset (empty = the camera's own)"/>
-                <TextBox Text="{Binding Offset}" Width="70" Watermark="offset" ToolTip.Tip="offset preset (empty = the camera's own)"/>
-                <TextBox Text="{Binding CoolTo}" Width="70" Watermark="°C" ToolTip.Tip="cooling set point °C (empty = no cooling)"/>
-                <NumericUpDown Value="{Binding CoolRate}" Minimum="0.1" Maximum="30" Increment="0.5" FormatString="0.#" Width="80" ShowButtonSpinner="False" ToolTip.Tip="cooling and warming °C per minute"/>
-              </StackPanel>
+              <Border BorderBrush="#2B3548" BorderThickness="0,1,0,0" Padding="0,10">
+                <Grid ColumnDefinitions="*,Auto,Auto">
+                  <StackPanel><TextBlock Text="{Binding Title}" Classes="h2"/><TextBlock Text="{Binding Detail}" Classes="hint"/></StackPanel>
+                  <Button Grid.Column="1" Content="Edit" Margin="0,0,6,0" Command="{Binding $parent[UserControl].DataContext.EditTrainCommand}" CommandParameter="{Binding}"/>
+                  <Button Grid.Column="2" Content="Remove" Command="{Binding $parent[UserControl].DataContext.RemoveTrainCommand}" CommandParameter="{Binding}"/>
+                </Grid>
+              </Border>
             </DataTemplate>
           </ItemsControl.ItemTemplate>
         </ItemsControl>
-        <StackPanel Classes="row">
-          <StackPanel><TextBlock Classes="label" Text="Filter wheel"/><ComboBox ItemsSource="{Binding Wheels}" SelectedItem="{Binding SelectedWheel}" Width="180"/></StackPanel>
-          <StackPanel><TextBlock Classes="label" Text="Focuser"/><ComboBox ItemsSource="{Binding Focusers}" SelectedItem="{Binding SelectedFocuser}" Width="180"/></StackPanel>
-          <StackPanel><TextBlock Classes="label" Text="Rotator"/><ComboBox ItemsSource="{Binding Rotators}" SelectedItem="{Binding SelectedRotator}" Width="180"/></StackPanel>
-          <StackPanel><TextBlock Classes="label" Text="Focus offsets (steps per filter)"/><TextBox Text="{Binding FocusOffsets}" Width="220" Watermark="L=0, R=30, Ha=120"/></StackPanel>
-          <Button Content="Define train" Command="{Binding DefineTrainCommand}" VerticalAlignment="Bottom"/>
-        </StackPanel>
-        <TextBlock Text="{Binding Message}" TextWrapping="Wrap" IsVisible="{Binding TrainMessage}" Classes.error="{Binding MessageFailed}" Classes.ok="{Binding !MessageFailed}"/>
+
+        <Border IsVisible="{Binding TrainFormOpen}" Background="#151B26" BorderBrush="#2B3548" BorderThickness="1" CornerRadius="8" Padding="14">
+          <StackPanel Spacing="12">
+            <TextBlock Text="{Binding TrainFormTitle}" Classes="h2"/>
+            <Grid ColumnDefinitions="2*,12,*,12,*">
+              <StackPanel><TextBlock Classes="label" Text="Name"/><TextBox Text="{Binding TrainName}" Watermark="e.g. Main telescope"/></StackPanel>
+              <StackPanel Grid.Column="2"><TextBlock Classes="label" Text="Focal length (mm)"/><NumericUpDown Value="{Binding FocalLength}" Minimum="0" Increment="10" FormatString="0.#" ToolTip.Tip="With any reducer or flattener. It gives the cameras their plate scale; 0 = unknown."/></StackPanel>
+              <StackPanel Grid.Column="4"><TextBlock Classes="label" Text="Aperture (mm)"/><NumericUpDown Value="{Binding Aperture}" Minimum="0" Increment="5" FormatString="0.#"/></StackPanel>
+            </Grid>
+
+            <StackPanel Spacing="6">
+              <TextBlock Classes="section" Text="CAMERAS BEHIND IT"/>
+              <TextBlock Classes="hint" Text="Imaging cameras take the pictures. An off-axis guider is a second camera behind the same optics, used for guiding. Leave the rest as “Not used”." IsVisible="{Binding TrainCameras.Count}"/>
+              <TextBlock Classes="hint" Text="No camera found. Connect your cameras in Rig › Equipment first." IsVisible="{Binding !TrainCameras.Count}"/>
+              <ItemsControl ItemsSource="{Binding TrainCameras}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Border BorderBrush="#2B3548" BorderThickness="0,1,0,0" Padding="0,8">
+                      <StackPanel Spacing="8">
+                        <Grid ColumnDefinitions="*,Auto">
+                          <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                          <ComboBox Grid.Column="1" ItemsSource="{Binding $parent[UserControl].DataContext.CameraRoles}" SelectedItem="{Binding Role}" Width="140"/>
+                        </Grid>
+                        <StackPanel IsVisible="{Binding IsUsed}" Spacing="8">
+                          <WrapPanel>
+                            <StackPanel Margin="0,0,12,6"><TextBlock Classes="label" Text="Gain"/><TextBox Text="{Binding Gain}" Width="80" Watermark="as is" ToolTip.Tip="Used for every exposure that does not ask for another. Empty = leave the camera's own."/></StackPanel>
+                            <StackPanel Margin="0,0,12,6"><TextBlock Classes="label" Text="Offset"/><TextBox Text="{Binding Offset}" Width="80" Watermark="as is"/></StackPanel>
+                            <StackPanel Margin="0,0,12,6"><TextBlock Classes="label" Text="Cool to (°C)"/><TextBox Text="{Binding CoolTo}" Width="90" Watermark="no cooling" ToolTip.Tip="The telescope cools the sensor slowly to this once the camera is connected, and the scope waits until it is cold."/></StackPanel>
+                            <StackPanel Margin="0,0,12,6"><TextBlock Classes="label" Text="Cooling rate (°C/min)"/><NumericUpDown Value="{Binding CoolRate}" Minimum="0.1" Maximum="30" Increment="0.5" FormatString="0.#" Width="110"/></StackPanel>
+                          </WrapPanel>
+                          <Expander Header="This camera does not know its own sensor (some DSLRs)">
+                            <WrapPanel Margin="0,6,0,0">
+                              <StackPanel Margin="0,0,12,6"><TextBlock Classes="label" Text="Pixel size (µm)"/><NumericUpDown Value="{Binding PixelSize}" Minimum="0" Increment="0.1" FormatString="0.##" Width="110" ToolTip.Tip="0 = what the camera reports"/></StackPanel>
+                              <StackPanel Margin="0,0,12,6"><TextBlock Classes="label" Text="Width (px)"/><NumericUpDown Value="{Binding SensorWidth}" Minimum="0" FormatString="0" Width="110"/></StackPanel>
+                              <StackPanel Margin="0,0,12,6"><TextBlock Classes="label" Text="Height (px)"/><NumericUpDown Value="{Binding SensorHeight}" Minimum="0" FormatString="0" Width="110"/></StackPanel>
+                            </WrapPanel>
+                          </Expander>
+                        </StackPanel>
+                      </StackPanel>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+
+            <WrapPanel>
+              <StackPanel Margin="0,0,16,8"><TextBlock Classes="label" Text="Filter wheel"/>
+                <ComboBox ItemsSource="{Binding Wheels}" SelectedItem="{Binding SelectedWheel}" Width="190"><ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding, Converter={x:Static i:Chips.NoneText}}"/></DataTemplate></ComboBox.ItemTemplate></ComboBox></StackPanel>
+              <StackPanel Margin="0,0,16,8"><TextBlock Classes="label" Text="Focuser"/>
+                <ComboBox ItemsSource="{Binding Focusers}" SelectedItem="{Binding SelectedFocuser}" Width="190"><ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding, Converter={x:Static i:Chips.NoneText}}"/></DataTemplate></ComboBox.ItemTemplate></ComboBox></StackPanel>
+              <StackPanel Margin="0,0,16,8"><TextBlock Classes="label" Text="Rotator"/>
+                <ComboBox ItemsSource="{Binding Rotators}" SelectedItem="{Binding SelectedRotator}" Width="190"><ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding, Converter={x:Static i:Chips.NoneText}}"/></DataTemplate></ComboBox.ItemTemplate></ComboBox></StackPanel>
+            </WrapPanel>
+            <StackPanel IsVisible="{Binding CanSetFocusOffsets}" Spacing="2">
+              <TextBlock Classes="label" Text="Focus offsets per filter (focuser steps)"/>
+              <TextBox Text="{Binding FocusOffsets}" Watermark="L=0, R=30, Ha=120"/>
+              <TextBlock Classes="hint" Text="When the filter changes the focuser moves by the difference, instead of refocusing."/>
+            </StackPanel>
+
+            <c:Notice Text="{Binding TrainMessage}" Kind="{Binding TrainMessageKind}"/>
+            <StackPanel Classes="row">
+              <Button Content="Save telescope" Classes="primary" Command="{Binding SaveTrainCommand}"/>
+              <Button Content="Cancel" Command="{Binding CancelTrainCommand}"/>
+            </StackPanel>
+          </StackPanel>
+        </Border>
       </StackPanel>
     </Border>
 
+    <!-- 2. scopes -->
     <Border Classes="card">
-      <StackPanel Spacing="10">
-        <TextBlock Classes="section" Text="3 · SMART SCOPE"/>
-        <StackPanel Classes="row">
-          <StackPanel><TextBlock Classes="label" Text="Scope id"/><TextBox Text="{Binding ScopeId}" Width="160" Watermark="e.g. wide"/></StackPanel>
-          <StackPanel><TextBlock Classes="label" Text="Display name"/><TextBox Text="{Binding ScopeName}" Width="240"/></StackPanel>
-        </StackPanel>
-        <Grid ColumnDefinitions="*,16,*">
+      <StackPanel Spacing="12">
+        <Grid ColumnDefinitions="*,Auto">
           <StackPanel>
-            <TextBlock Classes="label" Text="Pointers (all are sent to the same target)"/>
-            <TextBlock Text="define a pointer above" Classes="label" IsVisible="{Binding !PointerChoices.Count}"/>
-            <ItemsControl ItemsSource="{Binding PointerChoices}">
-              <ItemsControl.ItemTemplate><DataTemplate><CheckBox IsChecked="{Binding IsSelected}" Content="{Binding Label}"/></DataTemplate></ItemsControl.ItemTemplate>
-            </ItemsControl>
+            <TextBlock Classes="h2" Text="2 · Your scopes"/>
+            <TextBlock Classes="hint" Text="A scope is a mount carrying one or more telescopes. It guides, centres, focuses and flips by itself; you only ask it for images. Several telescopes on one mount are one scope."/>
           </StackPanel>
-          <StackPanel Grid.Column="2">
-            <TextBlock Classes="label" Text="Trains (any number on one mount; offset of each from the pointing axis, arcmin)"/>
-            <TextBlock Text="define a train above" Classes="label" IsVisible="{Binding !ShooterChoices.Count}"/>
-            <ItemsControl ItemsSource="{Binding ShooterChoices}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                  <StackPanel Classes="row">
-                    <CheckBox IsChecked="{Binding IsSelected}" Content="{Binding Label}" MinWidth="200"/>
-                    <NumericUpDown Value="{Binding EastArcmin}" Width="100" FormatString="0.#" ShowButtonSpinner="False" ToolTip.Tip="east offset, arcmin"/>
-                    <NumericUpDown Value="{Binding NorthArcmin}" Width="100" FormatString="0.#" ShowButtonSpinner="False" ToolTip.Tip="north offset, arcmin"/>
-                  </StackPanel>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-          </StackPanel>
+          <Button Grid.Column="1" Content="Add a scope" Classes.primary="{Binding HasTrains}" Command="{Binding NewScopeCommand}" VerticalAlignment="Top"
+                  IsVisible="{Binding !ScopeFormOpen}" IsEnabled="{Binding HasTrains}" ToolTip.Tip="Add a telescope first"/>
         </Grid>
-        <TextBlock Classes="label" Text="Guiding: the scope guides and dithers by itself with this (another train, a train's off-axis guider, or none)"/>
-        <StackPanel Classes="row">
-          <StackPanel><TextBlock Classes="label" Text="Guide with"/><ComboBox ItemsSource="{Binding GuideWith}" SelectedItem="{Binding SelectedGuideWith}" Width="190"/></StackPanel>
-          <StackPanel IsVisible="{Binding Guided}"><TextBlock Classes="label" Text="Output"/><ComboBox ItemsSource="{Binding GuideOutputs}" SelectedItem="{Binding SelectedGuideOutput}" Width="130"/></StackPanel>
-          <StackPanel IsVisible="{Binding Guided}"><StackPanel IsVisible="{Binding PulseOutput}"><TextBlock Classes="label" Text="Guide port"/><ComboBox ItemsSource="{Binding GuidePorts}" SelectedItem="{Binding SelectedGuidePort}" Width="180"/></StackPanel></StackPanel>
-          <StackPanel IsVisible="{Binding Guided}"><StackPanel IsVisible="{Binding !PulseOutput}"><TextBlock Classes="label" Text="Target device id"/><TextBox Text="{Binding GuideTargetId}" Width="180"/></StackPanel></StackPanel>
-          <StackPanel IsVisible="{Binding Guided}"><TextBlock Classes="label" Text="Guide exposure s"/><NumericUpDown Value="{Binding GuideExposure}" Minimum="0.05" Increment="0.5" FormatString="0.##" Width="130"/></StackPanel>
-        </StackPanel>
-        <StackPanel Classes="row" IsVisible="{Binding Guided}">
-          <StackPanel><TextBlock Classes="label" Text="Dither every N rounds (0 = never)"/><NumericUpDown Value="{Binding DitherEvery}" Minimum="0" FormatString="0" Width="200"/></StackPanel>
-          <StackPanel><TextBlock Classes="label" Text="Dither px"/><NumericUpDown Value="{Binding DitherPixels}" Minimum="0.5" Increment="1" FormatString="0.#" Width="110"/></StackPanel>
-          <StackPanel><TextBlock Classes="label" Text="Settled below px"/><NumericUpDown Value="{Binding SettlePixels}" Minimum="0.1" Increment="0.5" FormatString="0.#" Width="130"/></StackPanel>
-        </StackPanel>
-        <StackPanel Classes="row">
-          <CheckBox IsChecked="{Binding GradeFrames}" Content="Grade frames (reject clouds, trailing, soft, bright sky)" VerticalAlignment="Bottom"/>
-          <CheckBox IsChecked="{Binding CenterAfterSlew}" Content="Centre after each slew (plate solve, re-aim)" VerticalAlignment="Bottom"/>
-          <StackPanel><TextBlock Classes="label" Text="Within arcmin"/><NumericUpDown Value="{Binding CenterTolerance}" Minimum="0.05" Increment="0.25" FormatString="0.##" Width="120"/></StackPanel>
-        </StackPanel>
-        <TextBlock Classes="label" Text="Focus: every train with a focuser is refocused by the scope when one of these fires (0 = off)"/>
-        <StackPanel Classes="row">
-          <CheckBox IsChecked="{Binding FocusOnStart}" Content="At the start" VerticalAlignment="Bottom"/>
-          <StackPanel><TextBlock Classes="label" Text="Every minutes"/><NumericUpDown Value="{Binding RefocusEveryMinutes}" Minimum="0" Increment="15" FormatString="0" Width="120"/></StackPanel>
-          <StackPanel><TextBlock Classes="label" Text="Temperature moved °C"/><NumericUpDown Value="{Binding RefocusTemperature}" Minimum="0" Increment="0.5" FormatString="0.#" Width="150"/></StackPanel>
-          <CheckBox IsChecked="{Binding RefocusOnFilter}" Content="On filter change" VerticalAlignment="Bottom"/>
-          <StackPanel><TextBlock Classes="label" Text="Stars grew %"/><NumericUpDown Value="{Binding RefocusHfrPercent}" Minimum="0" Increment="5" FormatString="0" Width="120"/></StackPanel>
-        </StackPanel>
-        <StackPanel Classes="row">
-          <CheckBox IsChecked="{Binding MeridianFlip}" Content="Flip by itself at the meridian (German mounts; needs the site)" VerticalAlignment="Bottom"/>
-          <StackPanel><TextBlock Classes="label" Text="Flip this many minutes past the meridian"/><NumericUpDown Value="{Binding FlipAfterMinutes}" Minimum="0" Maximum="60" Increment="1" FormatString="0.#" Width="150"/></StackPanel>
-        </StackPanel>
-        <Button Content="Define scope" Classes="primary" Command="{Binding DefineScopeCommand}" HorizontalAlignment="Left"/>
-        <TextBlock Text="{Binding Message}" TextWrapping="Wrap" IsVisible="{Binding ScopeMessage}" Classes.error="{Binding MessageFailed}" Classes.ok="{Binding !MessageFailed}"/>
+
+        <ItemsControl ItemsSource="{Binding Scopes}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Border BorderBrush="#2B3548" BorderThickness="0,1,0,0" Padding="0,10">
+                <Grid ColumnDefinitions="*,Auto,Auto">
+                  <StackPanel><TextBlock Text="{Binding Title}" Classes="h2"/><TextBlock Text="{Binding Detail}" Classes="hint"/></StackPanel>
+                  <Button Grid.Column="1" Content="Edit" Margin="0,0,6,0" Command="{Binding $parent[UserControl].DataContext.EditScopeCommand}" CommandParameter="{Binding}"/>
+                  <Button Grid.Column="2" Content="Remove" Command="{Binding $parent[UserControl].DataContext.RemoveScopeCommand}" CommandParameter="{Binding}"/>
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <TextBlock Classes="hint" IsVisible="{Binding !HasTrains}" Text="Set up a telescope first."/>
+
+        <Border IsVisible="{Binding ScopeFormOpen}" Background="#151B26" BorderBrush="#2B3548" BorderThickness="1" CornerRadius="8" Padding="14">
+          <StackPanel Spacing="12">
+            <TextBlock Text="{Binding ScopeFormTitle}" Classes="h2"/>
+            <StackPanel><TextBlock Classes="label" Text="Name"/><TextBox Text="{Binding ScopeName}" Watermark="e.g. Backyard rig"/></StackPanel>
+
+            <StackPanel Spacing="4">
+              <TextBlock Classes="section" Text="MOUNT"/>
+              <TextBlock Classes="hint" Text="No mount found. Connect your mount in Rig › Equipment first." IsVisible="{Binding !PointerChoices.Count}"/>
+              <ItemsControl ItemsSource="{Binding PointerChoices}">
+                <ItemsControl.ItemTemplate><DataTemplate><CheckBox IsChecked="{Binding IsSelected}" Content="{Binding Label}"/></DataTemplate></ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+
+            <StackPanel Spacing="4">
+              <TextBlock Classes="section" Text="TELESCOPES ON IT"/>
+              <ItemsControl ItemsSource="{Binding ShooterChoices}">
+                <ItemsControl.ItemTemplate><DataTemplate><CheckBox IsChecked="{Binding IsSelected}" Content="{Binding Label}"/></DataTemplate></ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <Expander Header="Where each sits relative to the pointing axis (several telescopes on one mount)">
+                <ItemsControl ItemsSource="{Binding ShooterChoices}" Margin="0,6,0,0">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <StackPanel Classes="row" Margin="0,0,0,6">
+                        <TextBlock Text="{Binding Title}" Width="200" VerticalAlignment="Center"/>
+                        <NumericUpDown Value="{Binding EastArcmin}" FormatString="0.#" Width="100" ToolTip.Tip="east, arcminutes"/>
+                        <NumericUpDown Value="{Binding NorthArcmin}" FormatString="0.#" Width="100" ToolTip.Tip="north, arcminutes"/>
+                        <TextBlock Classes="hint" Text="east, north (arcmin)" VerticalAlignment="Center"/>
+                      </StackPanel>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </Expander>
+            </StackPanel>
+
+            <StackPanel Spacing="6">
+              <TextBlock Classes="section" Text="GUIDING"/>
+              <ComboBox ItemsSource="{Binding GuideWith}" SelectedValueBinding="{Binding Id}" SelectedValue="{Binding SelectedGuideWith}" HorizontalAlignment="Stretch">
+                <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Label}"/></DataTemplate></ComboBox.ItemTemplate>
+              </ComboBox>
+              <Expander Header="Guiding settings" IsVisible="{Binding Guided}">
+                <StackPanel Spacing="8" Margin="0,6,0,0">
+                  <WrapPanel>
+                    <StackPanel Margin="0,0,12,6"><TextBlock Classes="label" Text="Corrections go to"/><ComboBox ItemsSource="{Binding GuideOutputs}" SelectedItem="{Binding SelectedGuideOutput}" Width="130"/></StackPanel>
+                    <StackPanel Margin="0,0,12,6" IsVisible="{Binding PulseOutput}"><TextBlock Classes="label" Text="Guide port"/><ComboBox ItemsSource="{Binding GuidePorts}" SelectedItem="{Binding SelectedGuidePort}" Width="190"/></StackPanel>
+                    <StackPanel Margin="0,0,12,6" IsVisible="{Binding !PulseOutput}"><TextBlock Classes="label" Text="Device id"/><TextBox Text="{Binding GuideTargetId}" Width="190"/></StackPanel>
+                    <StackPanel Margin="0,0,12,6"><TextBlock Classes="label" Text="Guide exposure (s)"/><NumericUpDown Value="{Binding GuideExposure}" Minimum="0.05" Increment="0.5" FormatString="0.##" Width="120"/></StackPanel>
+                  </WrapPanel>
+                  <WrapPanel>
+                    <StackPanel Margin="0,0,12,6"><TextBlock Classes="label" Text="Dither every (exposures)"/><NumericUpDown Value="{Binding DitherEvery}" Minimum="0" FormatString="0" Width="140" ToolTip.Tip="0 = never"/></StackPanel>
+                    <StackPanel Margin="0,0,12,6"><TextBlock Classes="label" Text="Dither (guide px)"/><NumericUpDown Value="{Binding DitherPixels}" Minimum="0.5" Increment="1" FormatString="0.#" Width="120"/></StackPanel>
+                    <StackPanel Margin="0,0,12,6"><TextBlock Classes="label" Text="Settled below (px)"/><NumericUpDown Value="{Binding SettlePixels}" Minimum="0.1" Increment="0.5" FormatString="0.#" Width="120"/></StackPanel>
+                  </WrapPanel>
+                </StackPanel>
+              </Expander>
+            </StackPanel>
+
+            <StackPanel Spacing="6">
+              <TextBlock Classes="section" Text="WHAT THE SCOPE DOES BY ITSELF"/>
+              <CheckBox IsChecked="{Binding GradeFrames}" Content="Reject bad frames (clouds, trailing, soft focus, bright sky) and shoot them again"/>
+              <StackPanel Classes="row"><CheckBox IsChecked="{Binding CenterAfterSlew}" Content="Centre on the target after each slew (needs a plate solver), within"/>
+                <NumericUpDown Value="{Binding CenterTolerance}" Minimum="0.05" Increment="0.25" FormatString="0.##" Width="90"/><TextBlock Text="arcmin" Classes="label" VerticalAlignment="Center"/></StackPanel>
+              <StackPanel Classes="row"><CheckBox IsChecked="{Binding MeridianFlip}" Content="Flip at the meridian (German equatorial mounts; needs your site), this many minutes past it"/>
+                <NumericUpDown Value="{Binding FlipAfterMinutes}" Minimum="0" Maximum="60" Increment="1" FormatString="0.#" Width="90"/></StackPanel>
+              <Expander Header="Autofocus: when to refocus">
+                <StackPanel Spacing="8" Margin="0,6,0,0">
+                  <TextBlock Classes="hint" Text="Every telescope with a focuser is refocused by the scope when any of these happens. 0 = off."/>
+                  <WrapPanel>
+                    <CheckBox IsChecked="{Binding FocusOnStart}" Content="At the start" Margin="0,0,16,6" VerticalAlignment="Bottom"/>
+                    <CheckBox IsChecked="{Binding RefocusOnFilter}" Content="On a filter change" Margin="0,0,16,6" VerticalAlignment="Bottom" ToolTip.Tip="Not for telescopes that have focus offsets per filter"/>
+                    <StackPanel Margin="0,0,12,6"><TextBlock Classes="label" Text="Every (minutes)"/><NumericUpDown Value="{Binding RefocusEveryMinutes}" Minimum="0" Increment="15" FormatString="0" Width="110"/></StackPanel>
+                    <StackPanel Margin="0,0,12,6"><TextBlock Classes="label" Text="Temperature moved (°C)"/><NumericUpDown Value="{Binding RefocusTemperature}" Minimum="0" Increment="0.5" FormatString="0.#" Width="140"/></StackPanel>
+                    <StackPanel Margin="0,0,12,6"><TextBlock Classes="label" Text="Stars grew (%)"/><NumericUpDown Value="{Binding RefocusHfrPercent}" Minimum="0" Increment="5" FormatString="0" Width="110"/></StackPanel>
+                  </WrapPanel>
+                </StackPanel>
+              </Expander>
+              <Expander Header="Combine with other scopes" IsVisible="{Binding NestedChoices.Count}">
+                <StackPanel Spacing="4" Margin="0,6,0,0">
+                  <TextBlock Classes="hint" Text="A scope can be built from other scopes: it points all their mounts and shoots with all their telescopes."/>
+                  <ItemsControl ItemsSource="{Binding NestedChoices}">
+                    <ItemsControl.ItemTemplate><DataTemplate><CheckBox IsChecked="{Binding IsSelected}" Content="{Binding Label}"/></DataTemplate></ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
+              </Expander>
+            </StackPanel>
+
+            <c:Notice Text="{Binding ScopeMessage}" Kind="{Binding ScopeMessageKind}"/>
+            <StackPanel Classes="row">
+              <Button Content="Save scope" Classes="primary" Command="{Binding SaveScopeCommand}"/>
+              <Button Content="Cancel" Command="{Binding CancelScopeCommand}"/>
+            </StackPanel>
+          </StackPanel>
+        </Border>
       </StackPanel>
     </Border>
 
+    <!-- mount pointers: made automatically, listed for the curious -->
     <Border Classes="card">
-      <StackPanel Spacing="8">
-        <TextBlock Classes="section" Text="DEFINED"/>
-        <StackPanel Classes="row">
-          <ComboBox ItemsSource="{Binding Existing}" SelectedItem="{Binding SelectedExisting}" Width="300"/>
-          <Button Content="Remove" Classes="danger" Command="{Binding RemoveCommand}"/>
+      <Expander Header="Advanced: mount pointers">
+        <StackPanel Spacing="10" Margin="0,8,0,0">
+          <TextBlock Classes="hint" Text="A mount is pointed through a pointer. Saving a scope makes the pointer for its mount, so you rarely need these."/>
+          <ItemsControl ItemsSource="{Binding Pointers}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,6">
+                  <StackPanel><TextBlock Text="{Binding Title}" FontWeight="SemiBold"/><TextBlock Text="{Binding Detail}" Classes="hint"/></StackPanel>
+                  <Button Grid.Column="1" Content="Remove" Command="{Binding $parent[UserControl].DataContext.RemovePointerCommand}" CommandParameter="{Binding}"/>
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <StackPanel Classes="row">
+            <StackPanel><TextBlock Classes="label" Text="New pointer name"/><TextBox Text="{Binding NewPointerId}" Width="160" Watermark="e.g. eq6"/></StackPanel>
+            <StackPanel><TextBlock Classes="label" Text="Mount"/><ComboBox ItemsSource="{Binding Mounts}" SelectedItem="{Binding SelectedMount}" Width="220"/></StackPanel>
+            <Button Content="Define pointer" Command="{Binding DefinePointerCommand}" VerticalAlignment="Bottom"/>
+          </StackPanel>
+          <c:Notice Text="{Binding PointerMessage}" Kind="{Binding PointerMessageKind}"/>
         </StackPanel>
-      </StackPanel>
+      </Expander>
     </Border>
-    <TextBlock Text="{Binding Message}" TextWrapping="Wrap" IsVisible="{Binding OtherMessage}" Classes.error="{Binding MessageFailed}" Classes.ok="{Binding !MessageFailed}"/>
   </StackPanel>
 </UserControl>

@@ -42,6 +42,7 @@ public sealed partial class ImageViewModel : ObservableObject, IDisposable
         catalog.CompositionChanged += () => UiThread.Post(RebuildChoices);
         catalog.Devices.CollectionChanged += (_, _) => UiThread.Post(RebuildChoices);
         RebuildChoices();
+        PropertyChanged += (_, e) => { if (e.PropertyName is { } n && PlanInputs.Contains(n)) SchedulePlan(); };
     }
 
     public ObservableCollection<ShooterChoice> Scopes { get; } = new();
@@ -70,11 +71,33 @@ public sealed partial class ImageViewModel : ObservableObject, IDisposable
     [ObservableProperty] private double _outputScale;
     [ObservableProperty] private string? _selectedWeather = "";
 
-    [ObservableProperty] private string _phase = "Idle";
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(IsRunning), nameof(IsPaused), nameof(IsActive), nameof(PhaseText), nameof(PhaseClass))]
+    [NotifyCanExecuteChangedFor(nameof(StartRunCommand), nameof(PauseCommand), nameof(ResumeCommand), nameof(AbortCommand))]
+    private string _phase = "Idle";
+    /// <summary>Working on it (or waiting for the sky or the weather to allow it).</summary>
+    public bool IsRunning => Phase is "Running" or "WaitingForSky" or "WaitingForWeather";
+    public bool IsPaused => Phase == "Paused";
+    public bool IsActive => IsRunning || IsPaused;
+    public string PhaseText => Phase switch
+    {
+        "Running" => "Imaging", "WaitingForSky" => "Waiting for the sky", "WaitingForWeather" => "Waiting for the weather", "Paused" => "Paused",
+        "Done" => "Done", "Aborted" => "Stopped", "Error" => "Error", "Failed" => "Failed", _ => "Not started",
+    };
+    public string PhaseClass => Phase switch { "Running" => "busy", "Done" => "ok", "Error" or "Failed" => "error", "WaitingForSky" or "WaitingForWeather" or "Paused" => "warn", _ => "idle" };
     [ObservableProperty] private string _summary = "";
     [ObservableProperty] private string _progress = "";
     [ObservableProperty] private string _coverageText = "";
     [ObservableProperty] private string _message = "";
+    /// <summary>error | ok | info: how the message is shown (an error unless said otherwise).</summary>
+    [ObservableProperty] private string _messageKind = "error";
+    private string _lastToast = "";
+    /// <summary>Shows a message under the form; <paramref name="toast"/> also tells the person wherever they are (for what happens while they are elsewhere).</summary>
+    private void Say(string text, string kind = "error", bool toast = false)
+    {
+        MessageKind = kind; Message = text;
+        if (toast && kind == "error" && text != "" && text != _lastToast) _mesh.Notices.Error(text, "Image");
+        _lastToast = text;
+    }
     [ObservableProperty] private WriteableBitmap? _map;
     [ObservableProperty] private double _boxHeight = 300;
     public double BoxW => BoxWidth;
@@ -87,7 +110,13 @@ public sealed partial class ImageViewModel : ObservableObject, IDisposable
         {
             var chosen = Scopes.Where(s => s.Selected).Select(s => s.Id).ToHashSet();
             Scopes.Clear();
-            foreach (var id in ids) Scopes.Add(new ShooterChoice(id) { Selected = chosen.Contains(id) || ids.Count == 1 });
+            foreach (var id in ids)
+            {
+                var choice = new ShooterChoice(id) { Selected = chosen.Contains(id) || ids.Count == 1 };
+                choice.PropertyChanged += (_, _) => SchedulePlan();
+                Scopes.Add(choice);
+            }
+            SchedulePlan();
         }
         var weather = new[] { "" }.Concat(_catalog.OfKind(DeviceKinds.Weather).Select(d => d.Id)).ToList();
         if (!Weather.SequenceEqual(weather)) { Weather.Clear(); foreach (var w in weather) Weather.Add(w); }
@@ -123,7 +152,7 @@ public sealed partial class ImageViewModel : ObservableObject, IDisposable
         Stepover = r.StepoverDegrees.Value; DitherArcsec = r.DitherArcsec.Value; OutputScale = r.OutputPixelScaleArcsec.Value; LiveStack = r.LiveStack.Value;
         foreach (var s in Scopes) s.Selected = r.ScopeIds.Any(x => x.Text == s.Id);
         StartAfresh = false;
-        Message = $"{r.Label.Text}: Start carries it on";
+        Say($"{r.Label.Text}: press Start to carry it on", "info");
     }
 
     [RelayCommand]
@@ -131,15 +160,16 @@ public sealed partial class ImageViewModel : ObservableObject, IDisposable
     {
         if (SelectedSaved is null) return;
         var r = await Commands.CallAsync(_mesh.Node, ImagingIds.DeleteSaved, (BinaryConvertibleString)SelectedSaved.Image.Label.Text);
-        Message = r.Ok.Value ? "" : r.Error.Text;
+        Say(r.Ok.Value ? "" : r.Error.Text);
         await RefreshSavedAsync();
     }
 
-    private bool TryRequest(out ImagingRequest req)
+    /// <summary>The request the form describes, or what is wrong with it (nothing is shown or posted).</summary>
+    private bool TryBuild(out ImagingRequest req, out string problem)
     {
-        req = new ImagingRequest();
-        if (!Sexagesimal.TryParse(CenterRa, out var ra) || ra < 0 || ra >= 24) { Message = "centre RA must be 0..24 hours"; return false; }
-        if (!Sexagesimal.TryParse(CenterDec, out var dec) || dec < -90 || dec > 90) { Message = "centre Dec must be -90..90"; return false; }
+        req = new ImagingRequest(); problem = "";
+        if (!Sexagesimal.TryParse(CenterRa, out var ra) || ra < 0 || ra >= 24) { problem = "centre RA must be 0..24 hours"; return false; }
+        if (!Sexagesimal.TryParse(CenterDec, out var dec) || dec < -90 || dec > 90) { problem = "centre Dec must be -90..90"; return false; }
         req = new ImagingRequest
         {
             Label = Label.Trim() == "" ? "Image" : Label.Trim(), Center = new SkyTarget { RaHours = ra, DecDegrees = dec, Epoch = "J2000" },
@@ -149,14 +179,79 @@ public sealed partial class ImageViewModel : ObservableObject, IDisposable
             WeatherId = SelectedWeather ?? "", LiveStack = LiveStack, OutputPixelScaleArcsec = OutputScale, Resume = !StartAfresh,
         };
         foreach (var s in Scopes.Where(s => s.Selected)) req.ScopeIds.Add(s.Id);
-        if (req.ScopeIds.Count == 0) { Message = "tick at least one scope"; return false; }
+        if (req.ScopeIds.Count == 0) { problem = "tick at least one scope"; return false; }
         return true;
+    }
+
+    private bool TryRequest(out ImagingRequest req)
+    {
+        bool ok = TryBuild(out req, out var problem);
+        if (!ok) Say(problem);
+        return ok;
+    }
+
+    // ---- the plan, worked out by the imaging service as the form changes ----------------------------------------------
+
+    /// <summary>One scope's frames as the plan sees them (sizes, turns and offsets of each train's field).</summary>
+    public sealed record PlanScope(string ScopeId, IReadOnlyList<FrameSpec> Frames);
+    public IReadOnlyList<PlanScope> PlanScopes { get; private set; } = Array.Empty<PlanScope>();
+    /// <summary>Why there is no plan (empty when there is one).</summary>
+    [ObservableProperty] private string _planProblem = "";
+    public event Action? PlanChanged;
+    private CancellationTokenSource? _planCts;
+
+    /// <summary>Asks for a fresh plan shortly after the form stops changing.</summary>
+    public void SchedulePlan()
+    {
+        _planCts?.Cancel();
+        var cts = _planCts = new CancellationTokenSource();
+        _ = Task.Run(async () =>
+        {
+            try { await Task.Delay(350, cts.Token); await PlanAsync(cts.Token); }
+            catch (OperationCanceledException) { }
+            catch (Exception) { }
+        });
+    }
+
+    private async Task PlanAsync(CancellationToken ct)
+    {
+        ImagingRequest req = null!; string problem = "";
+        bool ok = false;
+        var tcs = new TaskCompletionSource();
+        UiThread.Post(() => { ok = TryBuild(out req, out problem); tcs.SetResult(); });   // the form lives on the UI thread
+        await tcs.Task;
+        var scopes = new List<PlanScope>();
+        if (ok)
+        {
+            var answers = await _mesh.Node.CallFunctionAsync<ImagingRequest, ImagingState>(ImagingIds.Preview, req, TimeSpan.FromSeconds(15), ct);
+            var p = answers?.FirstOrDefault();
+            if (p is null) { ok = false; problem = "no imaging service on the mesh"; }
+            else if (p.Phase.Text == "Error") { ok = false; problem = p.Message.Text; }
+            else foreach (var w in p.Workers)
+                scopes.Add(new PlanScope(w.ScopeId.Text, w.Frames.Select(f => new FrameSpec(f.WidthDegrees.Value / 2, f.HeightDegrees.Value / 2, f.RotationDegrees.Value, f.OffsetEastDegrees.Value, f.OffsetNorthDegrees.Value)).ToList()));
+        }
+        if (ct.IsCancellationRequested) return;
+        UiThread.Post(() => { PlanScopes = scopes; PlanProblem = ok ? "" : problem; PlanChanged?.Invoke(); });
+    }
+
+    private static readonly HashSet<string> PlanInputs = new()
+    {
+        nameof(CenterRa), nameof(CenterDec), nameof(Width), nameof(Height), nameof(PositionAngle), nameof(ExposureSeconds), nameof(Stepover), nameof(Filter),
+    };
+
+    /// <summary>Where the area is and how big it is, as the imaging service last said (the map's own size).</summary>
+    public double AreaWidthDegrees => _areaW;
+    public double AreaHeightDegrees => _areaH;
+    public bool TryCentre(out double raHours, out double decDegrees)
+    {
+        raHours = decDegrees = 0;
+        return Sexagesimal.TryParse(CenterRa, out raHours) && Sexagesimal.TryParse(CenterDec, out decDegrees) && raHours >= 0 && raHours < 24 && Math.Abs(decDegrees) <= 90;
     }
 
     private void Show(ImagingState s)
     {
         Phase = s.Phase.Text;
-        if (s.Message.Text != "") Message = s.Message.Text;
+        if (s.Message.Text != "") Say(s.Message.Text, s.Phase.Text == "Error" ? "error" : "info", toast: true);
         Progress = $"{s.Visits.Value} shots";
         CoverageText = s.MapCols.Value > 0
             ? $"coverage  min {Fmt(s.MinSeconds.Value)} · mean {Fmt(s.MeanSeconds.Value)} · max {Fmt(s.MaxSeconds.Value)}" +
@@ -226,30 +321,31 @@ public sealed partial class ImageViewModel : ObservableObject, IDisposable
         if (!TryRequest(out var req)) return;
         var answers = await _mesh.Node.CallFunctionAsync<ImagingRequest, ImagingState>(ImagingIds.Preview, req, TimeSpan.FromSeconds(60));
         var p = answers?.FirstOrDefault();
-        if (p is null) { Message = "no imaging service on the mesh"; return; }
-        if (p.Phase.Text == "Error") { Message = p.Message.Text; Summary = ""; return; }
-        Message = "";
+        if (p is null) { Say("no imaging service on the mesh"); return; }
+        if (p.Phase.Text == "Error") { Say(p.Message.Text); Summary = ""; return; }
+        Say("");
         Summary = p.Message.Text + "   ·   " + string.Join("   ·   ", p.Workers.Select(w =>
             $"{w.ScopeId.Text}: " + string.Join(" + ", w.Frames.Select(f => FormattableString.Invariant($"{f.WidthDegrees.Value:0.##}°×{f.HeightDegrees.Value:0.##}°")))));
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanStart))]
     private async Task StartRunAsync()
     {
         if (!TryRequest(out var req)) return;
-        Message = "";
+        Say("");
         _shownVisits = -1;
         var r = await Commands.CallAsync(_mesh.Node, ImagingIds.Start, req, TimeSpan.FromSeconds(60));
-        if (!r.Ok.Value) Message = r.Error.Text;
+        if (!r.Ok.Value) Say(r.Error.Text);
         await RefreshSavedAsync();
     }
 
-    private async Task Void(string id) { var r = await Commands.CallAsync(_mesh.Node, id, NOTESVoid.Void); Message = r.Ok.Value ? "" : r.Error.Text; }
-    [RelayCommand] private Task PauseAsync() => Void(ImagingIds.Pause);
-    [RelayCommand] private Task ResumeAsync() => Void(ImagingIds.Resume);
-    [RelayCommand] private Task AbortAsync() => Void(ImagingIds.Abort);
+    private async Task Void(string id) { var r = await Commands.CallAsync(_mesh.Node, id, NOTESVoid.Void); Say(r.Ok.Value ? "" : r.Error.Text); }
+    private bool CanStart() => !IsActive;
+    [RelayCommand(CanExecute = nameof(IsRunning))] private Task PauseAsync() => Void(ImagingIds.Pause);
+    [RelayCommand(CanExecute = nameof(IsPaused))] private Task ResumeAsync() => Void(ImagingIds.Resume);
+    [RelayCommand(CanExecute = nameof(IsActive))] private Task AbortAsync() => Void(ImagingIds.Abort);
 
-    /// <summary>The Schedule tab, to add this image to.</summary>
+    /// <summary>The queue, to add this image to.</summary>
     public Func<ScheduleViewModel>? Scheduler { get; set; }
 
     [RelayCommand]
@@ -257,14 +353,14 @@ public sealed partial class ImageViewModel : ObservableObject, IDisposable
     {
         if (Scheduler?.Invoke() is not { } schedule || !TryRequest(out var req)) return;
         await schedule.AddAsync(req);
-        Message = schedule.Message != "" ? schedule.Message : $"{req.Label.Text} is on the schedule";
+        if (schedule.Message != "") Say(schedule.Message); else Say($"{req.Label.Text} is in the queue", "ok");
     }
 
     [RelayCommand]
     private async Task ApplyTargetAsync()
     {
         var r = await Commands.CallAsync(_mesh.Node, ImagingIds.SetTarget, (BinaryConvertibleDouble)(TargetMinutes * 60));
-        Message = r.Ok.Value ? "" : r.Error.Text;
+        Say(r.Ok.Value ? "" : r.Error.Text);
     }
 
     public void Dispose() => _follower?.Dispose();

@@ -1,15 +1,14 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="ELink.UI.Views.IndiBrowserView">
-  <StackPanel MaxWidth="980" Spacing="0">
+  <StackPanel Spacing="0">
     <Border Classes="card">
       <StackPanel Spacing="8">
-        <TextBlock Classes="title" Text="INDI properties"/>
-        <TextBlock Opacity="0.75" TextWrapping="Wrap" Text="Every property of every device on a bridged INDI server, live, whatever the driver. Edit a value and press Apply, or press a switch."/>
-        <StackPanel Classes="row">
+        <TextBlock Classes="hint" Text="Every property of every device on a bridged INDI server, live, whatever the driver. Edit a value and press Apply, or press a switch."/>
+        <WrapPanel Classes="row">
           <StackPanel><TextBlock Classes="label" Text="Server"/><ComboBox ItemsSource="{Binding Servers}" SelectedItem="{Binding SelectedServer}" Width="180"/></StackPanel>
           <StackPanel><TextBlock Classes="label" Text="Device"/><ComboBox ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}" Width="260"/></StackPanel>
           <Button Content="↻" Command="{Binding RefreshServersCommand}" VerticalAlignment="Bottom"/>
-        </StackPanel>
+        </WrapPanel>
         <TextBlock Classes="error" Text="{Binding Message}" IsVisible="{Binding Message.Length}"/>
       </StackPanel>
     </Border>
@@ -29,10 +28,10 @@
                     <Grid ColumnDefinitions="220,*,Auto" Margin="0,2">
                       <TextBlock Text="{Binding Label}" Opacity="0.75" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                       <TextBlock Grid.Column="1" Text="{Binding Value}" VerticalAlignment="Center" FontFamily="Cascadia Mono,Consolas,DejaVu Sans Mono,monospace"/>
-                      <StackPanel Grid.Column="2" Classes="row" IsVisible="{Binding CanSwitch}">
+                      <WrapPanel Grid.Column="2" Classes="row" IsVisible="{Binding CanSwitch}">
                         <Button Content="On" Padding="10,2"
                                 Command="{Binding $parent[UserControl].DataContext.SwitchOnCommand}" CommandParameter="{Binding}"/>
-                      </StackPanel>
+                      </WrapPanel>
                     </Grid>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>

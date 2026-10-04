@@ -227,7 +227,7 @@ public sealed class SchedulerService : IAsyncDisposable
         lock (_gate)
             if (_failedAt.TryGetValue(r.Label.Text, out var failed) && DateTime.UtcNow - failed < RetryFailedAfter && r.Label.Text != running)
                 return new(e, "Waiting", "failed recently: tried again later", double.NaN, 0, complete);
-        if (site is not { Known.Value: true }) return new(e, "Waiting", "the site is not known (Site tab)", double.NaN, 0, complete);
+        if (site is not { Known.Value: true }) return new(e, "Waiting", "the site is not set (Rig › Site)", double.NaN, 0, complete);
         var now = DateTime.Parse(site.UtcNow.Text, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal);
         if (Parse(e.NotBeforeUtc.Text) is { } nb && now < nb) return new(e, "Waiting", $"not before {nb:HH:mm} UTC", double.NaN, 0, complete);
         if (Parse(e.NotAfterUtc.Text) is { } na && now > na) return new(e, "Waiting", "its time window has passed", double.NaN, 0, complete);

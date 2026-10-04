@@ -96,8 +96,8 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
             await Commands.CallAsync(session.Node, EquipmentIds.Command(d.Kind, d.Id, "Connect"), (EVent.Connections.Models.BaseBinaryConvertibles.BinaryConvertibleBool)true);
         await Commands.CallAsync(session.Node, EquipmentIds.Command("Mount", "Telescope_Simulator", "Park"), (EVent.Connections.Models.BaseBinaryConvertibles.BinaryConvertibleBool)false);
         var mountItem = vm.Catalog.Devices.First(d => d.Kind == "Mount");
-        await vm.OpenDeviceCommand.ExecuteAsync(mountItem);
-        var mount = Assert.IsType<MountPanelViewModel>(vm.SelectedTab!.Content);
+        await vm.OpenDeviceAsync(mountItem);
+        var mount = Assert.IsType<MountPanelViewModel>(vm.Drawer);
         Assert.True(await Eventually(() => mount.Connected && mount.Phase != "Parked"));
         mount.TargetRa = "10:00:00"; mount.TargetDec = "20:00:00";
         await mount.GotoCommand.ExecuteAsync(null);
@@ -109,8 +109,8 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
 
         // camera: take a frame, see it
         var camItem = vm.Catalog.Devices.First(d => d.Kind == "Camera");
-        await vm.OpenDeviceCommand.ExecuteAsync(camItem);
-        var cam = Assert.IsType<CameraPanelViewModel>(vm.SelectedTab!.Content);
+        await vm.OpenDeviceAsync(camItem);
+        var cam = Assert.IsType<CameraPanelViewModel>(vm.Drawer);
         Assert.True(await Eventually(() => cam.Connected));
         cam.ExposureSeconds = 1;
         await cam.ExposeCommand.ExecuteAsync(null);
@@ -119,31 +119,44 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
 
         // compose a scope in the UI, observe it
         var composer = vm.Composer;
+        vm.Navigate(AppView.Rig, "Set up");
+        // an explicit pointer (scopes make their own; this is the advanced route)
         composer.NewPointerId = "eq"; composer.SelectedMount = "Telescope_Simulator";
         await composer.DefinePointerCommand.ExecuteAsync(null);
-        // an imaging train: optics, the CCD behind the filter wheel
+        Assert.Equal("ok", composer.PointerMessageKind);
+        // a telescope: optics, the CCD behind the filter wheel
         Assert.True(await Eventually(() => composer.TrainCameras.Any(c => c.CameraId == "CCD_Simulator")));
-        composer.NewTrainId = "cam"; composer.TrainLabel = "sim 400 mm"; composer.FocalLength = 400; composer.SelectedWheel = "Filter_Simulator";
+        composer.NewTrainCommand.Execute(null);
+        composer.TrainName = "cam"; composer.FocalLength = 400; composer.SelectedWheel = "Filter_Simulator";
         foreach (var c in composer.TrainCameras) c.Role = c.CameraId == "CCD_Simulator" ? "Imaging" : ComposerViewModel.NotInTrain;
         composer.TrainCameras.First(c => c.CameraId == "CCD_Simulator").Gain = "30";
         composer.FocusOffsets = "Red=0, Green=nonsense";
-        await composer.DefineTrainCommand.ExecuteAsync(null);
-        Assert.Contains("focus offsets are like", composer.Message);
+        await composer.SaveTrainCommand.ExecuteAsync(null);
+        Assert.Contains("focus offsets are like", composer.TrainMessage);
         composer.FocusOffsets = "Red=0, Green=25";
-        await composer.DefineTrainCommand.ExecuteAsync(null);
-        Assert.Equal("train 'cam' defined", composer.Message);
-        Assert.True(await Eventually(() => vm.Catalog.Composition.Trains.FirstOrDefault(t => t.Id.Text == "cam") is { } t && t.FocusOffsets.Count == 2 && t.Cameras[0].Gain.Value == 30));
+        await composer.SaveTrainCommand.ExecuteAsync(null);
+        Assert.True(await Eventually(() => vm.Catalog.Composition.Trains.FirstOrDefault(t => t.Id.Text == "cam") is { } t && t.FocusOffsets.Count == 2 && t.Cameras[0].Gain.Value == 30), composer.TrainMessage);
+        Assert.False(composer.TrainFormOpen);
+        // it can be edited: the form loads what is there
+        Assert.True(await Eventually(() => composer.Trains.Any(t => t.Id == "cam")));
+        composer.EditTrainCommand.Execute(composer.Trains.First(t => t.Id == "cam"));
+        Assert.Equal("30", composer.TrainCameras.First(c => c.CameraId == "CCD_Simulator").Gain);
+        Assert.Equal("Red=0, Green=25", composer.FocusOffsets);
+        composer.CancelTrainCommand.Execute(null);
+        // a scope on that mount with that telescope
         Assert.True(await Eventually(() => composer.PointerChoices.Any(c => c.Id == "eq") && composer.ShooterChoices.Any(c => c.Id == "cam")));
-        composer.ScopeId = "main"; composer.ScopeName = "Main scope";
+        composer.NewScopeCommand.Execute(null);
+        composer.ScopeName = "main";
         composer.PointerChoices.First(c => c.Id == "eq").IsSelected = true;
         composer.ShooterChoices.First(c => c.Id == "cam").IsSelected = true;
-        await composer.DefineScopeCommand.ExecuteAsync(null);
-        Assert.True(await Eventually(() => vm.Catalog.Scopes.Any(s => s.Id == "main")), composer.Message);
-        vm.SelectedTab = vm.Tabs.First(t => t.Content is ComposerViewModel);
+        await composer.SaveScopeCommand.ExecuteAsync(null);
+        Assert.True(await Eventually(() => vm.Catalog.Scopes.Any(s => s.Id == "main")), composer.ScopeMessage);
+        vm.Navigate(AppView.Rig, "Set up");
         Shot(window, "05-composer");
 
-        await vm.OpenScopeCommand.ExecuteAsync(vm.Catalog.Scopes.First(s => s.Id == "main"));
-        var scope = Assert.IsType<ScopePanelViewModel>(vm.SelectedTab!.Content);
+        Assert.True(await Eventually(() => vm.Scopes.Cards.Any(c => c.ScopeId == "main")));
+        vm.Scopes.Select("main"); vm.Navigate(AppView.Scopes);
+        var scope = Assert.IsType<ScopePanelViewModel>(vm.Scopes.Selected);
         scope.TargetRa = "05:00:00"; scope.TargetDec = "30:00:00"; scope.ExposureSeconds = 1; scope.Filter = "Green"; scope.Count = 2;
         await scope.ObserveCommand.ExecuteAsync(null);
         Assert.True(await Eventually(() => scope.Observing));
@@ -160,7 +173,7 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         store.SelectedShooter = "main";
         await store.WatchCommand.ExecuteAsync(null);
         Assert.True(await Eventually(() => store.Watching.Contains("main")));
-        vm.SelectedTab = vm.Tabs.First(t => t.Content is AutofocusViewModel);
+        vm.Navigate(AppView.Scopes);
         Assert.True(await Eventually(() => vm.Autofocus.Shooters.Contains("cam") && vm.Autofocus.Focusers.Contains("Focuser_Simulator")));
         Shot(window, "07c-autofocus");
 
@@ -183,21 +196,27 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         Assert.NotNull(image.Map);
         Assert.Contains(image.Workers, w => w.StartsWith("main: Done"));
         Assert.True(await Eventually(() => image.Stack.Image is not null, 120000), image.Stack.Info);
+        // the picture and how far each part has got are drawn on the sky chart, where the image is
+        vm.Navigate(AppView.Sky);
+        Assert.True(await Eventually(() => vm.Sky.Images.Count == 2), $"layers on the chart: {vm.Sky.Images.Count}");
+        vm.Sky.ZoomToFrameCommand.Execute(null);
+        await Task.Delay(500);
+        Shot(window, "sky-image-built");
         Assert.True(await Eventually(() => store.FramesSaved >= 1), "the image's frames were saved");
         Assert.NotEmpty(Directory.GetFiles(saveDir, "UIField_*.fits", SearchOption.AllDirectories));
         // and onto the schedule (it waits for a site: none is set yet)
         await image.AddToScheduleCommand.ExecuteAsync(null);
-        Assert.Contains("schedule", image.Message);
+        Assert.Contains("queue", image.Message);
         Assert.True(await Eventually(() => vm.Schedule.Rows.Any(r => r.Label == "UIField")));
         Assert.True(await Eventually(() => vm.Schedule.Rows.First(r => r.Label == "UIField").Status.Contains("site")), vm.Schedule.Rows.First().Status);
-        vm.SelectedTab = vm.Tabs.First(t => t.Content is ScheduleViewModel);
+        vm.Navigate(AppView.Sky);
         Shot(window, "07d2-schedule");
-        vm.SelectedTab = vm.Tabs.First(t => t.Content is ImageViewModel);
+        vm.Navigate(AppView.Sky);
         Shot(window, "07d-image");
 
         // site: type a location; tonight's sky appears, and the atlas gets a horizon, the planets and visibility
         var siteVm = vm.Site;
-        vm.SelectedTab = vm.Tabs.First(t => t.Content is SiteViewModel);
+        vm.Navigate(AppView.Rig, "Site");
         siteVm.Latitude = "47:29:52"; siteVm.Longitude = "19:02:25"; siteVm.Elevation = 100; siteVm.MinAltitude = 15;
         siteVm.HorizonText = "180:15, 200:35";
         Assert.True(SiteViewModel.TryParseHorizon(siteVm.HorizonText, out var hp) && hp.Count == 2);
@@ -212,7 +231,7 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
 
         // sky atlas: search, select, send the mount there from the chart, see its reticle; hand the target to the mosaic
         var atlas = vm.Atlas;
-        vm.SelectedTab = vm.Tabs.First(t => t.Content is AtlasViewModel);
+        vm.Navigate(AppView.Sky);
         await atlas.RefreshAsync();
         Assert.True(await Eventually(() => atlas.Stars.Count > 0), atlas.Status);
         atlas.SearchText = "M42";
@@ -238,7 +257,7 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         atlas.ImageThisCommand.Execute(null);
         Assert.Equal("M42", vm.Image.Label);
         Assert.True(vm.Image.Width > 1);   // a big nebula becomes an area
-        Assert.Contains(atlas.Polygons, p => p.Label.StartsWith("image"));
+        Assert.True(await Eventually(() => vm.Sky.Frame is { WidthDegrees: > 1 } f && f.Label == "M42"), "the frame on the chart follows the image");
         // a click right on Betelgeuse picks it
         atlas.CenterRa = 5.92; atlas.CenterDec = 7.4; atlas.Fov = 20;
         await atlas.RefreshAsync();
@@ -258,7 +277,7 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
             await centering.SolveGuideCommand.ExecuteAsync(null);
             Assert.True(await Eventually(() => centering.Solves.Count >= 1, 120000), centering.Message);
         }
-        vm.SelectedTab = vm.Tabs.First(t => t.Content is CenteringViewModel);
+        vm.Navigate(AppView.Scopes);
         Shot(window, "07f-centring");
         if (solveSvc is not null) await solveSvc.DisposeAsync();
 
@@ -279,30 +298,34 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         Assert.True(await Eventually(() => live.Preview.Image is not null, 30000), live.Preview.Info);
         await live.StopCommand.ExecuteAsync(null);
         Assert.True(await Eventually(() => live.Phase == "Stopped"));
-        vm.SelectedTab = vm.Tabs.First(t => t.Content is LiveStackViewModel);
+        vm.Navigate(AppView.Advanced, "Manual live stack");
         Shot(window, "07g-live-stack");
 
         // guiding: a guide camera and the mount's guide port make a guider; a scope that owns it guides by itself
         Assert.True(await Eventually(() => vm.Catalog.OfKind(DeviceKinds.GuidePort).Any(d => d.Id == "Telescope_Simulator") && vm.Catalog.OfKind(DeviceKinds.Camera).Any(d => d.Id == "Guide_Simulator")));
         Assert.True((await Commands.CallAsync(bridge, EquipmentIds.Command(DeviceKinds.Camera, "Guide_Simulator", "Connect"), (BinaryConvertibleBool)true)).Ok.Value);
-        vm.SelectedTab = vm.Tabs.First(t => t.Content is ComposerViewModel);
+        vm.Navigate(AppView.Rig, "Set up");
         // a second train on the same mount, used as the guide scope
         Assert.True(await Eventually(() => composer.TrainCameras.Any(c => c.CameraId == "Guide_Simulator") && composer.GuidePorts.Contains("Telescope_Simulator")));
-        composer.NewTrainId = "guidescope"; composer.TrainLabel = "guide scope"; composer.FocalLength = 400; composer.SelectedWheel = "";
+        composer.NewTrainCommand.Execute(null);
+        composer.TrainName = "guidescope"; composer.FocalLength = 400; composer.SelectedWheel = "";
         foreach (var c in composer.TrainCameras) c.Role = c.CameraId == "Guide_Simulator" ? "Imaging" : ComposerViewModel.NotInTrain;
-        await composer.DefineTrainCommand.ExecuteAsync(null);
-        Assert.True(await Eventually(() => composer.GuideWith.Contains("guidescope") && composer.Existing.Contains("Train:guidescope")), composer.Message);
+        await composer.SaveTrainCommand.ExecuteAsync(null);
+        Assert.True(await Eventually(() => composer.GuideWith.Any(g => g.Id == "guidescope") && composer.Trains.Any(t => t.Id == "guidescope")), composer.TrainMessage);
+        composer.NewScopeCommand.Execute(null);
+        composer.ScopeName = "guided";
         composer.SelectedGuideWith = "guidescope"; composer.SelectedGuideOutput = "Pulse"; composer.SelectedGuidePort = ComposerViewModel.MountPort; composer.GuideExposure = 1;
         Assert.True(composer.Guided && composer.PulseOutput);
-        composer.ScopeId = "guided"; composer.ScopeName = "Guided scope"; composer.DitherEvery = 2;
+        composer.DitherEvery = 2;
         foreach (var c in composer.PointerChoices) c.IsSelected = c.Id == "eq";
         foreach (var c in composer.ShooterChoices) c.IsSelected = c.Id == "cam";
-        await composer.DefineScopeCommand.ExecuteAsync(null);
-        Assert.True(await Eventually(() => vm.Catalog.Scopes.Any(s => s.Id == "guided")), composer.Message);
+        await composer.SaveScopeCommand.ExecuteAsync(null);
+        Assert.True(await Eventually(() => vm.Catalog.Scopes.Any(s => s.Id == "guided")), composer.ScopeMessage);
         Assert.Equal("guidescope", vm.Catalog.Composition.Scopes.First(s => s.Id.Text == "guided").GuideShooterId.Text);
         Shot(window, "07h-compose-guider");
-        await vm.OpenScopeCommand.ExecuteAsync(vm.Catalog.Scopes.First(s => s.Id == "guided"));
-        var guided = Assert.IsType<ScopePanelViewModel>(vm.SelectedTab!.Content);
+        Assert.True(await Eventually(() => vm.Scopes.Cards.Any(c => c.ScopeId == "guided")));
+        vm.Scopes.Select("guided"); vm.Navigate(AppView.Scopes);
+        var guided = Assert.IsType<ScopePanelViewModel>(vm.Scopes.Selected);
         Assert.True(guided.HasGuider);
         await guided.StartGuidingCommand.ExecuteAsync(null);
         Assert.True(await Eventually(() => guided.GuidePhase is not ("--" or "Idle"), 30000), guided.GuidePhase);
@@ -321,12 +344,12 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         await profiles.SaveCommand.ExecuteAsync(null);
         Assert.Equal("profile 'UI rig' saved", profiles.Message);
         Assert.True(await Eventually(() => profiles.Profiles.Contains("UI rig")));
-        vm.SelectedTab = vm.Tabs.First(t => t.Content is ProfilesViewModel);
+        vm.Navigate(AppView.Rig, "Drivers");
         Shot(window, "07j-profiles");
 
         // calibration: a master bias of the camera, listed in the library
         var cal = vm.Calibration;
-        vm.SelectedTab = vm.Tabs.First(t => t.Content is CalibrationViewModel);
+        vm.Navigate(AppView.Rig, "Calibration");
         Assert.True(await Eventually(() => cal.Cameras.Contains("cam-CCD_Simulator")), string.Join(",", cal.Cameras));
         cal.SelectedCamera = "cam-CCD_Simulator"; cal.Kind = "Bias"; cal.Count = 3;
         await cal.CaptureCommand.ExecuteAsync(null);
@@ -335,7 +358,7 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         Shot(window, "07k-calibration");
 
         // generic INDI browser
-        vm.SelectedTab = vm.Tabs.First(t => t.Content is IndiBrowserViewModel);
+        vm.Navigate(AppView.Advanced, "INDI properties");
         await vm.IndiBrowser.RefreshServersCommand.ExecuteAsync(null);
         Assert.True(await Eventually(() => vm.IndiBrowser.SelectedServer == "sim"));
         Assert.True(await Eventually(() => vm.IndiBrowser.Devices.Count >= 5));

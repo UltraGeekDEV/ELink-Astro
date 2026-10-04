@@ -1,16 +1,8 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:ELink.UI.Controls"
              x:Class="ELink.UI.Views.MountPanelView">
-  <StackPanel MaxWidth="760" Spacing="0">
-    <Border Classes="card">
-      <Grid ColumnDefinitions="*,Auto">
-        <StackPanel>
-          <TextBlock Classes="title" Text="{Binding DisplayName}"/>
-          <TextBlock Classes="label" Text="{Binding Id}"/>
-        </StackPanel>
-        <Button Grid.Column="1" Content="{Binding ConnectButtonText}" Command="{Binding ConnectCommand}" VerticalAlignment="Center"/>
-      </Grid>
-    </Border>
-    <Border Classes="card">
+  <StackPanel Spacing="0" IsEnabled="{Binding Connected}">
+        <Border Classes="card">
       <StackPanel>
         <TextBlock Classes="section" Text="POSITION"/>
         <Grid ColumnDefinitions="*,*,*,*" RowDefinitions="Auto,Auto">
@@ -25,20 +17,20 @@
     <Border Classes="card">
       <StackPanel Spacing="10">
         <TextBlock Classes="section" Text="GO TO"/>
-        <StackPanel Classes="row">
+        <WrapPanel Classes="row">
           <StackPanel><TextBlock Classes="label" Text="RA (h:m:s)"/><TextBox Text="{Binding TargetRa}" Width="140"/></StackPanel>
           <StackPanel><TextBlock Classes="label" Text="DEC (°:′:″)"/><TextBox Text="{Binding TargetDec}" Width="140"/></StackPanel>
           <StackPanel><TextBlock Classes="label" Text="Epoch"/><ComboBox ItemsSource="{Binding Epochs}" SelectedItem="{Binding TargetEpoch}" Width="100"/></StackPanel>
-        </StackPanel>
-        <StackPanel Classes="row">
+        </WrapPanel>
+        <WrapPanel Classes="row">
           <Button Content="Go to" Classes="primary" Command="{Binding GotoCommand}"/>
           <Button Content="Sync" Command="{Binding SyncCommand}"/>
           <Button Content="Abort" Classes="danger" Command="{Binding AbortCommand}"/>
           <Button Content="{Binding TrackButtonText}" Command="{Binding TrackCommand}"/>
           <Button Content="{Binding ParkButtonText}" Command="{Binding ParkCommand}"/>
-        </StackPanel>
+        </WrapPanel>
       </StackPanel>
     </Border>
-    <TextBlock Classes="error" Text="{Binding Message}" IsVisible="{Binding Message.Length}"/>
+    <c:Notice Text="{Binding Message}"/>
   </StackPanel>
 </UserControl>

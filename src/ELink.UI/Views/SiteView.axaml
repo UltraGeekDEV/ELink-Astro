@@ -1,32 +1,31 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="ELink.UI.Views.SiteView">
-  <StackPanel MaxWidth="1000" Spacing="0">
+  <StackPanel Spacing="0">
     <Border Classes="card">
       <StackPanel>
-        <TextBlock Classes="title" Text="Site"/>
-        <TextBlock Classes="label" TextWrapping="Wrap" Text="Where the observatory stands: from these numbers or a GPS. It gives sidereal time, twilight, the Moon and planets, and when targets are above your horizon, and it hands the location and time to the mounts."/>
+        <TextBlock Classes="hint" Text="Where the observatory stands: from these numbers or a GPS. It gives sidereal time, twilight, the Moon and planets, and when targets are above your horizon, and it hands the location and time to the mounts."/>
       </StackPanel>
     </Border>
 
     <Border Classes="card">
       <StackPanel Spacing="10">
         <TextBlock Classes="section" Text="LOCATION"/>
-        <StackPanel Classes="row">
+        <WrapPanel Classes="row">
           <StackPanel><TextBlock Classes="label" Text="Name"/><TextBox Text="{Binding Label}" Width="130"/></StackPanel>
           <StackPanel><TextBlock Classes="label" Text="Latitude ° (north +)"/><TextBox Text="{Binding Latitude}" Width="140"/></StackPanel>
           <StackPanel><TextBlock Classes="label" Text="Longitude ° (east +)"/><TextBox Text="{Binding Longitude}" Width="140"/></StackPanel>
           <StackPanel><TextBlock Classes="label" Text="Elevation m"/><NumericUpDown Value="{Binding Elevation}" Minimum="-500" Maximum="9000" FormatString="0" Width="120"/></StackPanel>
           <StackPanel><TextBlock Classes="label" Text="GPS"/><ComboBox ItemsSource="{Binding GpsDevices}" SelectedItem="{Binding Gps}" Width="190"/></StackPanel>
-        </StackPanel>
+        </WrapPanel>
         <TextBlock Classes="section" Text="HORIZON" Margin="0,6,0,0"/>
-        <StackPanel Classes="row">
+        <WrapPanel Classes="row">
           <StackPanel><TextBlock Classes="label" Text="Lowest altitude °"/><NumericUpDown Value="{Binding MinAltitude}" Minimum="-5" Maximum="80" FormatString="0.#" Width="130"/></StackPanel>
           <StackPanel><TextBlock Classes="label" Text="Obstructions: azimuth:altitude, ... (e.g. 180:10, 200:35, 260:35, 280:10)"/><TextBox Text="{Binding HorizonText}" Width="520"/></StackPanel>
-        </StackPanel>
-        <StackPanel Classes="row">
+        </WrapPanel>
+        <WrapPanel Classes="row">
           <CheckBox IsChecked="{Binding PushToMounts}" Content="Give the mounts this location and the time"/>
           <Button Content="Apply" Classes="primary" Command="{Binding ApplyCommand}"/>
-        </StackPanel>
+        </WrapPanel>
         <TextBlock Classes="error" Text="{Binding Message}" IsVisible="{Binding Message.Length}" TextWrapping="Wrap"/>
       </StackPanel>
     </Border>

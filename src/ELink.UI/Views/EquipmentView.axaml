@@ -1,0 +1,35 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:ELink.UI.Controls" xmlns:i="using:ELink.UI.Infrastructure"
+             x:Class="ELink.UI.Views.EquipmentView">
+  <StackPanel Spacing="0">
+    <Border Classes="card">
+      <StackPanel Spacing="10">
+        <StackPanel Classes="row">
+          <Button Content="Connect all" Classes="primary" Command="{Binding ConnectAllCommand}" IsEnabled="{Binding HasSome}"/>
+          <Button Content="Look again" Command="{Binding RefreshCommand}" ToolTip.Tip="Ask the mesh what is out there"/>
+        </StackPanel>
+        <TextBlock Classes="hint" IsVisible="{Binding HasNone}"
+                   Text="Nothing is plugged in yet. Start your INDI drivers from Rig › Drivers (or start the station with --indi) and the devices appear here."/>
+        <c:Notice Text="{Binding Message}"/>
+        <ItemsControl ItemsSource="{Binding Catalog.Equipment}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Border BorderBrush="#2B3548" BorderThickness="0,0,0,1" Padding="0,8">
+                <Grid ColumnDefinitions="Auto,200,110,*,Auto,Auto" >
+                  <Ellipse Classes="dot" Grid.Column="0" Margin="0,0,10,0" Fill="{Binding Css, Converter={x:Static i:Chips.Dot}}"/>
+                  <TextBlock Grid.Column="1" Text="{Binding DisplayName}" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                  <TextBlock Grid.Column="2" Text="{Binding KindText}" Classes="label" VerticalAlignment="Center"/>
+                  <TextBlock Grid.Column="3" Text="{Binding Status}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                  <Button Grid.Column="4" Margin="8,0" Command="{Binding $parent[UserControl].DataContext.ToggleCommand}" CommandParameter="{Binding}"
+                          Content="{Binding Connected, Converter={x:Static i:Chips.ConnectText}}"/>
+                  <Button Grid.Column="5" Content="Open" Command="{Binding $parent[UserControl].DataContext.OpenCommand}" CommandParameter="{Binding}"
+                          IsEnabled="{Binding Connected}"/>
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </Border>
+  </StackPanel>
+</UserControl>

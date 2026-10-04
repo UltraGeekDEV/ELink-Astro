@@ -17,6 +17,8 @@ public sealed partial class MeshSession : ObservableObject, IDisposable
     [ObservableProperty] private string _status = "not connected";
 
     public TypeSafeEVentNode Node { get; }
+    /// <summary>Messages for the whole app (toasts); see <see cref="Notifier"/>.</summary>
+    public Notifier Notices { get; } = new();
 
     private MeshSession(TypeSafeEVentNode node, bool ownsNode)
     {

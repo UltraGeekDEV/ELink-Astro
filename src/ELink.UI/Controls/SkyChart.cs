@@ -20,6 +20,14 @@ public sealed record ChartHorizon(IReadOnlyList<(double RaHours, double DecDegre
 /// <summary>Sun, Moon or a planet: a disc with a name.</summary>
 public sealed record ChartBody(double RaHours, double DecDegrees, string Label, Color Color, double Radius);
 public sealed record ChartPolygon(IReadOnlyList<(double RaHours, double DecDegrees)> Corners, Color Color, string Label = "");
+/// <summary>A raster laid on the sky: the three corners fix where it goes (top left, top right, bottom left), so any
+/// orientation and mirroring works. Used for the coverage map and the stacked image.</summary>
+public sealed record ChartImage(Avalonia.Media.IImage Bitmap, (double RaHours, double DecDegrees) TopLeft, (double RaHours, double DecDegrees) TopRight, (double RaHours, double DecDegrees) BottomLeft, double Opacity);
+/// <summary>The image being planned: a rectangle on the sky that can be moved, resized and turned with the mouse.
+/// <see cref="AngleDegrees"/> is where its up points, east of north.</summary>
+public sealed record ChartFrame(double RaHours, double DecDegrees, double WidthDegrees, double HeightDegrees, double AngleDegrees, string Label, bool Editable);
+/// <summary>What the user made of the frame by dragging it.</summary>
+public readonly record struct FrameEdit(double RaHours, double DecDegrees, double WidthDegrees, double HeightDegrees, double AngleDegrees);
 
 /// <summary>An interactive sky chart: drag to pan, wheel to zoom, click to pick. It only draws what it is given (stars, deep-sky
 /// objects, constellation figures, markers, outlines); fetching from the atlas is the view model's job.</summary>
@@ -37,6 +45,11 @@ public sealed class SkyChart : Control
     public static readonly StyledProperty<ChartHorizon?> HorizonProperty = AvaloniaProperty.Register<SkyChart, ChartHorizon?>(nameof(Horizon));
     public static readonly StyledProperty<IReadOnlyList<ChartBody>?> BodiesProperty = AvaloniaProperty.Register<SkyChart, IReadOnlyList<ChartBody>?>(nameof(Bodies));
     public static readonly StyledProperty<IReadOnlyList<ChartPolygon>?> PolygonsProperty = AvaloniaProperty.Register<SkyChart, IReadOnlyList<ChartPolygon>?>(nameof(Polygons));
+    public static readonly StyledProperty<ChartFrame?> FrameProperty = AvaloniaProperty.Register<SkyChart, ChartFrame?>(nameof(Frame));
+    public static readonly StyledProperty<IReadOnlyList<ChartImage>?> ImagesProperty = AvaloniaProperty.Register<SkyChart, IReadOnlyList<ChartImage>?>(nameof(Images));
+    public static readonly StyledProperty<ICommand?> FrameEditedCommandProperty = AvaloniaProperty.Register<SkyChart, ICommand?>(nameof(FrameEditedCommand));
+    public static readonly StyledProperty<double> ContextRaProperty = AvaloniaProperty.Register<SkyChart, double>(nameof(ContextRa), defaultBindingMode: Avalonia.Data.BindingMode.TwoWay);
+    public static readonly StyledProperty<double> ContextDecProperty = AvaloniaProperty.Register<SkyChart, double>(nameof(ContextDec), defaultBindingMode: Avalonia.Data.BindingMode.TwoWay);
     public static readonly StyledProperty<ICommand?> PickCommandProperty = AvaloniaProperty.Register<SkyChart, ICommand?>(nameof(PickCommand));
     public static readonly StyledProperty<bool> ShowGridProperty = AvaloniaProperty.Register<SkyChart, bool>(nameof(ShowGrid), true);
     public static readonly StyledProperty<bool> ShowConstellationsProperty = AvaloniaProperty.Register<SkyChart, bool>(nameof(ShowConstellations), true);
@@ -51,6 +64,13 @@ public sealed class SkyChart : Control
     public IReadOnlyList<ChartLabel>? Labels { get => GetValue(LabelsProperty); set => SetValue(LabelsProperty, value); }
     public IReadOnlyList<ChartMarker>? Markers { get => GetValue(MarkersProperty); set => SetValue(MarkersProperty, value); }
     public IReadOnlyList<ChartPolygon>? Polygons { get => GetValue(PolygonsProperty); set => SetValue(PolygonsProperty, value); }
+    public ChartFrame? Frame { get => GetValue(FrameProperty); set => SetValue(FrameProperty, value); }
+    public IReadOnlyList<ChartImage>? Images { get => GetValue(ImagesProperty); set => SetValue(ImagesProperty, value); }
+    /// <summary>Executed with a <see cref="FrameEdit"/> every time the frame is dragged.</summary>
+    public ICommand? FrameEditedCommand { get => GetValue(FrameEditedCommandProperty); set => SetValue(FrameEditedCommandProperty, value); }
+    /// <summary>The sky position under the pointer when the context menu (right button) was opened.</summary>
+    public double ContextRa { get => GetValue(ContextRaProperty); set => SetValue(ContextRaProperty, value); }
+    public double ContextDec { get => GetValue(ContextDecProperty); set => SetValue(ContextDecProperty, value); }
     public ChartHorizon? Horizon { get => GetValue(HorizonProperty); set => SetValue(HorizonProperty, value); }
     public IReadOnlyList<ChartBody>? Bodies { get => GetValue(BodiesProperty); set => SetValue(BodiesProperty, value); }
     /// <summary>Executed with a (RaHours, DecDegrees, PixelsPerDegree) tuple when the user clicks without dragging.</summary>
@@ -61,7 +81,7 @@ public sealed class SkyChart : Control
     static SkyChart()
     {
         AffectsRender<SkyChart>(CenterRaProperty, CenterDecProperty, FovProperty, StarsProperty, DsosProperty, LinesProperty, LabelsProperty,
-            MarkersProperty, PolygonsProperty, HorizonProperty, BodiesProperty, ShowGridProperty, ShowConstellationsProperty, StarLimitProperty);
+            MarkersProperty, PolygonsProperty, HorizonProperty, BodiesProperty, ShowGridProperty, ShowConstellationsProperty, StarLimitProperty, FrameProperty, ImagesProperty);
         FocusableProperty.OverrideDefaultValue<SkyChart>(true);
     }
 
@@ -71,29 +91,142 @@ public sealed class SkyChart : Control
 
     // ---- input ---------------------------------------------------------------------------------------------------
 
+    private enum Drag { None, Pan, MoveFrame, ResizeFrame, RotateFrame }
     private Point? _down; private SkyProjection _downProjection; private bool _dragged;
+    private Drag _drag;
+    private (double East, double North) _grab;      // where in the frame a move started, as sky offsets from its centre
+    private const double HandleRadius = 8;
+
+    /// <summary>Frame corners (top left, top right, bottom right, bottom left) and the rotation handle, on the screen.</summary>
+    private bool FrameGeometry(SkyProjection proj, out Point[] corners, out Point centre, out Point handle)
+    {
+        corners = new Point[4]; centre = default; handle = default;
+        if (Frame is not { } f || f.WidthDegrees <= 0 || f.HeightDegrees <= 0) return false;
+        Point? Local(double x, double y)
+        {
+            var (e, n) = LocalToSky(f.AngleDegrees, x, y);
+            var (ra, dec) = Gnomonic.ToSky(f.RaHours, f.DecDegrees, e, n);
+            return proj.TryProject(ra, dec, out var px, out var py) ? new Point(px, py) : null;
+        }
+        double w = f.WidthDegrees / 2, h = f.HeightDegrees / 2;
+        var pts = new[] { Local(-w, h), Local(w, h), Local(w, -h), Local(-w, -h), Local(0, 0), Local(0, h) };
+        if (pts.Any(p => p is null)) return false;
+        corners = pts.Take(4).Select(p => p!.Value).ToArray(); centre = pts[4]!.Value;
+        var top = pts[5]!.Value;
+        double dx = top.X - centre.X, dy = top.Y - centre.Y, len = Math.Max(1, Math.Sqrt(dx * dx + dy * dy));
+        handle = new Point(top.X + dx / len * 28, top.Y + dy / len * 28);
+        return true;
+    }
+
+    /// <summary>A frame's own axes (x along its width, y along its height) to east/north offsets on the sky: the same as the
+    /// imaging service uses for the image area.</summary>
+    public static (double East, double North) LocalToSky(double angleDegrees, double x, double y)
+    {
+        double pa = angleDegrees * Math.PI / 180;
+        return (x * Math.Cos(pa) + y * Math.Sin(pa), -x * Math.Sin(pa) + y * Math.Cos(pa));
+    }
+    public static (double X, double Y) SkyToLocal(double angleDegrees, double east, double north)
+    {
+        double pa = angleDegrees * Math.PI / 180;
+        return (east * Math.Cos(pa) - north * Math.Sin(pa), east * Math.Sin(pa) + north * Math.Cos(pa));
+    }
+
+    private Drag HitFrame(Point at)
+    {
+        var proj = Projection;
+        if (Frame is not { Editable: true } || !FrameGeometry(proj, out var c, out _, out var handle)) return Drag.None;
+        double D(Point a, Point b) => Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y));
+        if (D(at, handle) <= HandleRadius + 4) return Drag.RotateFrame;
+        if (c.Any(p => D(at, p) <= HandleRadius + 3)) return Drag.ResizeFrame;
+        // inside the rectangle (the four corners are in order, so a same-side test per edge works)
+        bool inside = true; int sign = 0;
+        for (int i = 0; i < 4; i++)
+        {
+            var a = c[i]; var b = c[(i + 1) % 4];
+            double cross = (b.X - a.X) * (at.Y - a.Y) - (b.Y - a.Y) * (at.X - a.X);
+            int s = Math.Sign(cross);
+            if (s == 0) continue;
+            if (sign == 0) sign = s; else if (s != sign) { inside = false; break; }
+        }
+        return inside ? Drag.MoveFrame : Drag.None;
+    }
+
+    private void EditFrame(Point pointer)
+    {
+        if (Frame is not { } f) return;
+        var proj = Projection;
+        var (ra, dec) = proj.Unproject(pointer.X, pointer.Y);
+        FrameEdit edit = new(f.RaHours, f.DecDegrees, f.WidthDegrees, f.HeightDegrees, f.AngleDegrees);
+        var (e, n) = Gnomonic.FromSky(f.RaHours, f.DecDegrees, ra, dec);
+        switch (_drag)
+        {
+            case Drag.MoveFrame:
+                var (cra, cdec) = Gnomonic.ToSky(ra, dec, -_grab.East, -_grab.North);
+                edit = edit with { RaHours = cra, DecDegrees = Math.Clamp(cdec, -90, 90) };
+                break;
+            case Drag.ResizeFrame:
+                var (lx, ly) = SkyToLocal(f.AngleDegrees, e, n);
+                edit = edit with { WidthDegrees = Math.Max(0.02, 2 * Math.Abs(lx)), HeightDegrees = Math.Max(0.02, 2 * Math.Abs(ly)) };
+                break;
+            case Drag.RotateFrame:
+                double angle = Math.Atan2(e, n) * 180 / Math.PI;
+                if (Math.Abs(angle) < 1.5) angle = 0;
+                edit = edit with { AngleDegrees = Math.Round(angle, 1) };
+                break;
+        }
+        if (FrameEditedCommand?.CanExecute(edit) == true) FrameEditedCommand.Execute(edit);
+    }
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
-        _down = e.GetPosition(this); _downProjection = Projection; _dragged = false;
+        var at = e.GetPosition(this);
+        var props = e.GetCurrentPoint(this).Properties;
+        if (props.IsRightButtonPressed)
+        {
+            // remember what is under the pointer for the context menu (which opens by itself)
+            var (cra, cdec) = Projection.Unproject(at.X, at.Y);
+            ContextRa = cra; ContextDec = cdec;
+            return;
+        }
+        _down = at; _downProjection = Projection; _dragged = false;
+        _drag = HitFrame(at);
+        if (_drag == Drag.MoveFrame && Frame is { } f)
+        {
+            var (ra, dec) = _downProjection.Unproject(at.X, at.Y);
+            _grab = Gnomonic.FromSky(f.RaHours, f.DecDegrees, ra, dec);
+        }
+        if (_drag == Drag.None) _drag = Drag.Pan;
         e.Pointer.Capture(this); e.Handled = true;
     }
 
     protected override void OnPointerMoved(PointerEventArgs e)
     {
-        if (_down is not { } start) return;
         var now = e.GetPosition(this);
+        if (_down is not { } start)
+        {
+            // hovering: say what a press would do
+            Cursor = HitFrame(now) switch
+            {
+                Drag.MoveFrame => new Cursor(StandardCursorType.SizeAll), Drag.ResizeFrame => new Cursor(StandardCursorType.BottomRightCorner),
+                Drag.RotateFrame => new Cursor(StandardCursorType.Hand), _ => new Cursor(StandardCursorType.Arrow),
+            };
+            return;
+        }
         double dx = now.X - start.X, dy = now.Y - start.Y;
         if (!_dragged && Math.Abs(dx) + Math.Abs(dy) < 4) return;
         _dragged = true;
-        // keep the sky point that was under the pointer under it
-        var (ra, dec) = _downProjection.Unproject(_downProjection.Width / 2 - dx, _downProjection.Height / 2 - dy);
-        CenterRa = ra; CenterDec = Math.Clamp(dec, -90, 90);
+        if (_drag == Drag.Pan)
+        {
+            // keep the sky point that was under the pointer under it
+            var (ra, dec) = _downProjection.Unproject(_downProjection.Width / 2 - dx, _downProjection.Height / 2 - dy);
+            CenterRa = ra; CenterDec = Math.Clamp(dec, -90, 90);
+        }
+        else EditFrame(now);
     }
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
-        if (_down is not null && !_dragged)
+        if (_down is not null && !_dragged && _drag == Drag.Pan)
         {
             var p = e.GetPosition(this);
             var proj = Projection;
@@ -101,7 +234,7 @@ public sealed class SkyChart : Control
             var arg = (ra, dec, proj.PixelsPerDegree);
             if (PickCommand?.CanExecute(arg) == true) PickCommand.Execute(arg);
         }
-        _down = null; e.Pointer.Capture(null);
+        _down = null; _drag = Drag.None; e.Pointer.Capture(null);
     }
 
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
@@ -124,6 +257,7 @@ public sealed class SkyChart : Control
     {
         var proj = Projection;
         ctx.FillRectangle(Background, new Rect(Bounds.Size));
+        DrawImages(ctx, proj);
         if (ShowGrid) DrawGrid(ctx, proj);
         if (ShowConstellations) DrawConstellations(ctx, proj);
         DrawDsos(ctx, proj);
@@ -131,6 +265,7 @@ public sealed class SkyChart : Control
         DrawBodies(ctx, proj);
         DrawHorizon(ctx, proj);
         DrawPolygons(ctx, proj);
+        DrawFrame(ctx, proj);
         DrawMarkers(ctx, proj);
         DrawScale(ctx, proj);
     }
@@ -265,6 +400,48 @@ public sealed class SkyChart : Control
             ctx.DrawEllipse(new SolidColorBrush(b.Color, 0.9), new Pen(Brushes.Black, 0.5), new Point(x, y), r, r);
             Text(ctx, b.Label, x + r + 3, y - 7, new SolidColorBrush(b.Color), 12);
         }
+    }
+
+    /// <summary>Rasters laid on the sky: each is drawn through the affine map its three corners give.</summary>
+    private void DrawImages(DrawingContext ctx, SkyProjection proj)
+    {
+        if (Images is not { } images) return;
+        foreach (var im in images)
+        {
+            if (!proj.TryProject(im.TopLeft.RaHours, im.TopLeft.DecDegrees, out var x0, out var y0) || !proj.TryProject(im.TopRight.RaHours, im.TopRight.DecDegrees, out var x1, out var y1)
+                || !proj.TryProject(im.BottomLeft.RaHours, im.BottomLeft.DecDegrees, out var x2, out var y2)) continue;
+            double w = Math.Max(1, im.Bitmap.Size.Width), h = Math.Max(1, im.Bitmap.Size.Height);
+            var m = new Matrix((x1 - x0) / w, (y1 - y0) / w, (x2 - x0) / h, (y2 - y0) / h, x0, y0);
+            using (ctx.PushTransform(m))
+            using (ctx.PushOpacity(im.Opacity))
+                ctx.DrawImage(im.Bitmap, new Rect(0, 0, w, h), new Rect(0, 0, w, h));
+        }
+    }
+
+    private static readonly Color FrameColor = Color.FromRgb(255, 213, 79);
+
+    private void DrawFrame(DrawingContext ctx, SkyProjection proj)
+    {
+        if (Frame is not { } f || !FrameGeometry(proj, out var c, out var centre, out var handle)) return;
+        var geo = new StreamGeometry();
+        using (var g = geo.Open())
+        {
+            g.BeginFigure(c[0], true); g.LineTo(c[1]); g.LineTo(c[2]); g.LineTo(c[3]); g.EndFigure(true);
+        }
+        ctx.DrawGeometry(new SolidColorBrush(FrameColor, 0.10), new Pen(new SolidColorBrush(FrameColor), 2), geo);
+        // north-up tick: where the frame's up points
+        var topMid = new Point((c[0].X + c[1].X) / 2, (c[0].Y + c[1].Y) / 2);
+        ctx.DrawLine(new Pen(new SolidColorBrush(FrameColor), 1.5), topMid, handle);
+        if (f.Editable)
+        {
+            var fill = new SolidColorBrush(Color.FromRgb(15, 19, 26)); var edge = new Pen(new SolidColorBrush(FrameColor), 2);
+            foreach (var p in c) ctx.DrawRectangle(fill, edge, new Rect(p.X - HandleRadius / 2 - 1, p.Y - HandleRadius / 2 - 1, HandleRadius + 2, HandleRadius + 2));
+            ctx.DrawEllipse(new SolidColorBrush(FrameColor), null, handle, HandleRadius - 1, HandleRadius - 1);
+        }
+        string size = f.WidthDegrees >= 1 ? $"{f.WidthDegrees:0.##}° × {f.HeightDegrees:0.##}°" : $"{f.WidthDegrees * 60:0.#}′ × {f.HeightDegrees * 60:0.#}′";
+        string text = (f.Label != "" ? f.Label + "   " : "") + size + (Math.Abs(f.AngleDegrees) > 0.05 ? $"   {f.AngleDegrees:0.#}°" : "");
+        double minX = c.Min(p => p.X), maxY = c.Max(p => p.Y);
+        Text(ctx, text, minX, maxY + 6, new SolidColorBrush(FrameColor), 12);
     }
 
     private void DrawPolygons(DrawingContext ctx, SkyProjection proj)
