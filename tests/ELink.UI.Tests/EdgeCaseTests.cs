@@ -80,6 +80,49 @@ public class EdgeCaseTests : IClassFixture<IndiServerFixture>
     }
 
     [AvaloniaFact]
+    public async Task ATelescopeOrScopeInUseCannotBeRemovedFromUnderItsScope()
+    {
+        Assert.True(_server.Available);
+        await using var rig = await RigAsync(_server);
+        var vm = rig.Vm; var composer = vm.Composer;
+        Assert.True(await UiRig.Eventually(() => composer.Trains.Any(t => t.Id == "cam") && composer.Pointers.Any(p => p.Id == "eq")));
+        composer.RemoveTrainCommand.Execute(composer.Trains.First(t => t.Id == "cam"));
+        Assert.True(await UiRig.Eventually(() => vm.Toasts.Any(t => t.Text.Contains("is part of scope 'main'"))), string.Join(" | ", vm.Toasts.Select(t => t.Text)));
+        composer.RemovePointerCommand.Execute(composer.Pointers.First(p => p.Id == "eq"));
+        Assert.True(await UiRig.Eventually(() => composer.PointerMessage.Contains("is part of scope 'main'")), composer.PointerMessage);
+        Assert.Equal("error", composer.PointerMessageKind);
+        Assert.Contains(composer.Trains, t => t.Id == "cam");                         // still there
+        // after the scope goes, the telescope can
+        composer.RemoveScopeCommand.Execute(composer.Scopes.First());
+        Assert.True(await UiRig.Eventually(() => composer.NoScopes));
+        composer.RemoveTrainCommand.Execute(composer.Trains.First(t => t.Id == "cam"));
+        Assert.True(await UiRig.Eventually(() => !composer.Trains.Any(t => t.Id == "cam")));
+    }
+
+    [AvaloniaFact]
+    public async Task TheSitePageSaysWhatIsWrongWithWhatWasTyped()
+    {
+        Assert.True(_server.Available);
+        await using var rig = await UiRig.StartAsync(_server);
+        var site = rig.Vm.Site;
+        site.Latitude = "forty seven"; site.Longitude = "19.04";
+        await site.ApplyCommand.ExecuteAsync(null);
+        Assert.Contains("latitude", site.Message); Assert.Equal("error", site.MessageKind);
+        site.Latitude = "47.5"; site.Longitude = "east";
+        await site.ApplyCommand.ExecuteAsync(null);
+        Assert.Contains("longitude", site.Message); Assert.Equal("error", site.MessageKind);
+        site.Longitude = "19.04"; site.HorizonText = "180:15, nonsense";
+        await site.ApplyCommand.ExecuteAsync(null);
+        Assert.NotEqual("saved", site.Message); Assert.Equal("error", site.MessageKind);
+        site.HorizonText = "180:15, 200:35";
+        await site.ApplyCommand.ExecuteAsync(null);
+        Assert.Equal("saved", site.Message); Assert.Equal("ok", site.MessageKind);
+        Assert.True(await UiRig.Eventually(() => site.Known));
+        Assert.True(await UiRig.Eventually(() => site.Night is not null && site.Night.Dark.Count > 0), "the night bar follows");
+        Assert.True(await UiRig.Eventually(() => rig.Vm.StatusBar.NightText != "" && rig.Vm.StatusBar.NightText != "Site not set"), rig.Vm.StatusBar.NightText);
+    }
+
+    [AvaloniaFact]
     public async Task OneAxisAtZeroIsOneFramesWorthAndTheFrameShowsIt()
     {
         Assert.True(_server.Available);

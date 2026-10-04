@@ -64,6 +64,16 @@ public class TrainCompositionTests
                 var train = Assert.Single((await node.CallFunctionAsync<NOTESVoid, TrainState>(TrainIds.GetState("main"), NOTESVoid.Void))!);
                 Assert.Equal("main-guide", train.GuideShooterId.Text);
                 Assert.Equal(2, train.Cameras.Count);
+                // what a scope is made of cannot be removed from under it: the telescopes it images with, its off-axis guider's train, its mount's pointer
+                foreach (var (key, name) in new[] { ("Train:main", "train 'main'"), ("Train:wide", "train 'wide'"), ("Pointer:eq", "pointer 'eq'") })
+                {
+                    var refused = await Commands.CallAsync(node, ScopeIds.Remove, (EVent.Connections.Models.BaseBinaryConvertibles.BinaryConvertibleString)key);
+                    Assert.False(refused.Ok.Value, key);
+                    Assert.Contains($"{name} is part of scope 'rig'", refused.Error.Text);
+                }
+                // a telescope that no scope uses can go
+                Assert.True((await Commands.CallAsync(node, ScopeIds.DefineTrain, Train("spare", 100, ("cam9", "Imaging")))).Ok.Value);
+                Assert.True((await Commands.CallAsync(node, ScopeIds.Remove, (EVent.Connections.Models.BaseBinaryConvertibles.BinaryConvertibleString)"Train:spare")).Ok.Value);
             }
 
             // everything comes back from the file

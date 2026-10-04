@@ -191,6 +191,15 @@ public sealed class CompositionHost : IAsyncDisposable
         int colon = key.IndexOf(':');
         if (colon <= 0) return CommandResult.Fail("expected 'Scope:<id>', 'Pointer:<id>', 'Shooter:<id>', 'Train:<id>' or 'Guider:<id>'");
         string kind = key[..colon], id = key[(colon + 1)..];
+        // what a scope is made of cannot be pulled out from under it
+        var users = kind switch
+        {
+            "Train" or "Shooter" => _scopes.Values.Where(x => x.Def.Shooters.Any(r => r.Id.Text == id) || x.Def.GuideShooterId.Text == id || x.Def.GuideShooterId.Text == TrainIds.GuideShooter(id)),
+            "Pointer" => _scopes.Values.Where(x => x.Def.Pointers.Any(p => p.Text == id)),
+            "Guider" => _scopes.Values.Where(x => x.Def.GuiderId.Text == id),
+            _ => Enumerable.Empty<(ScopeDefinition Def, SmartScope Item)>(),
+        };
+        if (users.FirstOrDefault().Def is { } user) return CommandResult.Fail($"{kind.ToLowerInvariant()} '{id}' is part of scope '{user.Id.Text}': change or remove that scope first");
         switch (kind)
         {
             case "Scope" when _scopes.Remove(id, out var s):
