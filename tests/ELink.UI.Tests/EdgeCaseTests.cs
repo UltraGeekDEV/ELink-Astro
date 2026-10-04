@@ -1,0 +1,146 @@
+using Avalonia.Headless.XUnit;
+using ELink.Contracts.Automation;
+using ELink.Core;
+using ELink.UI.ViewModels;
+using Event.Connections.Models.BaseBinaryConvertibles;
+using Xunit;
+
+namespace ELink.UI.Tests;
+
+/// <summary>What the UI does with bad numbers, odd shapes and awkward places: it says what is wrong, where, and keeps Start out of reach.</summary>
+public class EdgeCaseTests : IClassFixture<IndiServerFixture>
+{
+    private readonly IndiServerFixture _server;
+    public EdgeCaseTests(IndiServerFixture server) { _server = server; }
+
+    [Theory]
+    [InlineData(" Main  telescope ", "Main-telescope")]
+    [InlineData("a/b\\c", "a-b-c")]
+    [InlineData("!!!", null)]
+    [InlineData("", null)]
+    [InlineData("Ünï côde", "Ünï-côde")]
+    [InlineData("--x--", "x")]
+    public void NamesBecomeIdsOrNothing(string name, string? id) => Assert.Equal(id, ComposerViewModel.IdFromName(name));
+
+    private static async Task<UiRig> RigAsync(IndiServerFixture server)
+    {
+        var rig = await UiRig.StartAsync(server);
+        await rig.Vm.Equipment.ConnectAllCommand.ExecuteAsync(null);
+        Assert.True(await UiRig.Eventually(() => rig.Vm.Catalog.Equipment.All(d => d.Connected)));
+        await rig.DefineSimulatedRigAsync(guided: false);
+        rig.Vm.Navigate(AppView.Sky);
+        Assert.True(await UiRig.Eventually(() => rig.Vm.Image.Scopes.Any(c => c.Id == "main" && c.Selected)));
+        var image = rig.Vm.Image;
+        image.Label = "Edge"; image.CenterRa = "06:00:00"; image.CenterDec = "10:00:00"; image.Width = 0.6; image.Height = 0.5; image.ExposureSeconds = 1; image.TargetMinutes = 1;
+        Assert.True(await UiRig.Eventually(() => rig.Vm.Sky.StartImageCommand.CanExecute(null) && rig.Vm.Image.PlanScopes.Count == 1), rig.Vm.Sky.StartHint + " / " + image.PlanProblem);
+        return rig;
+    }
+
+    [AvaloniaFact]
+    public async Task BadNumbersAreSaidInThePlanAndStartStaysOutOfReach()
+    {
+        Assert.True(_server.Available);
+        await using var rig = await RigAsync(_server);
+        var vm = rig.Vm; var image = vm.Image;
+
+        async Task Problem(Action bad, string contains, bool frameGone = false)
+        {
+            bad();
+            Assert.True(await UiRig.Eventually(() => image.PlanProblem.Contains(contains, StringComparison.OrdinalIgnoreCase)), $"expected '{contains}', got '{image.PlanProblem}'");
+            Assert.True(await UiRig.Eventually(() => !vm.Sky.StartImageCommand.CanExecute(null)), "Start must be out of reach");
+            Assert.Contains(contains, vm.Sky.PlanText, StringComparison.OrdinalIgnoreCase);
+            if (frameGone) Assert.Null(vm.Sky.Frame);
+        }
+        async Task Fine(Action good)
+        {
+            good();
+            Assert.True(await UiRig.Eventually(() => image.PlanProblem == "" && vm.Sky.StartImageCommand.CanExecute(null)), image.PlanProblem);
+            Assert.NotNull(vm.Sky.Frame);
+        }
+
+        await Problem(() => image.CenterRa = "25:00:00", "RA", frameGone: true);
+        await Fine(() => image.CenterRa = "06:00:00");
+        await Problem(() => image.CenterDec = "95:00:00", "Dec", frameGone: true);
+        await Fine(() => image.CenterDec = "10:00:00");
+        await Problem(() => image.CenterRa = "not a number", "RA", frameGone: true);
+        await Fine(() => image.CenterRa = "06:00:00");
+        await Problem(() => image.Width = 61, "60");
+        await Fine(() => image.Width = 0.6);
+        await Problem(() => image.ExposureSeconds = 0, "exposure");
+        await Fine(() => image.ExposureSeconds = 1);
+        await Problem(() => { image.CenterDec = "89:55:00"; image.Width = 2; image.Height = 2; }, "pole");
+        await Fine(() => { image.CenterDec = "10:00:00"; image.Width = 0.6; image.Height = 0.5; });
+
+        // no scope ticked: Start says so (not an error in the plan)
+        foreach (var c in image.Scopes) c.Selected = false;
+        Assert.True(await UiRig.Eventually(() => vm.Sky.StartHint.Contains("Tick a scope")));
+        Assert.False(vm.Sky.StartImageCommand.CanExecute(null));
+        foreach (var c in image.Scopes) c.Selected = true;
+        Assert.True(await UiRig.Eventually(() => vm.Sky.StartImageCommand.CanExecute(null)));
+    }
+
+    [AvaloniaFact]
+    public async Task OneAxisAtZeroIsOneFramesWorthAndTheFrameShowsIt()
+    {
+        Assert.True(_server.Available);
+        await using var rig = await RigAsync(_server);
+        var vm = rig.Vm; var image = vm.Image;
+        image.Width = 0; image.Height = 3;                                   // a strip: one frame wide, three degrees tall
+        Assert.True(await UiRig.Eventually(() => vm.Sky.Frame is { HeightDegrees: 3 }), "strip");
+        var field = image.PlanScopes.Single().Frames[0];
+        Assert.True(Math.Abs(2 * field.HalfWidth * 0.9 - vm.Sky.Frame!.WidthDegrees) < 1e-6, $"frame {vm.Sky.Frame}; image {image.Width} x {image.Height}; field half {field.HalfWidth} x {field.HalfHeight}");   // what the imaging service takes for no width
+        Assert.True(vm.Sky.Frame.WidthDegrees < vm.Sky.Frame.HeightDegrees);
+        Assert.DoesNotContain("One frame", vm.Sky.PlanText);                              // a strip is an area, of panels in a column
+        Assert.Contains("panels", vm.Sky.PlanText);
+        image.Width = 0; image.Height = 0;
+        Assert.True(await UiRig.Eventually(() => vm.Sky.PlanText.StartsWith("One frame") && Math.Abs(vm.Sky.Frame!.HeightDegrees - 2 * field.HalfHeight * 0.9) < 1e-6), $"{vm.Sky.PlanText} / {vm.Sky.Frame}");
+    }
+
+    [AvaloniaFact]
+    public async Task QueuedImagesCanBeEditedAndRemovedAndTheQueueFollows()
+    {
+        Assert.True(_server.Available);
+        await using var rig = await RigAsync(_server);
+        var vm = rig.Vm; var image = vm.Image; var node = rig.Session.Node;
+        async Task<Schedule> Backend() => Assert.Single((await node.CallFunctionAsync<NOTESVoid, Schedule>(SchedulerIds.GetSchedule, NOTESVoid.Void, TimeSpan.FromSeconds(5)))!);
+
+        Assert.False(vm.Schedule.RunCommand.CanExecute(null));                // nothing queued: nothing to run
+        await image.AddToScheduleCommand.ExecuteAsync(null);
+        Assert.True(await UiRig.Eventually(() => vm.Schedule.Rows.Count == 1), image.Message);
+        Assert.Equal("ok", image.MessageKind);                                // "in the queue" is good news, not an error
+        Assert.True(vm.Schedule.RunCommand.CanExecute(null));
+        // the same name again replaces it
+        image.TargetMinutes = 5;
+        await image.AddToScheduleCommand.ExecuteAsync(null);
+        Assert.True(await UiRig.Eventually(() => vm.Schedule.Rows.Count == 1 && vm.Schedule.Rows[0].Entry.Request.TargetSeconds.Value == 300));
+
+        // a condition edited: it reaches the scheduler by itself a moment later
+        var row = vm.Schedule.Rows[0];
+        row.Priority = 7; row.RequireDark = false; row.MinMoonSeparation = 40;
+        Assert.True(await AsyncExt.EventuallyAsync(async () =>
+        {
+            var e = (await Backend()).Entries.FirstOrDefault();
+            return e is { Priority.Value: 7, RequireDark.Value: false } && Math.Abs(e.MinMoonSeparationDegrees.Value - 40) < 1e-9;
+        }), "the edit should be applied without a button");
+        // switched off: it stays in the queue
+        row = vm.Schedule.Rows[0]; row.Enabled = false;
+        Assert.True(await AsyncExt.EventuallyAsync(async () => !(await Backend()).Entries[0].Enabled.Value));
+        Assert.Equal(1, (await Backend()).Entries.Count);
+
+        // taken out
+        await vm.Schedule.RemoveRowCommand.ExecuteAsync(vm.Schedule.Rows[0]);
+        Assert.True(await UiRig.Eventually(() => vm.Schedule.Rows.Count == 0));
+        Assert.Empty((await Backend()).Entries);
+        Assert.False(vm.Schedule.RunCommand.CanExecute(null));
+    }
+}
+
+internal static class AsyncExt
+{
+    public static async Task<bool> EventuallyAsync(Func<Task<bool>> cond, int ms = 20000)
+    {
+        var until = DateTime.UtcNow.AddMilliseconds(ms);
+        while (DateTime.UtcNow < until) { if (await cond()) return true; await Task.Delay(50); }
+        return await cond();
+    }
+}

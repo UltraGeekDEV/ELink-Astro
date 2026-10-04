@@ -137,14 +137,15 @@ public sealed partial class SkyViewModel : ObservableObject
 
         // the frame: the size asked for, or one shot of the first scope when it is a single frame
         double w = Image.Width, h = Image.Height;
-        bool single = !(w > 0 && h > 0);
-        // (what the imaging service takes for no size: 90% of the smallest frame, so that dithered shots still cover all of it)
-        if (single)
+        bool single = !(w > 0) && !(h > 0);                    // no size at all: one frame
+        // (an axis left at 0 is one frame's worth, as in the imaging service: 90% of the smallest frame, so that dithered shots still cover all of it)
+        if (w <= 0 || h <= 0)
         {
             var smallest = Image.PlanScopes.SelectMany(Fields).Cast<Footprint?>().OrderBy(f => f!.Value.HalfWidth * f.Value.HalfHeight).FirstOrDefault();
-            (w, h) = smallest is { } f0 ? (2 * f0.HalfWidth * 0.9, 2 * f0.HalfHeight * 0.9) : (1.0, 0.7);
+            if (w <= 0) w = smallest is { } a ? 2 * a.HalfWidth * 0.9 : 1.0;
+            if (h <= 0) h = smallest is { } b ? 2 * b.HalfHeight * 0.9 : 0.7;
         }
-        // (what is being taken stays where it is: the frame can be moved again when it stops)
+        // what is being taken stays where it is: the frame can be moved again when it stops
         Frame = new ChartFrame(ra, dec, w, h, angle, Image.Label, !Image.IsActive);
 
         // each scope's own field at the centre, and the panels of a mosaic
@@ -161,7 +162,7 @@ public sealed partial class SkyViewModel : ObservableObject
                     label = false;
                 }
         }
-        if (!single && first is { } fp)
+        if (first is { } fp && (w > 2 * fp.HalfWidth * 1.001 || h > 2 * fp.HalfHeight * 1.001))
         {
             double step = Image.Stepover > 0 ? Image.Stepover : Math.Max(0.02, 2 * Math.Min(fp.HalfWidth, fp.HalfHeight) * 0.85);
             // frame centres span the area less one frame; they are no further apart than the step, and evenly spread
