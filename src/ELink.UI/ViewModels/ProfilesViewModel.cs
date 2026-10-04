@@ -21,13 +21,20 @@ public sealed partial class ProfilesViewModel : ObservableObject, IDisposable
     private Follower<ProfileState>? _follower;
     private List<DriverItem> _catalog = new();
 
-    public ProfilesViewModel(MeshSession mesh) { _mesh = mesh; }
+    public ProfilesViewModel(MeshSession mesh)
+    {
+        _mesh = mesh;
+        Chosen.CollectionChanged += (_, _) => SaveCommand.NotifyCanExecuteChanged();
+    }
 
     public ObservableCollection<string> Profiles { get; } = new();
     public ObservableCollection<DriverItem> Matches { get; } = new();
     public ObservableCollection<string> Chosen { get; } = new();
-    [ObservableProperty] private string? _selectedProfile;
-    [ObservableProperty] private string _label = "";
+    [ObservableProperty] [NotifyCanExecuteChangedFor(nameof(StopProfileCommand))] private bool _running;
+    private bool CanSave() => Label.Trim() != "" && Chosen.Count > 0;
+    private bool CanUseLabel() => Label.Trim() != "";
+    [ObservableProperty] [NotifyCanExecuteChangedFor(nameof(StartProfileCommand), nameof(DeleteCommand))] private string? _selectedProfile;
+    [ObservableProperty] [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(StartProfileCommand), nameof(DeleteCommand))] private string _label = "";
     [ObservableProperty] private int _port = 7624;
     [ObservableProperty] private bool _autoConnect = true;
     [ObservableProperty] private string _search = "";
@@ -40,8 +47,11 @@ public sealed partial class ProfilesViewModel : ObservableObject, IDisposable
     public async Task StartAsync()
     {
         _follower = new Follower<ProfileState>(_mesh.Node, ProfileIds.State, ProfileIds.GetState, s =>
+        {
+            Running = s.Running.Text != "";
             Status = s.Running.Text == "" ? $"no profile running{(s.Message.Text != "" ? " — " + s.Message.Text : "")}"
-                : $"{s.Running.Text}: {s.Phase.Text} on port {s.Port.Value} · {string.Join(", ", s.Drivers.Select(d => d.Text))}" + (s.Message.Text != "" ? $" — {s.Message.Text}" : ""));
+                : $"{s.Running.Text}: {s.Phase.Text} on port {s.Port.Value} · {string.Join(", ", s.Drivers.Select(d => d.Text))}" + (s.Message.Text != "" ? $" — {s.Message.Text}" : "");
+        });
         await _follower.StartAsync();
         var cat = await _mesh.Node.CallFunctionAsync<NOTESVoid, DriverCatalog>(ProfileIds.Catalog, NOTESVoid.Void, TimeSpan.FromSeconds(20));
         _catalog = (cat?.FirstOrDefault()?.Drivers ?? new()).Select(d => new DriverItem(d.Group.Text, d.Device.Text, d.Executable.Text)).ToList();
@@ -77,7 +87,7 @@ public sealed partial class ProfilesViewModel : ObservableObject, IDisposable
 
     private async Task Run(Task<CommandResult> call, string ok) { var r = await call; Message = r.Ok.Value ? ok : r.Error.Text; await ReloadAsync(); }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanSave))]
     private Task SaveAsync()
     {
         var p = new EquipmentProfile { Label = Label.Trim(), Port = Port, AutoConnect = AutoConnect };
@@ -85,9 +95,9 @@ public sealed partial class ProfilesViewModel : ObservableObject, IDisposable
         return Run(Commands.CallAsync(_mesh.Node, ProfileIds.Save, p), $"profile '{Label}' saved");
     }
 
-    [RelayCommand] private Task DeleteAsync() => Run(Commands.CallAsync(_mesh.Node, ProfileIds.Delete, (BinaryConvertibleString)Label.Trim()), "deleted");
-    [RelayCommand] private Task StartProfileAsync() => Run(Commands.CallAsync(_mesh.Node, ProfileIds.Start, (BinaryConvertibleString)Label.Trim(), TimeSpan.FromSeconds(60)), "");
-    [RelayCommand] private Task StopProfileAsync() => Run(Commands.CallAsync(_mesh.Node, ProfileIds.Stop, NOTESVoid.Void, TimeSpan.FromSeconds(60)), "");
+    [RelayCommand(CanExecute = nameof(CanUseLabel))] private Task DeleteAsync() => Run(Commands.CallAsync(_mesh.Node, ProfileIds.Delete, (BinaryConvertibleString)Label.Trim()), "deleted");
+    [RelayCommand(CanExecute = nameof(CanUseLabel))] private Task StartProfileAsync() => Run(Commands.CallAsync(_mesh.Node, ProfileIds.Start, (BinaryConvertibleString)Label.Trim(), TimeSpan.FromSeconds(60)), "");
+    [RelayCommand(CanExecute = nameof(Running))] private Task StopProfileAsync() => Run(Commands.CallAsync(_mesh.Node, ProfileIds.Stop, NOTESVoid.Void, TimeSpan.FromSeconds(60)), "");
 
     public void Dispose() => _follower?.Dispose();
 }

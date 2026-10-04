@@ -11,7 +11,7 @@
             <TextBlock Classes="hint" Text="No scope is set up yet. A scope is a mount with one or more telescopes and cameras that guides, focuses and flips by itself."/>
             <Button Content="Set up a scope" Classes="primary" Command="{Binding GoToRigCommand}"/>
           </StackPanel>
-          <ListBox ItemsSource="{Binding Cards}" SelectedItem="{Binding Selected}" Background="Transparent">
+          <ListBox ItemsSource="{Binding Cards}" SelectedItem="{Binding Selected}" Background="Transparent" BorderThickness="0">
             <ListBox.ItemTemplate>
               <DataTemplate>
                 <StackPanel Spacing="4" Margin="2,4">

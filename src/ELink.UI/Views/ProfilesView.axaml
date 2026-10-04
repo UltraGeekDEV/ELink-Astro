@@ -31,6 +31,7 @@
           <StackPanel Grid.Column="2" Spacing="4">
             <TextBlock Classes="label" Text="In this profile"/>
             <ListBox ItemsSource="{Binding Chosen}" SelectedItem="{Binding SelectedChosen}" Height="270"/>
+            <TextBlock Classes="hint" IsVisible="{Binding !Chosen.Count}" Text="Pick drivers on the left and press Add."/>
             <Button Content="Remove" Command="{Binding RemoveDriverCommand}"/>
           </StackPanel>
         </Grid>

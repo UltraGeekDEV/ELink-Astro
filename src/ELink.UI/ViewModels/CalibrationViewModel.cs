@@ -23,6 +23,7 @@ public sealed partial class CalibrationViewModel : ObservableObject, IDisposable
     public CalibrationViewModel(MeshSession mesh, CatalogViewModel catalog)
     {
         _mesh = mesh; _catalog = catalog;
+        Masters.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasMasters));
         catalog.CompositionChanged += () => UiThread.Post(RebuildChoices);
         RebuildChoices();
     }
@@ -38,12 +39,14 @@ public sealed partial class CalibrationViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _gain = "";
     [ObservableProperty] private string _iso = "";
     [ObservableProperty] private int _flatLevelPercent = 50;
-    [ObservableProperty] private MasterRow? _selectedMaster;
+    [ObservableProperty] [NotifyCanExecuteChangedFor(nameof(DeleteCommand))] private MasterRow? _selectedMaster;
     [ObservableProperty] private string _status = "";
     [ObservableProperty, NotifyPropertyChangedFor(nameof(IsBusy))] [NotifyCanExecuteChangedFor(nameof(CaptureCommand), nameof(AbortCommand))] private string _phase = "Idle";
     /// <summary>Frames are being taken or combined.</summary>
     public bool IsBusy => Phase is "Capturing" or "FindingExposure" or "Combining";
     private bool CanCapture() => !IsBusy;
+    private bool HasMaster() => SelectedMaster is not null;
+    public bool HasMasters => Masters.Count > 0;
     [ObservableProperty] private string _message = "";
     public string Hint => Kind switch
     {
@@ -111,7 +114,7 @@ public sealed partial class CalibrationViewModel : ObservableObject, IDisposable
 
     [RelayCommand(CanExecute = nameof(IsBusy))] private async Task AbortAsync() => await Commands.CallAsync(_mesh.Node, CalibrationIds.Abort, NOTESVoid.Void);
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(HasMaster))]
     private async Task DeleteAsync()
     {
         if (SelectedMaster is not { } m) return;

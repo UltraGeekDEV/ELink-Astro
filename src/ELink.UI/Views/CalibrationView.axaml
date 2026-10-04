@@ -30,6 +30,7 @@
     <Border Classes="card">
       <StackPanel Spacing="6">
         <TextBlock Classes="section" Text="MASTERS"/>
+        <TextBlock Classes="hint" IsVisible="{Binding !HasMasters}" Text="No masters yet. Capture darks, biases and flats above: the live stack uses them by itself."/>
         <ListBox ItemsSource="{Binding Masters}" SelectedItem="{Binding SelectedMaster}" MaxHeight="320">
           <ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Line}"/></DataTemplate></ListBox.ItemTemplate>
         </ListBox>

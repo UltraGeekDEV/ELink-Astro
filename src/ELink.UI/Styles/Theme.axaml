@@ -91,6 +91,7 @@
       <Thickness x:Key="ExpanderContentPadding">0</Thickness>
     </Style.Resources>
   </Style>
+  <Style Selector="ListBox"><Setter Property="Background" Value="#151B26"/><Setter Property="BorderBrush" Value="#2B3548"/><Setter Property="BorderThickness" Value="1"/><Setter Property="CornerRadius" Value="6"/></Style>
   <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Background" Value="#1D2535"/></Style>
   <Style Selector="ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Background" Value="#243556"/></Style>
   <Style Selector="ListBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Background" Value="#2A3E66"/></Style>
