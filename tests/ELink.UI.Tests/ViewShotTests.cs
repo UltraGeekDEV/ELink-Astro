@@ -302,5 +302,10 @@ public class ViewShotTests : IClassFixture<IndiServerFixture>
         Assert.True(await UiRig.Eventually(() => vm.Sky.Frame!.Editable), "the frame can be moved again");
         Assert.True(await UiRig.Eventually(() => vm.Sky.StartImageCommand.CanExecute(null)), vm.Sky.StartHint);
         Assert.False(image.AbortCommand.CanExecute(null));
+        Assert.Contains(vm.Toasts, t => t.Text.Contains("was stopped"));                    // said wherever the person was
+        var card = vm.Scopes.Cards.First(c => c.ScopeId == "main");
+        Assert.NotEmpty(card.Activity);
+        Assert.Contains(card.Activity, l => l.Contains("Slewing") || l.Contains("Exposing") || l.Contains("On target"));   // what the scope did, with times
+        Assert.Matches(@"^\d\d:\d\d:\d\d  ", card.Activity[0]);
     }
 }

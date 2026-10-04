@@ -232,7 +232,7 @@ the next night by itself.
 ## Scopes
 
 The list on the left shows each scope with what it is doing and how far along; the selected one has its pointing, the latest
-frame, the guiding graph (RA blue, Dec red, ±4″) and the cooling. You do not need the buttons: the scope does it by itself.
+frame, **What it did** (each change of what it was doing, with the time), the guiding graph (RA blue, Dec red, ±4″) and the cooling. You do not need the buttons: the scope does it by itself.
 *Manual control* is for testing: go to coordinates and take frames. *Autofocus* (sweep a focuser, measure star size, fit the
 curve, move to the best position) and *Centring* (the older mount-level service, which also catches slews made from a hand
 controller) are here too.

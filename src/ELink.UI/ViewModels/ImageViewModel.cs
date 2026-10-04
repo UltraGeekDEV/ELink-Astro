@@ -248,8 +248,15 @@ public sealed partial class ImageViewModel : ObservableObject, IDisposable
         return Sexagesimal.TryParse(CenterRa, out raHours) && Sexagesimal.TryParse(CenterDec, out decDegrees) && raHours >= 0 && raHours < 24 && Math.Abs(decDegrees) <= 90;
     }
 
+    private string _lastPhase = "";
+
     private void Show(ImagingState s)
     {
+        // an image that was being taken has ended: say so wherever the person is
+        bool wasActive = _lastPhase is "Running" or "Paused" or "WaitingForSky" or "WaitingForWeather";
+        if (wasActive && s.Phase.Text == "Done") _mesh.Notices.Success($"Image '{s.Label.Text}' is done: {s.Visits.Value} shots", "Image");
+        else if (wasActive && s.Phase.Text == "Aborted") _mesh.Notices.Info($"Image '{s.Label.Text}' was stopped after {s.Visits.Value} shots; it is kept, start it again to carry on", "Image");
+        _lastPhase = s.Phase.Text;
         Phase = s.Phase.Text;
         if (s.Message.Text != "") Say(s.Message.Text, s.Phase.Text == "Error" ? "error" : "info", toast: true);
         Progress = $"{s.Visits.Value} shots";

@@ -62,6 +62,23 @@ public partial class ScopePanelViewModel : ObservableObject, IDisposable
     [ObservableProperty] private IList<Point> _decGraph = new List<Point>();
     public const double GraphWidth = 600, GraphHeight = 120, GraphArcsec = 4;
 
+    // what the scope did, newest first: each change of what it is doing, with the time
+    public ObservableCollection<string> Activity { get; } = new();
+    private string _loggedPhase = "", _loggedMessage = "";
+    private void Log(ScopeState s)
+    {
+        string phase = s.Phase.Text, message = s.Message.Text;
+        if (phase == _loggedPhase && message == _loggedMessage) return;
+        // each exposure round passes through "Exposing": one line, not one per frame
+        bool newPhase = phase != _loggedPhase;
+        _loggedPhase = phase; _loggedMessage = message;
+        if (!newPhase && message == "") return;
+        string what = newPhase ? ChipText : "";
+        string line = $"{DateTime.Now:HH:mm:ss}  {what}{(what != "" && message != "" ? " · " : "")}{message}";
+        Activity.Insert(0, line);
+        while (Activity.Count > 60) Activity.RemoveAt(Activity.Count - 1);
+    }
+
     public string ScopeId { get; }
     public string DisplayName { get; }
     public string Title => DisplayName;
@@ -135,6 +152,7 @@ public partial class ScopePanelViewModel : ObservableObject, IDisposable
         var scope = new Follower<ScopeState>(node, ScopeIds.State(ScopeId), ScopeIds.GetState(ScopeId), s =>
         {
             ScopePhase = s.Phase.Text; ScopeMessage = s.Message.Text; ShotsDone = s.ShotsDone.Value; ShotsPlanned = s.ShotsPlanned.Value; Observing = s.Observing.Value;
+            Log(s);
         });
         var pointer = new Follower<PointerState>(node, PointerIds.State(ScopeId), PointerIds.GetState(ScopeId), s =>
         {

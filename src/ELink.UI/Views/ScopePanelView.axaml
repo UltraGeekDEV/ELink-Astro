@@ -36,6 +36,14 @@
       </StackPanel>
     </Border>
 
+    <Border Classes="card" IsVisible="{Binding Activity.Count}">
+      <Expander Header="What it did" IsExpanded="True">
+        <ItemsControl ItemsSource="{Binding Activity}" Margin="0,6,0,0">
+          <ItemsControl.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" Classes="mono" Foreground="#B7C2D8" TextWrapping="Wrap"/></DataTemplate></ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </Expander>
+    </Border>
+
     <Border Classes="card" IsVisible="{Binding HasGuider}">
       <StackPanel Spacing="6">
         <Grid ColumnDefinitions="*,Auto">

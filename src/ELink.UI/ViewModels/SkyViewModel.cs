@@ -138,7 +138,12 @@ public sealed partial class SkyViewModel : ObservableObject
         // the frame: the size asked for, or one shot of the first scope when it is a single frame
         double w = Image.Width, h = Image.Height;
         bool single = !(w > 0 && h > 0);
-        if (single) { (w, h) = first is { } f0 ? (2 * f0.HalfWidth, 2 * f0.HalfHeight) : (1.0, 0.7); }
+        // (what the imaging service takes for no size: 90% of the smallest frame, so that dithered shots still cover all of it)
+        if (single)
+        {
+            var smallest = Image.PlanScopes.SelectMany(Fields).Cast<Footprint?>().OrderBy(f => f!.Value.HalfWidth * f.Value.HalfHeight).FirstOrDefault();
+            (w, h) = smallest is { } f0 ? (2 * f0.HalfWidth * 0.9, 2 * f0.HalfHeight * 0.9) : (1.0, 0.7);
+        }
         // (what is being taken stays where it is: the frame can be moved again when it stops)
         Frame = new ChartFrame(ra, dec, w, h, angle, Image.Label, !Image.IsActive);
 
