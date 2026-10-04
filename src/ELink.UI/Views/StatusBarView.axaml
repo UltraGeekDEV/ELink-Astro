@@ -3,8 +3,9 @@
              x:Class="ELink.UI.Views.StatusBarView">
   <Border Background="#171C27" BorderBrush="#2B3548" BorderThickness="0,0,0,1" Padding="14,7">
     <Grid ColumnDefinitions="Auto,*,Auto">
+      <Border Classes="chip error" IsVisible="{Binding NotConnected}" Background="#4A2226" HorizontalAlignment="Left" VerticalAlignment="Center"><TextBlock Text="{Binding MeshText}"/></Border>
       <!-- how dark it is -->
-      <Button Classes="ghost" Command="{Binding OpenSiteCommand}" Padding="6,2" ToolTip.Tip="The night at your site (Rig › Site)">
+      <Button Classes="ghost" Command="{Binding OpenSiteCommand}" IsVisible="{Binding !NotConnected}" Padding="6,2" ToolTip.Tip="The night at your site (Rig › Site)">
         <StackPanel Classes="row" Spacing="8">
           <Ellipse Classes="dot" Fill="{Binding NightClass, Converter={x:Static i:Chips.Dot}}"/>
           <TextBlock Text="{Binding NightText}" VerticalAlignment="Center"/>

@@ -267,6 +267,14 @@ public sealed partial class SkyViewModel : ObservableObject
 
     private bool HasSelection() => Atlas.Selection is not null;
 
+    /// <summary>A double-click on the sky: what is there is selected and becomes the frame.</summary>
+    [RelayCommand]
+    private void FrameAt((double RaHours, double DecDegrees, double PixelsPerDegree) at)
+    {
+        Atlas.PickCommand.Execute(at);
+        FrameSelection();
+    }
+
     /// <summary>The selected object becomes the frame (big ones an area, small ones one frame) and the chart zooms to it.</summary>
     [RelayCommand(CanExecute = nameof(HasSelection))]
     private void FrameSelection()

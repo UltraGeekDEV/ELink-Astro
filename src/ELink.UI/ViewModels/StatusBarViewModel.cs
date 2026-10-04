@@ -46,6 +46,7 @@ public sealed partial class StatusBarViewModel : ObservableObject, IDisposable
             new("Site known", "enter your location (Rig › Site)", AppView.Rig, "Site"),
             new("Plate solver", "install ASTAP or astrometry.net", AppView.Rig, "Drivers"),
         };
+        mesh.PropertyChanged += (_, e) => { if (e.PropertyName is nameof(MeshSession.IsConnected) or nameof(MeshSession.Status)) UiThread.Post(() => { OnPropertyChanged(nameof(NotConnected)); OnPropertyChanged(nameof(MeshText)); }); };
         _equipmentWatch = (_, _) => UiThread.Post(Recompute);
         catalog.Equipment.CollectionChanged += _equipmentWatch;
         catalog.CompositionChanged += () => UiThread.Post(Recompute);
@@ -68,6 +69,9 @@ public sealed partial class StatusBarViewModel : ObservableObject, IDisposable
     /// <summary>Set by the shell: go to a view (and a section of it).</summary>
     public Action<AppView, string?>? Navigate { get; set; }
 
+    /// <summary>Shown first when this window is not joined to a station.</summary>
+    public bool NotConnected => !_mesh.IsConnected;
+    public string MeshText => _mesh.IsConnected ? "" : _mesh.Status.StartsWith("not connected", StringComparison.OrdinalIgnoreCase) ? "Not connected to a station" : "Not connected: " + _mesh.Status;
     [ObservableProperty] private string _nightText = "";
     [ObservableProperty] private string _nightClass = "idle";
     [ObservableProperty] private string _moonText = "";

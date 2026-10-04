@@ -47,6 +47,8 @@ public sealed class SkyChart : Control
     public static readonly StyledProperty<IReadOnlyList<ChartPolygon>?> PolygonsProperty = AvaloniaProperty.Register<SkyChart, IReadOnlyList<ChartPolygon>?>(nameof(Polygons));
     public static readonly StyledProperty<ChartFrame?> FrameProperty = AvaloniaProperty.Register<SkyChart, ChartFrame?>(nameof(Frame));
     public static readonly StyledProperty<IReadOnlyList<ChartImage>?> ImagesProperty = AvaloniaProperty.Register<SkyChart, IReadOnlyList<ChartImage>?>(nameof(Images));
+    public static readonly StyledProperty<ICommand?> DoubleClickCommandProperty = AvaloniaProperty.Register<SkyChart, ICommand?>(nameof(DoubleClickCommand));
+    public static readonly StyledProperty<ICommand?> FrameDoubleClickCommandProperty = AvaloniaProperty.Register<SkyChart, ICommand?>(nameof(FrameDoubleClickCommand));
     public static readonly StyledProperty<ICommand?> FrameEditedCommandProperty = AvaloniaProperty.Register<SkyChart, ICommand?>(nameof(FrameEditedCommand));
     public static readonly StyledProperty<double> ContextRaProperty = AvaloniaProperty.Register<SkyChart, double>(nameof(ContextRa), defaultBindingMode: Avalonia.Data.BindingMode.TwoWay);
     public static readonly StyledProperty<double> ContextDecProperty = AvaloniaProperty.Register<SkyChart, double>(nameof(ContextDec), defaultBindingMode: Avalonia.Data.BindingMode.TwoWay);
@@ -66,6 +68,10 @@ public sealed class SkyChart : Control
     public IReadOnlyList<ChartPolygon>? Polygons { get => GetValue(PolygonsProperty); set => SetValue(PolygonsProperty, value); }
     public ChartFrame? Frame { get => GetValue(FrameProperty); set => SetValue(FrameProperty, value); }
     public IReadOnlyList<ChartImage>? Images { get => GetValue(ImagesProperty); set => SetValue(ImagesProperty, value); }
+    /// <summary>Executed with a (RaHours, DecDegrees, PixelsPerDegree) tuple when the sky (not the frame) is double-clicked.</summary>
+    public ICommand? DoubleClickCommand { get => GetValue(DoubleClickCommandProperty); set => SetValue(DoubleClickCommandProperty, value); }
+    /// <summary>Executed (with no argument) when the frame itself is double-clicked.</summary>
+    public ICommand? FrameDoubleClickCommand { get => GetValue(FrameDoubleClickCommandProperty); set => SetValue(FrameDoubleClickCommandProperty, value); }
     /// <summary>Executed with a <see cref="FrameEdit"/> every time the frame is dragged.</summary>
     public ICommand? FrameEditedCommand { get => GetValue(FrameEditedCommandProperty); set => SetValue(FrameEditedCommandProperty, value); }
     /// <summary>The sky position under the pointer when the context menu (right button) was opened.</summary>
@@ -85,7 +91,18 @@ public sealed class SkyChart : Control
         FocusableProperty.OverrideDefaultValue<SkyChart>(true);
     }
 
-    public SkyChart() { ClipToBounds = true; }
+    public SkyChart()
+    {
+        ClipToBounds = true;
+        DoubleTapped += (_, e) =>
+        {
+            var at = e.GetPosition(this);
+            if (HitFrame(at) != Drag.None) { if (FrameDoubleClickCommand?.CanExecute(null) == true) FrameDoubleClickCommand.Execute(null); return; }
+            var proj = Projection; var (ra, dec) = proj.Unproject(at.X, at.Y);
+            var arg = (ra, dec, proj.PixelsPerDegree);
+            if (DoubleClickCommand?.CanExecute(arg) == true) DoubleClickCommand.Execute(arg);
+        };
+    }
 
     public SkyProjection Projection => new(CenterRa, CenterDec, Fov, Math.Max(1, Bounds.Width), Math.Max(1, Bounds.Height));
 

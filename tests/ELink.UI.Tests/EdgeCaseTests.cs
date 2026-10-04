@@ -123,6 +123,21 @@ public class EdgeCaseTests : IClassFixture<IndiServerFixture>
     }
 
     [AvaloniaFact]
+    public async Task DoubleClickingTheSkyFramesWhatIsThere()
+    {
+        Assert.True(_server.Available);
+        await using var rig = await RigAsync(_server);
+        var vm = rig.Vm;
+        Assert.False(vm.StatusBar.NotConnected);
+        vm.Atlas.CenterRa = 5.588; vm.Atlas.CenterDec = -5.39; vm.Atlas.Fov = 3;
+        await vm.Atlas.RefreshAsync();
+        Assert.True(await UiRig.Eventually(() => vm.Atlas.Dsos.Any(d => d.Id == "M 42")), "the atlas answered");
+        vm.Sky.FrameAtCommand.Execute((5.5885, -5.39, 100.0));
+        Assert.True(await UiRig.Eventually(() => vm.Image.Label == "M42" && vm.Sky.Frame is { WidthDegrees: > 1 }), $"{vm.Image.Label} {vm.Sky.Frame}");
+        Assert.True(await UiRig.Eventually(() => Math.Abs(vm.Atlas.CenterRa - 5.588) < 0.05));
+    }
+
+    [AvaloniaFact]
     public async Task OneAxisAtZeroIsOneFramesWorthAndTheFrameShowsIt()
     {
         Assert.True(_server.Available);

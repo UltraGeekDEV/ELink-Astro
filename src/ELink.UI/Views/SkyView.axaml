@@ -15,7 +15,7 @@
       <c:SkyChart CenterRa="{Binding Atlas.CenterRa, Mode=TwoWay}" CenterDec="{Binding Atlas.CenterDec, Mode=TwoWay}" Fov="{Binding Atlas.Fov, Mode=TwoWay}" StarLimit="{Binding Atlas.StarLimit}"
                   Stars="{Binding Atlas.Stars}" Dsos="{Binding Atlas.Dsos}" Lines="{Binding Atlas.Lines}" Labels="{Binding Atlas.Labels}"
                   Markers="{Binding Atlas.Markers}" Polygons="{Binding Polygons}" Horizon="{Binding Atlas.Horizon}" Bodies="{Binding Atlas.Bodies}"
-                  PickCommand="{Binding Atlas.PickCommand}" ShowGrid="{Binding Atlas.ShowGrid}" ShowConstellations="{Binding Atlas.ShowConstellations}"
+                  PickCommand="{Binding Atlas.PickCommand}" DoubleClickCommand="{Binding FrameAtCommand}" FrameDoubleClickCommand="{Binding ZoomToFrameCommand}" ShowGrid="{Binding Atlas.ShowGrid}" ShowConstellations="{Binding Atlas.ShowConstellations}"
                   Frame="{Binding Frame}" Images="{Binding Images}" FrameEditedCommand="{Binding FrameEditedCommand}"
                   ContextRa="{Binding ContextRa, Mode=TwoWay}" ContextDec="{Binding ContextDec, Mode=TwoWay}">
         <c:SkyChart.ContextMenu>

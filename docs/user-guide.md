@@ -183,7 +183,7 @@ newest flat of the frame's filter. Masters live in `calibration/` next to the co
 The chart is built from the sky data KStars installs (about 43 000 stars to magnitude 8, 14 000 deep-sky objects,
 constellation figures) plus faint stars for small fields.
 
-- **Move** by dragging, **zoom** with the wheel (towards the pointer) or `+` / `-`, **click** a star or object to select it.
+- **Move** by dragging, **zoom** with the wheel (towards the pointer) or `+` / `-`, **click** a star or object to select it, **double-click** it to frame it as the image (double-click the frame to zoom to it).
 - **Find** by name: `M42`, `NGC 7000`, `Vega`, `andromeda`, `Jupiter`. With several matches, pick one from the list.
 - **Right-click** the sky: frame the image here, send the scope here, what is here, centre the chart here.
 - **Layers** switches the constellations, grid, your horizon, each scope's field and mosaic panels, the stacked image and the
