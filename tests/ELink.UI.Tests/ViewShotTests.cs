@@ -43,7 +43,7 @@ public class ViewShotTests : IClassFixture<IndiServerFixture>
         rig.Shot("sky-getting-started");
         Assert.Contains("Set up a scope first", vm.Sky.StartHint);                        // and Start says why it cannot be pressed
         Assert.False(vm.Sky.StartImageCommand.CanExecute(null));
-        Assert.True(vm.StatusBar.Readiness.Count(r => !r.Done) >= 3);   // (the plate solver may be installed)
+        Assert.True(vm.StatusBar.Readiness.Count(r => !r.Done) >= 2);   // no scope, no site (the plate solver may be installed; the simulators may have been connected by an earlier test)
         vm.Sky.TogglePanelCommand.Execute(null);
         Assert.False(vm.Sky.PanelOpen);
         rig.Shot("sky-panel-folded");
@@ -69,6 +69,13 @@ public class ViewShotTests : IClassFixture<IndiServerFixture>
             await Task.Delay(300);
             rig.Shot($"rig-{name}");
         }
+        // the tools folded into the Scopes view, opened
+        vm.Navigate(AppView.Scopes);
+        foreach (var expander in rig.Window.GetVisualDescendants().OfType<Avalonia.Controls.Expander>()) expander.IsExpanded = true;
+        await Task.Delay(400);
+        rig.Shot("rig-scopes-expanded");
+        foreach (var expander in rig.Window.GetVisualDescendants().OfType<Avalonia.Controls.Expander>()) expander.IsExpanded = false;
+
         // every kind of device panel, in the drawer
         foreach (var kind in new[] { "Camera", "Focuser", "FilterWheel", "Rotator", "Dome", "Weather", "Gps" })
         {

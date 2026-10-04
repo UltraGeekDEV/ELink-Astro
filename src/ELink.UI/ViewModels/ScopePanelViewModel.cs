@@ -170,9 +170,9 @@ public partial class ScopePanelViewModel : ObservableObject, IDisposable
             var guider = new Follower<GuiderState>(node, GuiderIds.State(GuiderId), GuiderIds.GetState(GuiderId), g =>
             {
                 GuidePhase = g.Phase.Text + (g.Phase.Text == "Guiding" ? (g.Settled.Value ? ", settled" : ", settling") : "");
-                GuideText = (double.IsNaN(g.RmsTotalArcsec.Value)
-                                ? $"error {g.ErrorPixels.Value:0.00} px"
-                                : $"RMS {g.RmsTotalArcsec.Value:0.00}\" (RA {g.RmsRaArcsec.Value:0.00}\", Dec {g.RmsDecArcsec.Value:0.00}\")") +
+                GuideText = (!double.IsNaN(g.RmsTotalArcsec.Value)
+                                ? $"RMS {g.RmsTotalArcsec.Value:0.00}\" (RA {g.RmsRaArcsec.Value:0.00}\", Dec {g.RmsDecArcsec.Value:0.00}\")"
+                                : !double.IsNaN(g.ErrorPixels.Value) ? $"error {g.ErrorPixels.Value:0.00} px" : "not guiding") +
                             $"   ·   {g.Stars.Value} stars   ·   {g.Frames.Value} frames   ·   {g.Dithers.Value} dithers   ·   {g.Output.Text}" +
                             (g.Message.Text != "" ? $"   ·   {g.Message.Text}" : "");
                 GuideCalibration = g.Calibration.Text;

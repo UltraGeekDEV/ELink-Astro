@@ -75,6 +75,8 @@
   <Style Selector="TextBox"><Setter Property="MinWidth" Value="84"/></Style>
   <Style Selector="Expander">
     <Setter Property="HorizontalAlignment" Value="Stretch"/>
+    <Setter Property="VerticalContentAlignment" Value="Center"/>
+    <Setter Property="MinHeight" Value="0"/>
     <Style.Resources>
       <SolidColorBrush x:Key="ExpanderHeaderBackground" Color="Transparent"/>
       <SolidColorBrush x:Key="ExpanderHeaderBackgroundPointerOver" Color="#222B3C"/>
@@ -84,7 +86,8 @@
       <SolidColorBrush x:Key="ExpanderHeaderBorderBrushPressed" Color="Transparent"/>
       <SolidColorBrush x:Key="ExpanderContentBackground" Color="Transparent"/>
       <SolidColorBrush x:Key="ExpanderContentBorderBrush" Color="Transparent"/>
-      <Thickness x:Key="ExpanderHeaderPadding">0,8,8,8</Thickness>
+      <Thickness x:Key="ExpanderHeaderPadding">0,4,8,4</Thickness>
+      <x:Double x:Key="ExpanderMinHeight">34</x:Double>
       <Thickness x:Key="ExpanderContentPadding">0</Thickness>
     </Style.Resources>
   </Style>
