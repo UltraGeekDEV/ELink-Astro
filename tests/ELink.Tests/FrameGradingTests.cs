@@ -68,4 +68,57 @@ public class FrameGradingTests
         Assert.False(new FrameGrader().Grade(new FrameMetrics(0, double.NaN, double.NaN, 800)).Ok);   // no stars at all, even without a baseline
         g.Reset(); Assert.Equal(0, g.BaselineCount);
     }
+
+    [Fact]
+    public void ARawColourFrameOfRoundStarsIsMeasuredRoundNotRaggedByItsColourMosaic()
+    {
+        // round stars seen through an RGGB mosaic: each star is sampled by pixels of different colours
+        const int W = 800, H = 600;
+        var rnd = new Random(4); var px = new ushort[W * H]; var noise = new Random(9);
+        var stars = Enumerable.Range(0, 70).Select(_ => (X: 20 + rnd.NextDouble() * (W - 40), Y: 20 + rnd.NextDouble() * (H - 40), F: 1500 + rnd.NextDouble() * 9000)).ToArray();
+        for (int y = 0; y < H; y++)
+            for (int x = 0; x < W; x++)
+            {
+                double gain = (y % 2, x % 2) switch { (0, 0) => 1.0, (1, 1) => 0.55, _ => 0.85 };   // the colours see a white star differently
+                double v = 600 + (noise.NextDouble() - 0.5) * 30;
+                foreach (var st in stars) { double dx = x - st.X, dy = y - st.Y; if (Math.Abs(dx) < 9 && Math.Abs(dy) < 9) v += gain * st.F * Math.Exp(-(dx * dx + dy * dy) / (2 * 1.7 * 1.7)); }
+                px[y * W + x] = (ushort)Math.Min(65535, v);
+            }
+        var img = FitsImage.Parse(FitsImage.Write16(W, H, px, new Dictionary<string, string> { ["BAYERPAT"] = "'RGGB'" }));
+        var m = FrameMetrics.Measure(img);
+        Assert.True(m.Stars > 20);
+        Assert.True(m.Elongation < 1.25, $"measured as the cells' brightness: {m.Elongation}");
+        Assert.InRange(m.Hfr, 2.0, 6.0);           // in the sensor's pixels
+    }
+
+    [Fact]
+    public void AStableChangeOfStarSizeBecomesTheNewNormalAndABriefOneDoesNot()
+    {
+        FrameMetrics Soft(double hfr) => new(300, hfr, 1.2, 165);
+        var g = new FrameGrader();
+        for (int i = 0; i < 10; i++) Assert.True(g.Grade(Soft(3.1 + 0.05 * (i % 3))).Ok);
+        // a passing patch: rejected, and the usual is still the usual
+        for (int i = 0; i < 3; i++) Assert.False(g.Grade(Soft(7.5)).Ok);
+        Assert.True(g.Grade(Soft(3.2)).Ok);
+        Assert.False(g.Grade(Soft(7.4)).Ok);              // (the patch started again: the count starts again too)
+        // seven frames in a row of one size: it was the focus that changed
+        var results = Enumerable.Range(0, 8).Select(i => g.Grade(Soft(7.3 + 0.1 * (i % 3)))).ToList();
+        Assert.True(results.Take(4).All(r => !r.Ok));
+        var adopted = results.First(r => r.Ok);
+        Assert.Contains("taking it as normal", adopted.Reason);
+        Assert.True(g.Grade(Soft(7.4)).Ok);
+        Assert.False(g.Grade(Soft(15)).Ok);               // and twice the new normal is still bad
+    }
+
+    [Fact]
+    public void ACameraWhoseStarsAreAlwaysALittleLongIsJudgedAgainstItsOwnUsual()
+    {
+        FrameMetrics M(double elong) => new(300, 3.0, elong, 165);
+        var g = new FrameGrader();
+        for (int i = 0; i < 8; i++) Assert.True(g.Grade(M(1.5)).Ok);
+        Assert.True(g.Grade(M(1.75)).Ok);                 // above the fixed 1.6, but near its usual
+        Assert.False(g.Grade(M(2.2)).Ok);                 // really trailed
+        var fresh = new FrameGrader();
+        Assert.False(fresh.Grade(M(1.75)).Ok);            // with no usual yet, the fixed limit
+    }
 }

@@ -185,4 +185,60 @@ public class PictureServiceTests : IAsyncLifetime
         Assert.True(LiveStackService.IsSolvedWcs(new Dictionary<string, string> { ["CD1_1"] = "1" }));
         Assert.False(LiveStackService.IsSolvedWcs(cards));
     }
+
+    [Fact]
+    public async Task AFrameOfAnotherScaleFromAnotherTelescopeIsPlacedOnTheFirstByItsStars()
+    {
+        await using var stack = new LiveStackService(_node); await stack.StartAsync();
+        const int FW = 300, FH = 220;
+        var request = new LiveStackRequest
+        {
+            Label = "Mixed", Center = new SkyTarget { RaHours = 84 / 15.0, DecDegrees = 10, Epoch = "J2000" }, FovWidthDegrees = FW * 2 / 3600.0, FovHeightDegrees = FH * 2 / 3600.0, PixelScaleArcsec = 2,
+            Interpolation = "Nearest", Registration = "Auto", SolveTimeoutSeconds = 1,
+        };
+        request.ShooterIds.Add("cam");
+        Assert.True((await Commands.CallAsync(_node, LiveStackIds.Start, request)).Ok.Value);
+        var messages = new List<string>(); LiveStackState? state = null;
+        await _node.HookEventAsync(LiveStackIds.State, (LiveStackState st) => { state = st; lock (messages) messages.Add(st.Message.Text); });
+        var rnd = new Random(8);
+        // the sky in the first frame's pixels (2"/px); one star far brighter than the rest
+        var stars = Enumerable.Range(0, 140).Select(_ => (X: 10 + rnd.NextDouble() * (FW - 20), Y: 10 + rnd.NextDouble() * (FH - 20), F: 3000 + rnd.NextDouble() * 9000)).ToList();
+        stars.Add((FW * 0.5 + 23, FH * 0.5 - 17, 60000));
+        byte[] Make(double zoom, int seed)
+        {
+            // zoom 2: the second telescope sees 1"/px: the middle of the first's field, twice as big
+            var cards = new Dictionary<string, string>
+            {
+                ["EXPTIME"] = "30", ["CTYPE1"] = "'RA---TAN'", ["CTYPE2"] = "'DEC--TAN'", ["CRVAL1"] = "84", ["CRVAL2"] = "10", ["CRPIX1"] = (FW / 2).ToString(), ["CRPIX2"] = (FH / 2).ToString(),
+                ["CDELT1"] = "-0.000555556", ["CDELT2"] = "0.000555556", ["CROTA2"] = "0", ["SCALE"] = (2.0 / zoom).ToString(System.Globalization.CultureInfo.InvariantCulture),
+            };
+            var noise = new Random(seed); var px = new ushort[FW * FH];
+            for (int y = 0; y < FH; y++)
+                for (int x = 0; x < FW; x++)
+                {
+                    double sx = (x - FW / 2.0) / zoom + FW / 2.0, sy = (y - FH / 2.0) / zoom + FH / 2.0;      // where this pixel is on the first frame
+                    double v = 1500 + (noise.NextDouble() - 0.5) * 60;
+                    foreach (var st in stars) { double dx = sx - st.X, dy = sy - st.Y; if (Math.Abs(dx) < 8 && Math.Abs(dy) < 8) v += st.F * Math.Exp(-(dx * dx + dy * dy) / (2 * 1.6 * 1.6)); }
+                    px[y * FW + x] = (ushort)Math.Clamp(v, 0, 65535);
+                }
+            return FitsImage.Write16(FW, FH, px, cards);
+        }
+        async Task Send(byte[] fits, int n)
+        {
+            await _node.FireEventAsync(ShooterIds.Shot("cam"), new ShotEvent { Shooter = "cam", Format = ".fits", ExposureSeconds = 30, FrameType = "Light", Timestamp = "z" + n, Data = new RawBytes(fits) });
+            Assert.True(await Eventually(() => state is not null && state.FramesStacked.Value + state.FramesRejected.Value == n && state.FramesPending.Value == 0), state?.Message.Text);
+        }
+        (int X, int Y) Brightest(byte[] fits) { var f = FitsImage.Parse(fits); int best = 0; for (int i = 0; i < f.Width * f.Height; i++) if (f.Data[i] > f.Data[best]) best = i; return (best % f.Width, best / f.Width); }
+        async Task<(int X, int Y)> Where()
+        {
+            var img = Assert.Single((await _node.CallFunctionAsync<LiveStackImageRequest, LiveStackImage>(LiveStackIds.GetImage, new LiveStackImageRequest { Neutralize = false }, TimeSpan.FromSeconds(10)))!);
+            return Brightest(img.Image.Data);
+        }
+        await Send(Make(1, 1), 1);
+        var first = await Where();
+        await Send(Make(2, 2), 2);                      // 2x the scale, same field centre
+        lock (messages) Assert.Contains(messages, m => m.Contains("stars,") && m.Contains("matched"));
+        var after = await Where();
+        Assert.InRange(Math.Abs(after.X - first.X), 0, 2); Assert.InRange(Math.Abs(after.Y - first.Y), 0, 2);   // the bright star is where it was, not smeared or shifted
+    }
 }

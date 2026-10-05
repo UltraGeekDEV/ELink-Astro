@@ -23,7 +23,9 @@ public class RealDataTests(ITestOutputHelper output)
         int count = int.TryParse(Environment.GetEnvironmentVariable("ELINK_REAL_COUNT"), out var c) ? c : 10;
         string outDir = Environment.GetEnvironmentVariable("ELINK_REAL_OUT") ?? Path.Combine(Path.GetTempPath(), "elink-real");
         Directory.CreateDirectory(outDir);
-        var files = Directory.GetFiles(folder, "*.fits").Order().Take(count).ToList();
+        int stride = int.TryParse(Environment.GetEnvironmentVariable("ELINK_REAL_STRIDE"), out var st) ? Math.Max(1, st) : 1;
+        int skip = int.TryParse(Environment.GetEnvironmentVariable("ELINK_REAL_SKIP"), out var sk) ? sk : 0;
+        var files = Directory.GetFiles(folder, "*.fits").Order().Skip(skip).Where((_, i) => i % stride == 0).Take(count).ToList();
         Assert.NotEmpty(files);
         var first = ELink.Imaging.FitsImage.Parse(File.ReadAllBytes(files[0]));
         double scale = first.GetDouble("SCALE", 2.4);
@@ -41,6 +43,15 @@ public class RealDataTests(ITestOutputHelper output)
             Registration = "Auto", FramePixelScaleArcsec = scale, Calibrate = false, SolveTimeoutSeconds = 1,
         };
         request.ShooterIds.Add("cam");
+        // a field of your own choosing (degrees, and the pixel scale of the stack), and layers by pixel scale
+        if (double.TryParse(Environment.GetEnvironmentVariable("ELINK_REAL_FOV"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var fov))
+        { request.FovWidthDegrees = fov; request.FovHeightDegrees = fov * 0.7; }
+        if (double.TryParse(Environment.GetEnvironmentVariable("ELINK_REAL_SCALE"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var gridScale)) request.PixelScaleArcsec = gridScale;
+        if (Environment.GetEnvironmentVariable("ELINK_REAL_LAYERS") == "1")
+        {
+            request.Layers.Add(new ImagingLayer { Label = "wide", MinScaleArcsec = 1.8 });
+            request.Layers.Add(new ImagingLayer { Label = "detail", MaxScaleArcsec = 1.2 });
+        }
         Assert.True((await Commands.CallAsync(node, LiveStackIds.Start, request)).Ok.Value);
         LiveStackState? state = null;
         await node.HookEventAsync(LiveStackIds.State, (LiveStackState s) => { state = s; if (s.Message.Text != "") output.WriteLine(s.Message.Text); });
@@ -86,5 +97,22 @@ public class RealDataTests(ITestOutputHelper output)
         File.WriteAllBytes(Path.Combine(outDir, "picture-no-processing.png"), plain.Png.Data);
         var export = Assert.Single((await node.CallFunctionAsync<ExportRequest, ExportResult>(ProcessingIds.Export, new ExportRequest { PictureToo = false }, TimeSpan.FromMinutes(5)))!);
         output.WriteLine(export.Message.Text);
+    }
+
+    /// <summary>How the frame grader sees real frames (raw colour frames, as a scope would grade them): stars, size, roundness, sky.</summary>
+    [Fact]
+    public void TheGraderOnRealFrames()
+    {
+        if (Folder is not { } folder || !Directory.Exists(folder)) return;
+        int count = int.TryParse(Environment.GetEnvironmentVariable("ELINK_REAL_COUNT"), out var c) ? c : 10;
+        int stride = int.TryParse(Environment.GetEnvironmentVariable("ELINK_REAL_STRIDE"), out var st) ? Math.Max(1, st) : 1;
+        var grader = new ELink.Imaging.FrameGrader();
+        foreach (var f in Directory.GetFiles(folder, "*.fits").Order().Where((_, i) => i % stride == 0).Take(count))
+        {
+            var img = ELink.Imaging.FitsImage.Parse(File.ReadAllBytes(f));
+            var m = ELink.Imaging.FrameMetrics.Measure(img);
+            var (ok, why) = grader.Grade(m);
+            output.WriteLine($"{Path.GetFileName(f)}: stars {m.Stars,3}  hfr {m.Hfr,5:0.00}  elong {m.Elongation,4:0.00}  sky {m.Background,6:0}  {(ok ? "good" : "REJECT: " + why)}");
+        }
     }
 }

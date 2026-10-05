@@ -136,6 +136,9 @@ plate solver is installed. Each line takes you to the place. *Not now* puts it a
      against the camera's recent good frames. Clouds, trailing, soft focus or a bright sky mark it *Rejected*: it does not
      count toward an image's depth (the spot is shot again), is not stacked, and storage files it under `rejected/`. After
      three rejected frames in a row the scope waits a little for the sky.
+     Judged against the camera's own usual: a camera whose stars are always a little long is not rejected for that; and if the stars
+     have been one different size for 6 frames in a row (the focus changed, another telescope) that becomes the new usual, with a note, so
+     a night is not rejected for ever. Colour frames are measured as the brightness of 2×2 cells (a raw mosaic makes round stars ragged).
    - **Centre after each slew** (needs a plate solver): after its own slews the scope solves a frame and re-aims by the
      error until it is within the tolerance (no syncs needed). A consistent error (a mount that always lands a few
      arcminutes off) is learned and aimed off on later slews nearby.
@@ -361,7 +364,9 @@ flowchart LR
   solves (give the frame scale as a hint to speed it up). Without a solver, or when the WCS was only made up from the mount's position (INDI
   writes CDELT and CROTA, the same for every frame whatever the sky did), the first frame is placed by where the mount said it pointed and every
   later frame is **lined up with it by its stars** (a shift and a small turn, from matching its brightest stars: it says how many matched).
-  A frame whose stars do not match keeps the pointing's placement and says so. *Solve* always solves; *Pointing* needs no solver but only the
+  Frames of another pixel scale (the frame's own `SCALE` card, so a night with two telescopes) are brought to the first frame's scale
+  before matching, as long as the camera is turned the same way; a camera that was turned by an arbitrary angle (another telescope put on)
+  needs a plate solver. A frame whose stars do not match keeps the pointing's placement and says so. *Solve* always solves; *Pointing* needs no solver but only the
   frame scale and angle, and is as accurate as your mount. (Found with real frames: lined up by the WCS INDI wrote, a stack of 12 was smeared into
   vertical trails and the brightness matching scaled the frames down to a fifth; lined up by stars, 145 stars matched and it came out sharp.)
 - **Colour (Bayer) frames** are debayered before stacking: *Interpolated* (full resolution), *Super pixel* (each 2×2 cell one

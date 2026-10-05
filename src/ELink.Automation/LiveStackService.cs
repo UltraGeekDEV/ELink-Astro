@@ -405,6 +405,17 @@ public sealed class LiveStackService : IAsyncDisposable
     public static bool IsSolvedWcs(IReadOnlyDictionary<string, string> h) =>
         h.ContainsKey("CD1_1") || h.ContainsKey("PC1_1") || h.TryGetValue("PLTSOLVD", out var v) && v.Trim().StartsWith('T');
 
+    /// <summary>A WCS made up from the mount's position keeps its centre and angle, but the scale it claims is whatever the capture program thought
+    /// the telescope was (INDI's can be off by a factor): when the real pixel scale is known, that is used.</summary>
+    private static TanWcs NominalWcs(TanWcs header, double knownScaleArcsec, FitsImage img)
+    {
+        // the frame's own SCALE card (the capture program worked it out from the optics in use) over the request's single figure: a night can mix telescopes
+        double scale = img.GetDouble("SCALE", double.NaN) is var own && own > 0 ? own : knownScaleArcsec > 0 ? knownScaleArcsec : header.PixelScaleArcsec;
+        if (!(scale > 0) || Math.Abs(scale - header.PixelScaleArcsec) < 0.02 * scale) return header;
+        double k = scale / header.PixelScaleArcsec;
+        return header with { Cd11 = header.Cd11 * k, Cd12 = header.Cd12 * k, Cd21 = header.Cd21 * k, Cd22 = header.Cd22 * k };
+    }
+
     private sealed record StarReference(IReadOnlyList<Star> Stars, TanWcs Wcs);
     private StarReference? _reference;
 
@@ -417,7 +428,7 @@ public sealed class LiveStackService : IAsyncDisposable
             int plane = width * height;
             var luma = new float[plane];
             for (int c = 0; c < channels; c++) for (int i = 0; i < plane; i++) luma[i] += data[c * plane + i] / channels;
-            return StarField.Detect(FitsImage.FromPlanar(width, height, 1, luma, img.Header, img.Range), sigma: 8, maxStars: 150).Stars;
+            return StarField.Detect(FitsImage.FromPlanar(width, height, 1, luma, img.Header, img.Range), sigma: 8, maxStars: 600).Stars;
         }, ct);
         StarReference? reference;
         lock (_gate)
@@ -426,13 +437,19 @@ public sealed class LiveStackService : IAsyncDisposable
             reference = _reference;
         }
         if (reference is null) return (byPointing, "pointing (too few stars to align by)");
-        var t = StarAligner.Align(reference.Stars, stars, maxShift: Math.Max(width, height) / 4.0);
-        if (t is not { } tr) return (byPointing, "pointing (its stars did not match the first frame's)");
+        double size = stars.Count > 0 ? stars.Select(s => s.Hfr).Where(h => !double.IsNaN(h)).DefaultIfEmpty(2).Order().ElementAt(stars.Count / 2) : 2;
+        // frames of another scale (another telescope) are brought to the reference's scale first: the ratio of the two pointing WCSs'
+        double k = byPointing.PixelScaleArcsec / reference.Wcs.PixelScaleArcsec;
+        if (Math.Abs(k - 1) < 0.02) k = 1;
+        var scaled = k == 1 ? stars : stars.Select(s => s with { X = s.X * k, Y = s.Y * k, Hfr = s.Hfr * k }).ToList();
+        var t = StarAligner.Align(reference.Stars, scaled, maxShift: Math.Max(Math.Max(width, height) / 4.0, 1500), starSize: Math.Clamp(size * k, 1.5, 12));
+        if (t is not { } tr) return (byPointing, $"pointing (its {stars.Count} stars did not match the first frame's {reference.Stars.Count}; they are {size:0.0} px across)");
         // the frame's pixels land on the reference's through the transform: its own WCS is the reference's composed with it
         var w = reference.Wcs;
+        // frame pixel p → reference pixel R·(k·p) + t: the frame's WCS is the reference's composed with that
         double c0 = tr.Cos, s0 = tr.Sin;
-        double p0x = c0 * (w.CrPix1 - tr.Tx) + s0 * (w.CrPix2 - tr.Ty), p0y = -s0 * (w.CrPix1 - tr.Tx) + c0 * (w.CrPix2 - tr.Ty);   // R⁻¹ (crpix − t)
-        var placed = w with { CrPix1 = p0x, CrPix2 = p0y, Cd11 = w.Cd11 * c0 + w.Cd12 * s0, Cd12 = -w.Cd11 * s0 + w.Cd12 * c0, Cd21 = w.Cd21 * c0 + w.Cd22 * s0, Cd22 = -w.Cd21 * s0 + w.Cd22 * c0 };
+        double p0x = (c0 * (w.CrPix1 - tr.Tx) + s0 * (w.CrPix2 - tr.Ty)) / k, p0y = (-s0 * (w.CrPix1 - tr.Tx) + c0 * (w.CrPix2 - tr.Ty)) / k;   // (R⁻¹ (crpix − t)) / k
+        var placed = w with { CrPix1 = p0x, CrPix2 = p0y, Cd11 = k * (w.Cd11 * c0 + w.Cd12 * s0), Cd12 = k * (-w.Cd11 * s0 + w.Cd12 * c0), Cd21 = k * (w.Cd21 * c0 + w.Cd22 * s0), Cd22 = k * (-w.Cd21 * s0 + w.Cd22 * c0) };
         return (placed, FormattableString.Invariant($"stars, {tr.Matches} matched, shift {Math.Sqrt(tr.Tx * tr.Tx + tr.Ty * tr.Ty):0} px, turn {tr.RotationDegrees:0.###}°"));
     }
 
@@ -442,7 +459,7 @@ public sealed class LiveStackService : IAsyncDisposable
         if (mode == "Auto" && TanWcs.FromHeader(img.Header) is { } own)
             // a WCS a plate solver wrote is the frame's place on the sky; one a capture program made up from the mount's position (INDI's:
             // CDELT and CROTA, no CD or PC matrix, no solver mark) is only a pointing, good for the first frame, not for lining frames up
-            return IsSolvedWcs(img.Header) ? (own, "frame WCS") : (own, "pointing");
+            return IsSolvedWcs(img.Header) ? (own, "frame WCS") : (NominalWcs(own, r.FramePixelScaleArcsec.Value, img), "pointing");
         double ra = item.RaHours, dec = item.DecDegrees;
         if (double.IsNaN(ra) || double.IsNaN(dec)) (ra, dec) = HeaderPointing(img);
         if (mode is "Auto" or "Solve")

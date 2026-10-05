@@ -185,3 +185,8 @@ focus triggers/offsets -> live-stack rejection/calibration -> the rest.
 - [ ] Flats: subtract a bias or dark flat first (the corners where the flat is almost black blow up), a per-colour flat normalisation, flats as a library master for DSLR raw frames
 - [ ] Remaining vignetting and dust after calibration: a vignetting-aware gradient model (radial) beside the polynomial
 - [ ] RealDataTests (ELINK_REAL_LIGHTS, ELINK_REAL_FLATS, ELINK_REAL_COUNT, ELINK_REAL_OUT): run them on your own frames
+- [x] Real data, nastier (M 42, 30 s subs, no guiding): the frame grader judges against the camera's own usual elongation, measures colour frames by their cells, and takes a stable change of star size as the new normal
+- [x] Stars-alignment handles frames of another pixel scale (same camera angle); header scale from the frame's own SCALE card
+- [ ] Star alignment for a camera turned by any angle (triangle / pair-distance matching), so two telescopes work without a plate solver
+- [ ] Layers from mixed telescopes on real data (M 42: 300 mm and 900 mm frames in one folder): needs the item above or a solver
+- [ ] Reject soft frames harder when the cause is the focus (a note on the Scopes page, and an autofocus when the scope can)

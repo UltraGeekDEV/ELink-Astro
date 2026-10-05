@@ -13,14 +13,16 @@ public static class StarAligner
 
     /// <summary>The transform that puts the frame's stars on the reference's, or null when they do not match.</summary>
     /// <param name="maxShift">the largest shift looked for, pixels</param>
-    public static Transform? Align(IReadOnlyList<Star> reference, IReadOnlyList<Star> frame, double maxShift = 600, int minMatches = 8)
+    /// <param name="starSize">how big the stars are, pixels (HFR): soft or trailed stars have less certain centres, so the matching is looser</param>
+    public static Transform? Align(IReadOnlyList<Star> reference, IReadOnlyList<Star> frame, double maxShift = 600, int minMatches = 8, double starSize = 2)
     {
-        var r = reference.OrderByDescending(s => s.Flux).Take(60).ToList();
-        var f = frame.OrderByDescending(s => s.Flux).Take(60).ToList();
+        // the reference may cover more sky than the frame (another telescope): look deeper into it than into the frame
+        var r = reference.OrderByDescending(s => s.Flux).Take(500).ToList();
+        var f = frame.OrderByDescending(s => s.Flux).Take(120).ToList();
         if (r.Count < minMatches || f.Count < minMatches) return null;
 
         // every pair votes for the shift that would bring them together
-        const double bin = 5;
+        double bin = Math.Max(5, 1.5 * starSize);
         var votes = new Dictionary<(int, int), int>();
         foreach (var a in r)
             foreach (var b in f)
@@ -44,13 +46,13 @@ public static class StarAligner
         var t = new Transform(1, 0, tx / n, ty / n, 0, double.MaxValue);
 
         // refine: match stars within a shrinking radius and fit the turn and shift to the matches
-        foreach (double radius in new[] { 14.0, 8.0, 4.0, 3.0 })
+        foreach (double radius in new[] { Math.Max(14.0, 4 * starSize), Math.Max(8.0, 2.5 * starSize), Math.Max(4.0, 1.4 * starSize), Math.Max(3.0, 1.0 * starSize) })
         {
             var pairs = Match(reference, frame, t, radius);
             if (pairs.Count < minMatches) return null;
             t = Fit(pairs);
         }
-        return t.Matches >= minMatches && t.RmsPixels < 1.5 ? t : null;
+        return t.Matches >= minMatches && t.RmsPixels < Math.Max(1.5, 0.45 * starSize) ? t : null;
     }
 
     private static List<(Star Ref, Star Frame)> Match(IReadOnlyList<Star> reference, IReadOnlyList<Star> frame, Transform t, double radius)

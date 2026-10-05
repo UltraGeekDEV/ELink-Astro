@@ -396,12 +396,12 @@ public sealed class SmartScope : IAsyncDisposable
         {
             try
             {
-                var r = ELink.Imaging.StarField.Detect(ELink.Imaging.FitsImage.Parse(data));
-                if (r.Count < 3 || double.IsNaN(r.MedianHfr)) return;
+                var r = ELink.Imaging.FrameMetrics.Measure(ELink.Imaging.FitsImage.Parse(data));
+                if (r.Stars < 3 || double.IsNaN(r.Hfr)) return;
                 lock (t.RecentHfr)
                 {
-                    if (double.IsNaN(t.BaselineHfr)) { t.BaselineHfr = r.MedianHfr; return; }
-                    t.RecentHfr.Add(r.MedianHfr); if (t.RecentHfr.Count > 3) t.RecentHfr.RemoveAt(0);
+                    if (double.IsNaN(t.BaselineHfr)) { t.BaselineHfr = r.Hfr; return; }
+                    t.RecentHfr.Add(r.Hfr); if (t.RecentHfr.Count > 3) t.RecentHfr.RemoveAt(0);
                 }
             }
             catch (Exception) { }
