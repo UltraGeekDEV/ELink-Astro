@@ -25,6 +25,8 @@ public sealed class UiRig : IAsyncDisposable
 
     public MeshSession Session { get; private set; } = null!;
     public MainViewModel Vm { get; private set; } = null!;
+    /// <summary>The station's node: tests can put fake services on it.</summary>
+    public Event.CoreFunctionality.TypeSafeEVentNode HostNode { get; private set; } = null!;
     public MainWindow Window { get; private set; } = null!;
 
     public static async Task<bool> Eventually(Func<bool> cond, int ms = 30000)
@@ -47,7 +49,7 @@ public sealed class UiRig : IAsyncDisposable
         Window.CaptureRenderedFrame()?.Save(Path.Combine(ShotDir(), name + ".png"));
     }
 
-    public static async Task<UiRig> StartAsync(IndiServerFixture server)
+    public static async Task<UiRig> StartAsync(IndiServerFixture server, bool withSolver = true)
     {
         var rig = new UiRig();
         int bridgePort = ELink.Testing.TestPorts.Next();
@@ -56,7 +58,7 @@ public sealed class UiRig : IAsyncDisposable
         var dir = new DeviceDirectory(bridge); await dir.StartAsync();
         rig.Add(new IndiServerLink(bridge, dir, "sim", "127.0.0.1", server.Port)); await ((IndiServerLink)rig._services[^1]).StartAsync();
         var hostNode = await Task.Run(() => ElinkNode.Create("UI-Host", ELink.Testing.TestPorts.Next()));
-        rig._nodes.Add(hostNode);
+        rig._nodes.Add(hostNode); rig.HostNode = hostNode;
         await ElinkNode.JoinAsync(hostNode, "127.0.0.1", bridgePort);
         var host = rig.Add(new CompositionHost(hostNode)); await host.StartAsync();
         await rig.Add(new AutofocusService(hostNode)).StartAsync();
@@ -68,10 +70,11 @@ public sealed class UiRig : IAsyncDisposable
         var skyCatalog = File.Exists("/usr/share/kstars/namedstars.dat") ? await Task.Run(() => AtlasCatalog.LoadKStars())
             : AtlasCatalog.From(new List<CatalogStar> { new(5.92, 7.41, 0.45f, 1.85f, 39801, "Betelgeuse") }, new List<CatalogDso> { new("M 42", "Nebula", "Orion Nebula, NGC 1976", 5.588, -5.39, 4f, 90, 60, 0) });
         await rig.Add(new AtlasService(hostNode, skyCatalog)).StartAsync();
+        await rig.Add(new TonightService(hostNode, skyCatalog)).StartAsync();
         await rig.Add(new CenteringService(hostNode)).StartAsync();
         await rig.Add(new LiveStackService(hostNode)).StartAsync();
         await rig.Add(new SiteService(hostNode)).StartAsync();
-        if (PlateSolver.Locate() is { } sf) await rig.Add(new PlateSolveService(hostNode, new PlateSolver(sf))).StartAsync();
+        if (withSolver && PlateSolver.Locate() is { } sf) await rig.Add(new PlateSolveService(hostNode, new PlateSolver(sf))).StartAsync();
         await rig.Add(new StorageService(hostNode, rig._saveDir)).StartAsync();
         await rig.Add(new CalibrationService(hostNode, rig._saveDir)).StartAsync();
 

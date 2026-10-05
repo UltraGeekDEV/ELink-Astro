@@ -81,7 +81,7 @@
         </DockPanel>
       </Border>
 
-      <Button Content="{Binding PanelToggleText}" Command="{Binding TogglePanelCommand}" VerticalAlignment="Top" HorizontalAlignment="Right" Margin="0,12,12,0"
+      <Button Content="{Binding PanelToggleText}" Command="{Binding TogglePanelCommand}" VerticalAlignment="Top" HorizontalAlignment="Right" Margin="0,70,12,0"
               ToolTip.Tip="Fold the image panel away to see more sky"/>
 
       <!-- what is still to set up, until it is done -->
@@ -117,6 +117,39 @@
       <ScrollViewer HorizontalScrollBarVisibility="Disabled">
         <StackPanel Margin="14" Spacing="0">
 
+          <!-- what is worth imaging tonight -->
+          <Border Classes="card" DataContext="{Binding Tonight}">
+            <StackPanel Spacing="6">
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Classes="section" Text="TONIGHT'S BEST" VerticalAlignment="Center"/>
+                <Button Grid.Column="1" Content="↻" Classes="ghost" Padding="8,2" Command="{Binding RefreshCommand}" ToolTip.Tip="Work it out again"/>
+              </Grid>
+              <TextBlock Classes="hint" Text="{Binding Window}" IsVisible="{Binding Window.Length}"/>
+              <StackPanel IsVisible="{Binding NeedsSite}" Spacing="6">
+                <TextBlock Classes="hint" Text="Tell ELink where you are and it will suggest what is best placed tonight, for your frame."/>
+                <Button Content="Set my location" Command="{Binding GoToSiteCommand}" HorizontalAlignment="Left"/>
+              </StackPanel>
+              <c:Notice Text="{Binding Message}" Kind="info" IsVisible="{Binding !NeedsSite}"/>
+              <ItemsControl ItemsSource="{Binding Items}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Button Classes="ghost" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="6,6" Margin="0,2"
+                            Command="{Binding $parent[ItemsControl].DataContext.FrameItCommand}" CommandParameter="{Binding}" ToolTip.Tip="Frame this as the image to take">
+                      <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto">
+                        <Border Grid.RowSpan="3" Width="38" Height="38" CornerRadius="19" Background="#1D3B6B" Margin="0,0,10,0" VerticalAlignment="Center">
+                          <TextBlock Text="{Binding ScoreText}" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <TextBlock Grid.Column="1" Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                        <TextBlock Grid.Column="1" Grid.Row="1" Classes="hint" Text="{Binding Subtitle}"/>
+                        <TextBlock Grid.Column="1" Grid.Row="2" Classes="hint" Text="{Binding Why}" TextWrapping="Wrap"/>
+                      </Grid>
+                    </Button>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </Border>
+
           <Border Classes="card">
             <StackPanel Spacing="8">
               <TextBlock Classes="section" Text="TARGET"/>
@@ -129,6 +162,18 @@
                 <ComboBox ItemsSource="{Binding Atlas.Pointers}" SelectedItem="{Binding Atlas.SelectedPointer}" MinWidth="110" ToolTip.Tip="The mount that Go there sends to the selection"/>
               </StackPanel>
               <c:Notice Text="{Binding Atlas.Message}" Kind="{Binding Atlas.MessageKind}"/>
+              <!-- or frame it from a picture of the sky -->
+              <Border BorderBrush="#2B3548" BorderThickness="0,1,0,0" Padding="0,8,0,0" DataContext="{Binding Framing}">
+                <StackPanel Spacing="6">
+                  <StackPanel Classes="row">
+                    <Button Content="Frame from a picture…" Command="{Binding ChooseCommand}" IsEnabled="{Binding !IsSolving}"
+                            ToolTip.Tip="Choose a photo or a FITS frame of the sky. ELink finds where it is, how big it is and how it is turned, shows it on the chart, and makes the image to take exactly one frame of it."/>
+                    <Button Content="✕ Remove" Classes="ghost" Command="{Binding ClearCommand}" IsVisible="{Binding HasPicture}"/>
+                  </StackPanel>
+                  <CheckBox IsChecked="{Binding ShowOnChart}" Content="Show the picture on the chart" IsVisible="{Binding HasPicture}"/>
+                  <c:Notice Text="{Binding Message}" Kind="{Binding MessageKind}"/>
+                </StackPanel>
+              </Border>
             </StackPanel>
           </Border>
 

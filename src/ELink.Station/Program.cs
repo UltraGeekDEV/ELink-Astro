@@ -99,11 +99,14 @@ await using var storage = new StorageService(node, saveDir);
 await storage.StartAsync();
 foreach (var id in save) await Commands.CallAsync(node, ELink.Contracts.Automation.StorageIds.Watch, new ELink.Contracts.Automation.StorageWatch { ShooterId = id });
 AtlasService? atlas = null;
+TonightService? tonight = null;
 if (File.Exists(Path.Combine(skyData, "namedstars.dat")))
 {
     var catalog = await Task.Run(() => AtlasCatalog.LoadKStars(skyData));
     atlas = new AtlasService(node, catalog);
     await atlas.StartAsync();
+    tonight = new TonightService(node, catalog);
+    await tonight.StartAsync();
     Console.WriteLine($"sky atlas: {catalog.Stars.Count} stars, {catalog.AllDsos.Count} deep-sky objects" + (catalog.DeepStars is null ? "" : ", faint stars from the GSC"));
 }
 else Console.WriteLine($"sky atlas: no KStars sky data in {skyData} (install kstars-data, or pass --sky-data)");
@@ -134,5 +137,6 @@ else
 }
 foreach (var l in links) await l.DisposeAsync();
 if (atlas is not null) await atlas.DisposeAsync();
+if (tonight is not null) await tonight.DisposeAsync();
 if (solver is not null) await solver.DisposeAsync();
 return exit;

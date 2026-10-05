@@ -20,7 +20,10 @@ public sealed partial class SkyViewModel : ObservableObject
 
     public SkyViewModel(MeshSession mesh, CatalogViewModel catalog, AtlasViewModel atlas, ImageViewModel image, ScheduleViewModel schedule, LiveStackViewModel liveStack, StatusBarViewModel status)
     {
-        _mesh = mesh; _catalog = catalog; Atlas = atlas; Image = image; Schedule = schedule; LiveStack = liveStack; Status = status;
+        _mesh = mesh; _catalog = catalog; Atlas = atlas;
+        Framing = new PictureFramingViewModel(mesh, image);
+        Framing.Changed += QueueRebuild;
+        Framing.Framed += () => UiThread.Post(() => { QueueRebuild(); UiThread.Post(ZoomToFrame); }); Image = image; Schedule = schedule; LiveStack = liveStack; Status = status;
         atlas.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(AtlasViewModel.Selection)) FrameSelectionCommand.NotifyCanExecuteChanged(); };
         status.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(StatusBarViewModel.NeedsSetup)) OnPropertyChanged(nameof(ShowGettingStarted)); };
         image.PropertyChanged += (_, e) =>
@@ -58,6 +61,23 @@ public sealed partial class SkyViewModel : ObservableObject
 
     // what the chart is given
     [ObservableProperty] private ChartFrame? _frame;
+    /// <summary>The picture the image was framed from, shown on the chart.</summary>
+    public PictureFramingViewModel Framing { get; }
+    private TonightViewModel? _tonight;
+    /// <summary>Tonight's best, shown above the target: one click frames a suggestion.</summary>
+    public TonightViewModel? Tonight
+    {
+        get => _tonight;
+        set
+        {
+            if (!SetProperty(ref _tonight, value) || value is null) return;
+            value.Frame = item =>
+            {
+                Atlas.Selection = new AtlasHitItem(item.Label, item.Kind, "", item.RaHours, item.DecDegrees, item.Magnitude, item.MajorArcmin);
+                FrameSelectionCommand.Execute(null);
+            };
+        }
+    }
     /// <summary>The flat horizon (altitude against azimuth) as a strip over the bottom of the chart.</summary>
     [ObservableProperty] private bool _showFlatHorizon;
     [ObservableProperty] private IReadOnlyList<ChartPolygon> _polygons = Array.Empty<ChartPolygon>();
@@ -195,6 +215,7 @@ public sealed partial class SkyViewModel : ObservableObject
             (double, double) At(double px, double py) { var (r, d) = wcs.PixelToSky(px - 0.5, topDown ? py - 0.5 : ph - 0.5 - py); return (r / 15, d); }
             images.Add(new ChartImage(stack, At, 0.92));
         }
+        if (Framing is { HasPicture: true, ShowOnChart: true, Bitmap: { } picture, PixelToSky: { } pictureAt }) images.Insert(0, new ChartImage(picture, pictureAt, 0.55));
         double aw = Image.AreaWidthDegrees, ah = Image.AreaHeightDegrees;
         if (ShowCoverage && Image.Map is { } map && aw > 0 && ah > 0 && (Image.IsActive || Image.Phase is "Done" or "Aborted"))
         {

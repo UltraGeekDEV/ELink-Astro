@@ -190,3 +190,9 @@ focus triggers/offsets -> live-stack rejection/calibration -> the rest.
 - [x] Star alignment for any turn and scale (triangle matching), against any placed frame; each frame carries its telescope's pixel scale and camera angle (ShotEvent), so two telescopes work without a plate solver
 - [x] Layers from mixed telescopes on real data (M 42: 300 mm and 900 mm frames in one folder, the camera turned 13.4°, scale ×0.338): wide and detail layers stacked, 68 stars matched across telescopes
 - [ ] Reject soft frames harder when the cause is the focus (a note on the Scopes page, and an autofocus when the scope can)
+
+## Tonight and framing
+- [x] Tonight's best: ranked suggestions for the dark hours at your site and your smallest frame; one click frames it
+- [x] Frame from a picture: solve it, show it on the chart, make the image exactly one frame of it
+- [ ] Tonight's best: remember what you imaged (kept images) and what is already deep; filters by kind; "add the top 3 to the queue"; targets from your own list; planets and comets
+- [ ] Frame from a picture: a live version from a scope's latest frame ("frame like what this telescope sees now"); a few pictures on the chart at once

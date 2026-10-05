@@ -223,6 +223,26 @@ constellation figures) plus faint stars for small fields.
   add telescope → External software or a remote computer, host `localhost`, port `10001` (`--stellarium-port`), equinox
   J2000; enable the Remote Control plugin (port 8090) for the show/take buttons.
 
+### Tonight's best
+
+The top of the Sky panel suggests what is worth imaging **tonight** at your site (set your location under Rig › Site first). For every
+deep-sky object in the atlas it works out how long it is high enough above your horizon during the dark hours (higher counts more),
+how bright its surface is (what a short night can show), how well it fills your smallest frame (or how many panels it would take), and how
+far it is from the Moon, and lists the best ones with the reason: *"up 9.3 good hours, peaks at 84°, fills 100% of your frame, Moon 82° away"*.
+Nebulae and galaxies rank above star clusters; the same object under two designations is listed once. **Click one** and it becomes the
+image to take (centred, framed to your scope). The list follows the frame size of your scopes and refreshes every 20 minutes.
+
+### Framing from a picture
+
+*Frame from a picture…* (in the Target card) takes a photo of the sky (a PNG, JPEG or TIFF from any camera or telescope, or a FITS
+frame), plate solves it (blind for a plain picture; a FITS gives its pointing and scale as hints), and then:
+
+- shows the picture on the chart exactly where it lies on the sky (untick *Show the picture on the chart* to hide it, *Remove* to forget it);
+- makes the image to take **exactly one frame of it**: the same centre, the same size and the same turn.
+
+So you can frame by what you already shot, or by a picture of the field from another telescope, and let the dynamic frame take over from
+there. It needs a plate solver (ASTAP or astrometry.net); the message says if it could not solve it.
+
 ### Imaging an area
 
 Select an object and press **Frame this** (big objects become an area, small ones one frame), or just drag the yellow frame

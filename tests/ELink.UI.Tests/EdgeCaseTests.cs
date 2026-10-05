@@ -22,9 +22,9 @@ public class EdgeCaseTests : IClassFixture<IndiServerFixture>
     [InlineData("--x--", "x")]
     public void NamesBecomeIdsOrNothing(string name, string? id) => Assert.Equal(id, ComposerViewModel.IdFromName(name));
 
-    private static async Task<UiRig> RigAsync(IndiServerFixture server)
+    private static async Task<UiRig> RigAsync(IndiServerFixture server, bool withSolver = true)
     {
-        var rig = await UiRig.StartAsync(server);
+        var rig = await UiRig.StartAsync(server, withSolver);
         await rig.Vm.Equipment.ConnectAllCommand.ExecuteAsync(null);
         Assert.True(await UiRig.Eventually(() => rig.Vm.Catalog.Equipment.All(d => d.Connected)));
         await rig.DefineSimulatedRigAsync(guided: false);
@@ -48,7 +48,7 @@ public class EdgeCaseTests : IClassFixture<IndiServerFixture>
             bad();
             Assert.True(await UiRig.Eventually(() => image.PlanProblem.Contains(contains, StringComparison.OrdinalIgnoreCase)), $"expected '{contains}', got '{image.PlanProblem}'");
             Assert.True(await UiRig.Eventually(() => !vm.Sky.StartImageCommand.CanExecute(null)), "Start must be out of reach");
-            Assert.Contains(contains, vm.Sky.PlanText, StringComparison.OrdinalIgnoreCase);
+            Assert.True(await UiRig.Eventually(() => vm.Sky.PlanText.Contains(contains, StringComparison.OrdinalIgnoreCase)), $"the chart says: {vm.Sky.PlanText}");   // (the chart follows the plan a moment later)
             if (frameGone) Assert.Null(vm.Sky.Frame);
         }
         async Task Fine(Action good)
@@ -242,6 +242,112 @@ public class EdgeCaseTests : IClassFixture<IndiServerFixture>
         Assert.Single(train.Cameras);
         Assert.False(setup.CanQuickSetup);                               // done: not offered again
         Assert.Equal("", setup.ScopeNextHint);
+    }
+
+    [AvaloniaFact]
+    public async Task TonightsBestNeedsASiteThenSuggestsAndFramesWithOneClick()
+    {
+        Assert.True(_server.Available);
+        await using var rig = await RigAsync(_server);
+        var vm = rig.Vm; var tonight = vm.Tonight;
+        await tonight.RefreshCommand.ExecuteAsync(null);
+        Assert.True(tonight.NeedsSite, tonight.Message);
+        Assert.Empty(tonight.Items);
+
+        vm.Site.Latitude = "47:29:52"; vm.Site.Longitude = "19:02:25"; vm.Site.MinAltitude = 15;
+        await vm.Site.ApplyCommand.ExecuteAsync(null);
+        Assert.True(await UiRig.Eventually(() => vm.Site.Known));
+        await tonight.RefreshCommand.ExecuteAsync(null);
+        Assert.True(await UiRig.Eventually(() => tonight.Items.Count >= 5), tonight.Message);
+        Assert.False(tonight.NeedsSite);
+        Assert.Contains("dark", tonight.Window);
+        Assert.True(tonight.Items.Zip(tonight.Items.Skip(1)).All(p => p.First.Score >= p.Second.Score), "best first");
+        var pick = tonight.Items[1];
+        Assert.Contains("good hours", pick.Why);
+        vm.Navigate(AppView.Sky); await Task.Delay(500); rig.Shot("sky-tonight");
+
+        // one click makes it the image
+        tonight.FrameItCommand.Execute(pick);
+        Assert.True(await UiRig.Eventually(() => vm.Atlas.Selection?.Label == pick.Label), vm.Atlas.Selection?.Label);
+        Assert.True(await UiRig.Eventually(() => vm.Sky.Frame is { } f && Math.Abs(f.RaHours - pick.RaHours) < 0.05 && Math.Abs(f.DecDegrees - pick.DecDegrees) < 0.5), "the frame goes to the suggestion");
+        Assert.Equal(pick.Label.Replace(" ", ""), vm.Image.Label.Replace(" ", ""), ignoreCase: true);
+    }
+
+    [AvaloniaFact]
+    public async Task AFramingPictureIsSolvedShownOnTheChartAndMakesTheImageExactlyOneFrameOfIt()
+    {
+        Assert.True(_server.Available);
+        await using var rig = await RigAsync(_server, withSolver: false);      // (a real solver on the mesh would be asked too)
+        var vm = rig.Vm; var framing = vm.Sky.Framing;
+        // no plate solver here: a stand-in that "solves" it as a field at 5h36m, -5°, turned 30°, 4"/px
+        SolveRequest? seen = null;
+        var truth = ELink.Imaging.TanWcs.Centered(5.6 * 15, -5, 30, 4, 600, 400);
+        using var fakes = new ELink.Core.CommandSet(rig.HostNode);
+        await fakes.AddAsync<SolveRequest, SolveResult>(SolveIds.Solve, r =>
+        {
+            seen = r;
+            return Task.FromResult(new SolveResult
+            {
+                Solved = true, RaHours = 5.6, DecDegrees = -5, PositionAngle = 30, PixelScale = 4, FieldWidthDegrees = 600 * 4 / 3600.0, FieldHeightDegrees = 400 * 4 / 3600.0,
+                HasWcs = true, WcsCrVal1 = truth.CrVal1, WcsCrVal2 = truth.CrVal2, WcsCrPix1 = truth.CrPix1 + 1, WcsCrPix2 = truth.CrPix2 + 1, WcsCd11 = truth.Cd11, WcsCd12 = truth.Cd12, WcsCd21 = truth.Cd21, WcsCd22 = truth.Cd22,
+            });
+        }, "fake solver");
+        await Task.Delay(300);                                                      // (the UI node learns that someone answers)
+        seen = null;
+
+        // a picture: some stars on black
+        var rnd = new Random(2); var pixels = new float[600 * 400 * 3];
+        for (int s = 0; s < 80; s++) { int cx = rnd.Next(10, 590), cy = rnd.Next(10, 390); for (int dy = -2; dy <= 2; dy++) for (int dx = -2; dx <= 2; dx++) for (int c = 0; c < 3; c++) pixels[c * 240000 + (cy + dy) * 600 + cx + dx] = 1f - 0.15f * (dx * dx + dy * dy); }
+        string png = Path.Combine(Path.GetTempPath(), "framing-" + Guid.NewGuid().ToString("N") + ".png");
+        File.WriteAllBytes(png, ELink.Imaging.Processing.PngWriter.Encode(pixels, 600, 400, 3));
+        await framing.FrameFromAsync(png);
+        Assert.True(framing.MessageKind == "ok", framing.Message);
+        Assert.Contains("exactly one frame", framing.Message);
+        Assert.NotNull(seen); Assert.True(double.IsNaN(seen!.HintRaHours.Value));            // nothing is known about a plain picture: a blind solve
+        var sent = ELink.Imaging.FitsImage.Parse(seen.Image.Data);
+        Assert.Equal((600, 400, 1), (sent.Width, sent.Height, sent.Channels));
+        // the image to take is exactly one frame of the picture
+        var image = vm.Image;
+        Assert.Equal(600 * 4 / 3600.0, image.Width, 3); Assert.Equal(400 * 4 / 3600.0, image.Height, 3); Assert.Equal(30, image.PositionAngle, 1);
+        Assert.True(ELink.Core.Astro.Sexagesimal.TryParse(image.CenterRa, out var ra) && Math.Abs(ra - 5.6) < 0.001, image.CenterRa);
+        Assert.True(await UiRig.Eventually(() => vm.Sky.Frame is { } f && Math.Abs(f.WidthDegrees - 600 * 4 / 3600.0) < 0.001 && Math.Abs(f.AngleDegrees - 30) < 0.1), "the frame on the chart is the picture's");
+        // and the picture is on the chart, where it belongs
+        Assert.True(framing.HasPicture); Assert.Contains("framing-", framing.FileName);
+        Assert.True(await UiRig.Eventually(() => vm.Sky.Images.Count >= 1));
+        var (cra, cdec) = framing.PixelToSky!(300, 200);
+        Assert.Equal(5.6, cra, 3); Assert.Equal(-5, cdec, 2);
+        var (tra, tdec) = framing.PixelToSky(0, 0);
+        double sep = ELink.Core.Astro.Sky.SeparationDegrees(cra, cdec, tra, tdec);
+        Assert.InRange(sep, 0.5 * Math.Sqrt(600 * 600 + 400 * 400) * 4 / 3600 * 0.98, 0.5 * Math.Sqrt(600 * 600 + 400 * 400) * 4 / 3600 * 1.02);   // a corner is half a diagonal away
+        framing.ShowOnChart = false;
+        Assert.True(await UiRig.Eventually(() => vm.Sky.Images.Count == 0));
+        framing.ShowOnChart = true;
+        framing.ClearCommand.Execute(null);
+        Assert.False(framing.HasPicture);
+        Assert.True(await UiRig.Eventually(() => vm.Sky.Images.Count == 0));
+        // what it cannot use is said
+        await framing.FrameFromAsync(Path.Combine(Path.GetTempPath(), "nothing-here.png"));
+        Assert.Equal("error", framing.MessageKind);
+        string txt = Path.Combine(Path.GetTempPath(), "x" + Guid.NewGuid().ToString("N") + ".txt"); File.WriteAllText(txt, "no");
+        await framing.FrameFromAsync(txt);
+        Assert.Contains("FITS", framing.Message);
+    }
+
+    /// <summary>With ELINK_REAL_PICTURE set to one of your own frames (a FITS or a picture of the sky): the real plate solver frames the image like it.</summary>
+    [AvaloniaFact]
+    public async Task ARealPictureIsSolvedByTheRealSolverAndFramesTheImage()
+    {
+        if (Environment.GetEnvironmentVariable("ELINK_REAL_PICTURE") is not { } path || !File.Exists(path)) return;
+        Assert.True(_server.Available);
+        await using var rig = await RigAsync(_server);
+        if (ELink.Automation.PlateSolver.Locate() is null) return;
+        var vm = rig.Vm; var framing = vm.Sky.Framing;
+        await framing.FrameFromAsync(path);
+        var note = $"[framing] {framing.MessageKind}: {framing.Message}\n";
+        note += $"[framing] image: centre {vm.Image.CenterRa} {vm.Image.CenterDec}, {vm.Image.Width:0.###}° × {vm.Image.Height:0.###}°, turned {vm.Image.PositionAngle}°\n";
+        File.WriteAllText(Path.Combine(Path.GetTempPath(), "elink-framing.txt"), note);
+        Assert.True(framing.MessageKind == "ok", framing.Message);
+        vm.Navigate(AppView.Sky); await Task.Delay(1500); rig.Shot("sky-framed-from-picture");
     }
 }
 

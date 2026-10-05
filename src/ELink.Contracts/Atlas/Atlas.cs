@@ -205,6 +205,100 @@ public class AtlasHits : IBinaryConvertible
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();
 }
 
+/// <summary>What to image tonight: asks the atlas which deep-sky objects are best placed in tonight's dark hours at your site, for your frame.</summary>
+public class TonightRequest : IBinaryConvertible
+{
+    public BinaryConvertibleDouble FovWidthDegrees { get; set; } = 0.0;
+    public BinaryConvertibleDouble FovHeightDegrees { get; set; } = 0.0;
+    public BinaryConvertibleInt32 MaxResults { get; set; } = 12;
+    public BinaryConvertibleDouble MagnitudeLimit { get; set; } = 11.0;
+    public BinaryConvertibleString Kinds { get; set; } = "";
+    public BinaryConvertibleDouble MinAltitudeDegrees { get; set; } = 25.0;
+
+    public override string Name => "TonightRequest";
+    private static readonly NOTESDescriptor d = new();
+    public override NOTESDescriptor Descriptor => d;
+    static TonightRequest()
+    {
+        d.RegisterField("FovWidthDegrees", (TonightRequest x) => x.FovWidthDegrees).Description("the frame to fit: your smallest scope's; 0 = 1.5 by 1 degrees");
+        d.RegisterField("FovHeightDegrees", (TonightRequest x) => x.FovHeightDegrees);
+        d.RegisterField("MaxResults", (TonightRequest x) => x.MaxResults).Range(1, 50);
+        d.RegisterField("MagnitudeLimit", (TonightRequest x) => x.MagnitudeLimit).Description("the faintest object considered (total magnitude)");
+        d.RegisterField("Kinds", (TonightRequest x) => x.Kinds).Description("comma separated: Galaxy, Nebula, PlanetaryNebula, SupernovaRemnant, OpenCluster, GlobularCluster; empty = all of them");
+        d.RegisterField("MinAltitudeDegrees", (TonightRequest x) => x.MinAltitudeDegrees).Description("only time above this (and above the site's horizon) counts as good");
+    }
+    public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
+    public override byte[] ToBytes() => d.ToBytes(this).ToArray();
+}
+
+public class TonightTarget : IBinaryConvertible
+{
+    public BinaryConvertibleString Label { get; set; } = "";
+    public BinaryConvertibleString Kind { get; set; } = "";
+    public BinaryConvertibleString CommonName { get; set; } = "";
+    public BinaryConvertibleDouble RaHours { get; set; } = 0.0;
+    public BinaryConvertibleDouble DecDegrees { get; set; } = 0.0;
+    public BinaryConvertibleFloat Magnitude { get; set; } = float.NaN;
+    public BinaryConvertibleFloat MajorArcmin { get; set; } = 0f;
+    public BinaryConvertibleDouble GoodHours { get; set; } = 0.0;
+    public BinaryConvertibleDouble PeakAltitude { get; set; } = 0.0;
+    public BinaryConvertibleString PeakUtc { get; set; } = "";
+    public BinaryConvertibleDouble MoonSeparationDegrees { get; set; } = double.NaN;
+    public BinaryConvertibleDouble FrameFraction { get; set; } = 0.0;
+    public BinaryConvertibleInt32 Panels { get; set; } = 1;
+    public BinaryConvertibleDouble Score { get; set; } = 0.0;
+    public BinaryConvertibleString Why { get; set; } = "";
+
+    public override string Name => "TonightTarget";
+    private static readonly NOTESDescriptor d = new();
+    public override NOTESDescriptor Descriptor => d;
+    static TonightTarget()
+    {
+        d.RegisterField("Label", (TonightTarget x) => x.Label);
+        d.RegisterField("Kind", (TonightTarget x) => x.Kind);
+        d.RegisterField("CommonName", (TonightTarget x) => x.CommonName);
+        d.RegisterField("RaHours", (TonightTarget x) => x.RaHours).Description("J2000");
+        d.RegisterField("DecDegrees", (TonightTarget x) => x.DecDegrees);
+        d.RegisterField("Magnitude", (TonightTarget x) => x.Magnitude);
+        d.RegisterField("MajorArcmin", (TonightTarget x) => x.MajorArcmin);
+        d.RegisterField("GoodHours", (TonightTarget x) => x.GoodHours).Description("hours of the dark period it is above the horizon and high enough, higher counting more");
+        d.RegisterField("PeakAltitude", (TonightTarget x) => x.PeakAltitude);
+        d.RegisterField("PeakUtc", (TonightTarget x) => x.PeakUtc);
+        d.RegisterField("MoonSeparationDegrees", (TonightTarget x) => x.MoonSeparationDegrees);
+        d.RegisterField("FrameFraction", (TonightTarget x) => x.FrameFraction).Description("its size as a fraction of the frame's smaller side");
+        d.RegisterField("Panels", (TonightTarget x) => x.Panels).Description("roughly how many panels it takes to cover it with the frame");
+        d.RegisterField("Score", (TonightTarget x) => x.Score).Description("0..100");
+        d.RegisterField("Why", (TonightTarget x) => x.Why).Description("what makes it a good one, in words");
+    }
+    public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
+    public override byte[] ToBytes() => d.ToBytes(this).ToArray();
+}
+
+public class TonightList : IBinaryConvertible
+{
+    public BinaryConvertibleBool Ok { get; set; } = false;
+    public BinaryConvertibleString Message { get; set; } = "";
+    public BinaryConvertibleString DarkFromUtc { get; set; } = "";
+    public BinaryConvertibleString DarkToUtc { get; set; } = "";
+    public BinaryConvertibleDouble MoonIllumination { get; set; } = double.NaN;
+    public BinaryConvertibleCollection<TonightTarget> Targets { get; set; } = new();
+
+    public override string Name => "TonightList";
+    private static readonly NOTESDescriptor d = new();
+    public override NOTESDescriptor Descriptor => d;
+    static TonightList()
+    {
+        d.RegisterField("Ok", (TonightList x) => x.Ok);
+        d.RegisterField("Message", (TonightList x) => x.Message);
+        d.RegisterField("DarkFromUtc", (TonightList x) => x.DarkFromUtc).Description("the dark period the list is for");
+        d.RegisterField("DarkToUtc", (TonightList x) => x.DarkToUtc);
+        d.RegisterField("MoonIllumination", (TonightList x) => x.MoonIllumination);
+        d.RegisterField("Targets", (TonightList x) => x.Targets, maxCount: 50).Description("best first");
+    }
+    public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
+    public override byte[] ToBytes() => d.ToBytes(this).ToArray();
+}
+
 public static class AtlasIds
 {
     public const string Root = "ELink.Atlas";
@@ -214,4 +308,6 @@ public static class AtlasIds
     public const string Constellations = Root + ".Constellations";
     /// <summary>BinaryConvertibleString (a name or designation, e.g. "M42", "Vega", "NGC 7000", "andromeda") in, AtlasHits out.</summary>
     public const string Search = Root + ".Search";
+    /// <summary>TonightRequest in, TonightList out: the best objects to image in tonight's dark hours at the site.</summary>
+    public const string Tonight = Root + ".Tonight";
 }

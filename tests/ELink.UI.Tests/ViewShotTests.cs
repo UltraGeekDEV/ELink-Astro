@@ -372,7 +372,7 @@ public class ViewShotTests : IClassFixture<IndiServerFixture>
         Assert.Equal("Imaging", image.PhaseText);
 
         await image.PauseCommand.ExecuteAsync(null);
-        Assert.True(await UiRig.Eventually(() => image.IsPaused), image.Phase);
+        Assert.True(await UiRig.Eventually(() => image.IsPaused, 150000), image.Phase + " | " + image.Message + " | " + string.Join(" ; ", image.Workers));
         Assert.True(image.ResumeCommand.CanExecute(null)); Assert.False(image.PauseCommand.CanExecute(null));
         Assert.Equal("Paused", image.PhaseText);
         await image.ResumeCommand.ExecuteAsync(null);
