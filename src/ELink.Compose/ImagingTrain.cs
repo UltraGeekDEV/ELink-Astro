@@ -52,8 +52,8 @@ public sealed class ImagingTrain : IAsyncDisposable
             // the filter wheel sits in front of the first imaging camera
             string? wheel = !guiding && !wheelUsed && definition.FilterWheelId.Text != "" ? definition.FilterWheelId.Text : null;
             if (wheel is not null) wheelUsed = true;
-            var options = new CameraShooterOptions(c.Gain.Value, c.Offset.Value, wheel is not null ? definition.FocuserId.Text : "",
-                definition.FocusOffsets.GroupBy(o => o.Filter.Text, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First().Steps.Value, StringComparer.OrdinalIgnoreCase));
+            var options = new CameraShooterOptions(c.Gain.Value, c.Offset.Value, wheel is not null || (c.PseudoMono.Value && !guiding) ? definition.FocuserId.Text : "",
+                definition.FocusOffsets.GroupBy(o => o.Filter.Text, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First().Steps.Value, StringComparer.OrdinalIgnoreCase)) { PseudoMono = c.PseudoMono.Value && !guiding && wheel is null };
             var member = new Member(c, sid, new CameraShooter(node, sid, c.CameraId.Text, wheel, options),
                 new RemoteState<CameraState>(node, EquipmentIds.State(DeviceKinds.Camera, c.CameraId.Text), EquipmentIds.GetState(DeviceKinds.Camera, c.CameraId.Text)),
                 new RemoteState<ShooterState>(node, ShooterIds.State(sid), ShooterIds.GetState(sid)),

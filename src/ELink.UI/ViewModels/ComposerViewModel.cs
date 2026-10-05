@@ -44,6 +44,8 @@ public sealed partial class TrainCameraChoice : ObservableObject
     // cooling set point °C: empty = no cooling
     [ObservableProperty] private string _coolTo = "";
     [ObservableProperty] private double _coolRate = 3;
+    // a colour camera that takes turns to focus its red, green and blue (focus offsets named R, G, B)
+    [ObservableProperty] private bool _pseudoMono;
 
     public static double Number(string text) =>
         double.TryParse(text.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : double.NaN;
@@ -293,7 +295,7 @@ public sealed partial class ComposerViewModel : ObservableObject
     {
         TrainEditingId = null; TrainName = ""; FocalLength = 400; Aperture = 80; FocusOffsets = "";
         SelectedWheel = SelectedFocuser = SelectedRotator = None;
-        foreach (var c in TrainCameras) { c.Role = NotInTrain; c.PixelSize = 0; c.SensorWidth = c.SensorHeight = 0; c.Gain = c.Offset = c.CoolTo = ""; c.CoolRate = 3; }
+        foreach (var c in TrainCameras) { c.Role = NotInTrain; c.PixelSize = 0; c.SensorWidth = c.SensorHeight = 0; c.Gain = c.Offset = c.CoolTo = ""; c.CoolRate = 3; c.PseudoMono = false; }
         TrainMessage = ""; TrainFormOpen = true;
     }
 
@@ -311,7 +313,7 @@ public sealed partial class ComposerViewModel : ObservableObject
             var choice = TrainCameras.FirstOrDefault(c => c.CameraId == cam.CameraId.Text);
             if (choice is null) { choice = new TrainCameraChoice(cam.CameraId.Text, NameOf(DeviceKinds.Camera, cam.CameraId.Text)); TrainCameras.Add(choice); }
             choice.Role = cam.Role.Text; choice.PixelSize = cam.PixelSizeUm.Value; choice.SensorWidth = cam.SensorWidth.Value; choice.SensorHeight = cam.SensorHeight.Value;
-            choice.Gain = TrainCameraChoice.Text(cam.Gain.Value); choice.Offset = TrainCameraChoice.Text(cam.Offset.Value); choice.CoolTo = TrainCameraChoice.Text(cam.CoolTo.Value); choice.CoolRate = cam.CoolDegreesPerMinute.Value;
+            choice.Gain = TrainCameraChoice.Text(cam.Gain.Value); choice.Offset = TrainCameraChoice.Text(cam.Offset.Value); choice.CoolTo = TrainCameraChoice.Text(cam.CoolTo.Value); choice.CoolRate = cam.CoolDegreesPerMinute.Value; choice.PseudoMono = cam.PseudoMono.Value;
         }
     }
 
@@ -334,7 +336,7 @@ public sealed partial class ComposerViewModel : ObservableObject
             t.Cameras.Add(new TrainCamera
             {
                 CameraId = c.CameraId, Role = c.Role, PixelSizeUm = c.PixelSize, SensorWidth = c.SensorWidth, SensorHeight = c.SensorHeight,
-                Gain = TrainCameraChoice.Number(c.Gain), Offset = TrainCameraChoice.Number(c.Offset), CoolTo = TrainCameraChoice.Number(c.CoolTo), CoolDegreesPerMinute = Math.Clamp(c.CoolRate, 0.1, 30),
+                Gain = TrainCameraChoice.Number(c.Gain), Offset = TrainCameraChoice.Number(c.Offset), CoolTo = TrainCameraChoice.Number(c.CoolTo), CoolDegreesPerMinute = Math.Clamp(c.CoolRate, 0.1, 30), PseudoMono = c.PseudoMono && c.Role == "Imaging",
             });
         // "L=0, R=30, Ha=120": focuser steps per filter
         foreach (var part in FocusOffsets.Split(',', ';').Select(p => p.Trim()).Where(p => p != ""))

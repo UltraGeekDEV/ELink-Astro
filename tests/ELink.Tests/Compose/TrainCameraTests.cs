@@ -4,6 +4,7 @@ using ELink.Contracts.Equipment;
 using ELink.Core;
 using Event.CoreFunctionality;
 using Event.Connections.Models.BaseBinaryConvertibles;
+using EVent.Connections.Models.BaseBinaryConvertibles;
 using Xunit;
 
 namespace ELink.Tests.Compose;
@@ -137,5 +138,43 @@ public class TrainCameraTests : IAsyncLifetime
         await Shoot("L"); Assert.Equal(1000, focuser.Position);
         await Shoot("Dark"); Assert.Equal(1000, focuser.Position);   // no offset known: left alone
         lock (focuser.Moves) Assert.Equal([1030, 1120, 1000], focuser.Moves);
+    }
+
+    [Fact]
+    public async Task APseudoMonoCameraTakesTurnsToFocusItsChannelsAndTagsTheFrames()
+    {
+        await using var focuser = new FakeFocuser(_node, "f", 1000); await focuser.StartAsync();
+        await using var train = new ImagingTrain(_node, Train(c => c.PseudoMono = true, d =>
+        {
+            d.FocuserId = "f";
+            d.FocusOffsets.Add(new FilterFocusOffset { Filter = "R", Steps = -20 });
+            d.FocusOffsets.Add(new FilterFocusOffset { Filter = "G", Steps = 0 });
+            d.FocusOffsets.Add(new FilterFocusOffset { Filter = "B", Steps = 30 });
+        }));
+        await train.StartAsync();
+        var tags = new List<string>();
+        await _node.HookEventAsync(ShooterIds.Shot("t"), (ShotEvent s) => { lock (tags) tags.Add(s.PseudoChannel.Text); });
+        async Task Shoot(string filter = "")
+        {
+            int n = _cam.Exposures.Count;
+            var r = await Commands.CallAsync(_node, ShooterIds.Expose("t"), new ShooterExposure { Seconds = 0.01, Filter = filter });
+            Assert.True(r.Ok.Value, r.Error.Text);
+            Assert.True(await Eventually(() => _cam.Exposures.Count == n + 1));
+            await Task.Delay(100);
+        }
+        await Shoot(); Assert.Equal(980, focuser.Position);    // red is 20 steps in from green, the focus autofocus found
+        await Shoot(); Assert.Equal(1000, focuser.Position);
+        await Shoot(); Assert.Equal(1030, focuser.Position);
+        await Shoot(); Assert.Equal(980, focuser.Position);    // and round again
+        Assert.True(await Eventually(() => { lock (tags) return tags.Count == 4; }));
+        lock (tags) Assert.Equal(["R", "G", "B", "R"], tags);
+
+        // autofocus (or anyone) moved the focuser: that is green again, whatever was last shot
+        Assert.True((await Commands.CallAsync(_node, EquipmentIds.Command(DeviceKinds.Focuser, "f", "MoveTo"), (BinaryConvertibleInt32)2000)).Ok.Value);
+        await Task.Delay(150);
+        await Shoot("B"); Assert.Equal(2030, focuser.Position);
+        var wrong = await Commands.CallAsync(_node, ShooterIds.Expose("t"), new ShooterExposure { Seconds = 0.01, Filter = "Ha" });
+        Assert.False(wrong.Ok.Value);
+        Assert.Contains("R, G and B", wrong.Error.Text);
     }
 }

@@ -68,6 +68,11 @@ public sealed partial class ImageViewModel : ObservableObject, IDisposable
     [ObservableProperty] private double _ditherArcsec = 30;
     [ObservableProperty] private int _maxVisits;
     [ObservableProperty] private bool _liveStack = true;
+    /// <summary>The stack is a pseudo mono one: red, green and blue from the frames where each was in focus, plus out-of-focus luminance.</summary>
+    [ObservableProperty] private bool _pseudoMono;
+    /// <summary>How much of the out-of-focus luminance goes into the image (0 = none).</summary>
+    [ObservableProperty] private double _outOfFocusWeight;
+    partial void OnOutOfFocusWeightChanged(double value) => _ = RefreshStackAsync();
     [ObservableProperty] private double _outputScale;
     [ObservableProperty] private string? _selectedWeather = "";
 
@@ -315,9 +320,9 @@ public sealed partial class ImageViewModel : ObservableObject, IDisposable
         try
         {
             var answers = await _mesh.Node.CallFunctionAsync<LiveStackImageRequest, LiveStackImage>(LiveStackIds.GetImage,
-                new LiveStackImageRequest { MaxWidth = 1200, MaxHeight = 900 }, TimeSpan.FromSeconds(30));
+                new LiveStackImageRequest { MaxWidth = 1200, MaxHeight = 900, OutOfFocusWeight = OutOfFocusWeight }, TimeSpan.FromSeconds(30));
             if (answers?.FirstOrDefault() is { Ok.Value: true } img)
-                UiThread.Post(() => Stack.Show(img.Image.Data, ".fits", $"{img.Frames.Value} frames  ·  {img.Width.Value}×{img.Height.Value} at {img.PixelScaleArcsec.Value:0.##}\"/px"));
+                UiThread.Post(() => { PseudoMono = img.Filter.Text == "pseudo mono"; Stack.Show(img.Image.Data, ".fits", $"{img.Frames.Value} frames  ·  {img.Width.Value}×{img.Height.Value} at {img.PixelScaleArcsec.Value:0.##}\"/px"); });
         }
         catch (Exception) { }
     }

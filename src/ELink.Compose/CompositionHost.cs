@@ -226,7 +226,7 @@ public sealed class CompositionHost : IAsyncDisposable
     private sealed record TrainSaved(string Id, string Label, double FocalLength, double Aperture, List<(string Camera, string Role)> Cameras, string Wheel, string Focuser, string Rotator,
         List<(string Camera, double PixelSize, int Width, int Height)>? Sensors = null, List<CameraSettingsSaved>? Settings = null, List<(string Filter, int Steps)>? FocusOffsets = null);
     /// <summary>A train camera's presets and cooling; null = not set (JSON has no NaN).</summary>
-    private sealed record CameraSettingsSaved(string Camera, double? Gain, double? Offset, double? CoolTo, double CoolRate, double WarmTo);
+    private sealed record CameraSettingsSaved(string Camera, double? Gain, double? Offset, double? CoolTo, double CoolRate, double WarmTo, bool PseudoMono = false);
     private static double? Opt(double v) => double.IsNaN(v) ? null : v;
     private sealed record ScopeSaved(string Id, string Name, List<string> Pointers, List<ShooterSaved> Shooters,
         string? GuiderId = null, string? GuideShooterId = null, string? GuideOutput = null, string? GuidePortId = null, string? GuideTargetId = null, double GuideExposure = 2, bool CenterAfterSlew = false, string? CenterShooterId = null, double CenterTolerance = 1, double CenterExposure = 3, int CenterTries = 4, bool GradeFrames = true, bool FocusOnStart = false, double RefocusEvery = 0, double RefocusTemp = 0, bool RefocusFilter = false, double RefocusHfr = 0,
@@ -255,7 +255,7 @@ public sealed class CompositionHost : IAsyncDisposable
             _trains.Values.Select(x => x.Def).Select(t => new TrainSaved(t.Id.Text, t.Label.Text, t.FocalLengthMm.Value, t.ApertureMm.Value,
                 t.Cameras.Select(c => (c.CameraId.Text, c.Role.Text)).ToList(), t.FilterWheelId.Text, t.FocuserId.Text, t.RotatorId.Text,
                 t.Cameras.Select(c => (c.CameraId.Text, c.PixelSizeUm.Value, c.SensorWidth.Value, c.SensorHeight.Value)).ToList(),
-                t.Cameras.Select(c => new CameraSettingsSaved(c.CameraId.Text, Opt(c.Gain.Value), Opt(c.Offset.Value), Opt(c.CoolTo.Value), c.CoolDegreesPerMinute.Value, c.WarmTo.Value)).ToList(),
+                t.Cameras.Select(c => new CameraSettingsSaved(c.CameraId.Text, Opt(c.Gain.Value), Opt(c.Offset.Value), Opt(c.CoolTo.Value), c.CoolDegreesPerMinute.Value, c.WarmTo.Value, c.PseudoMono.Value)).ToList(),
                 t.FocusOffsets.Select(o => (o.Filter.Text, o.Steps.Value)).ToList())).ToList());
         var tmp = _file + ".tmp";
         File.WriteAllText(tmp, JsonSerializer.Serialize(saved, Json));
@@ -290,7 +290,7 @@ public sealed class CompositionHost : IAsyncDisposable
                     {
                         CameraId = cam, Role = role, PixelSizeUm = sensor?.PixelSize ?? 0, SensorWidth = sensor?.Width ?? 0, SensorHeight = sensor?.Height ?? 0,
                         Gain = set?.Gain ?? double.NaN, Offset = set?.Offset ?? double.NaN, CoolTo = set?.CoolTo ?? double.NaN,
-                        CoolDegreesPerMinute = set?.CoolRate ?? 3, WarmTo = set?.WarmTo ?? 10,
+                        CoolDegreesPerMinute = set?.CoolRate ?? 3, WarmTo = set?.WarmTo ?? 10, PseudoMono = set?.PseudoMono ?? false,
                     });
                 }
                 foreach (var (filter, steps) in t.FocusOffsets ?? []) d.FocusOffsets.Add(new FilterFocusOffset { Filter = filter, Steps = steps });

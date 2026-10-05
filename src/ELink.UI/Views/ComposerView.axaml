@@ -58,6 +58,7 @@
                             <StackPanel Margin="0,0,12,6"><TextBlock Classes="label" Text="Cool to (°C)"/><TextBox Text="{Binding CoolTo}" Width="90" Watermark="no cooling" ToolTip.Tip="The telescope cools the sensor slowly to this once the camera is connected, and the scope waits until it is cold."/></StackPanel>
                             <StackPanel Margin="0,0,12,6"><TextBlock Classes="label" Text="Cooling rate (°C/min)"/><NumericUpDown Value="{Binding CoolRate}" Minimum="0.1" Maximum="30" Increment="0.5" FormatString="0.#" Width="110"/></StackPanel>
                           </WrapPanel>
+                          <CheckBox IsChecked="{Binding PseudoMono}" Content="Pseudo mono (colour camera)" ToolTip.Tip="Takes turns to focus red, green and blue (set the focus offsets R=…, G=0, B=… below; autofocus settles on green). The in-focus channel of each frame is stacked as colour, the other two as luminance, which keeps chromatic aberration out of the colours."/>
                           <Expander Header="This camera does not know its own sensor (some DSLRs)">
                             <WrapPanel Margin="0,6,0,0">
                               <StackPanel Margin="0,0,12,6"><TextBlock Classes="label" Text="Pixel size (µm)"/><NumericUpDown Value="{Binding PixelSize}" Minimum="0" Increment="0.1" FormatString="0.##" Width="110" ToolTip.Tip="0 = what the camera reports"/></StackPanel>

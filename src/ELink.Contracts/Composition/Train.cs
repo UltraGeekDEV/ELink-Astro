@@ -17,6 +17,7 @@ public class TrainCamera : IBinaryConvertible
     public BinaryConvertibleDouble CoolTo { get; set; } = double.NaN;
     public BinaryConvertibleDouble CoolDegreesPerMinute { get; set; } = 3.0;
     public BinaryConvertibleDouble WarmTo { get; set; } = 10.0;
+    public BinaryConvertibleBool PseudoMono { get; set; } = false;
 
     public override string Name => "TrainCamera";
     private static readonly NOTESDescriptor d = new();
@@ -33,6 +34,7 @@ public class TrainCamera : IBinaryConvertible
         d.RegisterField("CoolTo", (TrainCamera x) => x.CoolTo).Description("sensor set point in °C: the train cools to it, slowly, once the camera is connected; NaN = no cooling");
         d.RegisterField("CoolDegreesPerMinute", (TrainCamera x) => x.CoolDegreesPerMinute).Description("how fast the set point moves while cooling and warming").Range(0.1m, 30m);
         d.RegisterField("WarmTo", (TrainCamera x) => x.WarmTo).Description("Warm ramps up to this before switching the cooler off");
+        d.RegisterField("PseudoMono", (TrainCamera x) => x.PseudoMono).Description("a colour camera used as three pseudo filters: it takes turns to focus its red, green and blue (the train's focus offsets named R, G, B, relative to the autofocus position, which is green); the in-focus channel of each frame goes to the colour stack, the other two (out of focus) to a luminance stack");
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();

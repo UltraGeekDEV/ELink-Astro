@@ -35,15 +35,21 @@ public sealed class LiveStackService : IAsyncDisposable
         public required string Filter;
         public float[]? Pedestal;          // sky level per channel of its first frame, added back on output
         public double Exposure;
+        /// <summary>Pseudo mono: the out-of-focus luminance stack holds the same frames again, so its frames are not counted twice.</summary>
+        public bool Counted = true;
     }
+    private const string PseudoLuminance = "pm:L";
+    private static string PseudoKey(string channel) => "pm:" + channel;
+    private static readonly string[] PseudoChannels = ["R", "G", "B"];
+    private int FramesIn() => _stacks.Values.Where(x => x.Counted).Sum(x => x.Stack.Frames);
     private readonly Dictionary<string, FilterStack> _stacks = new();
     private double _scale = double.NaN;     // all stacks share one grid once the scale is known
-    private FilterStack? Primary => _stacks.Values.OrderByDescending(s => s.Stack.Frames).FirstOrDefault();
+    private FilterStack? Primary => _stacks.Values.OrderByDescending(s => s.Counted).ThenByDescending(s => s.Stack.Frames).FirstOrDefault();
     private string _phase = "Idle", _message = "", _last = "";
     private int _rejected, _pending, _generation;
     private double _exposure, _lastScale = double.NaN;
 
-    private sealed record Item(byte[] Fits, string Source, double RaHours, double DecDegrees, double Seconds, int Generation, string Filter);
+    private sealed record Item(byte[] Fits, string Source, double RaHours, double DecDegrees, double Seconds, int Generation, string Filter, string Pseudo = "");
 
     private readonly string? _dataDir;
     private string? _sessionDir;
@@ -79,9 +85,9 @@ public sealed class LiveStackService : IAsyncDisposable
         {
             var s = new LiveStackState
             {
-                Phase = _phase, Label = _request?.Label.Text ?? "", Message = _message, FramesStacked = _stacks.Values.Sum(x => x.Stack.Frames),
+                Phase = _phase, Label = _request?.Label.Text ?? "", Message = _message, FramesStacked = FramesIn(),
                 FramesRejected = _rejected, FramesPending = _pending, Width = Primary?.Stack.Width ?? 0, Height = Primary?.Stack.Height ?? 0,
-                PixelScaleArcsec = Primary?.Stack.Wcs.PixelScaleArcsec ?? 0, Channels = Primary?.Stack.Channels ?? 0, CoveragePercent = Primary is { } p ? Math.Round(p.Stack.Coverage() * 100, 2) : 0,
+                PixelScaleArcsec = Primary?.Stack.Wcs.PixelScaleArcsec ?? 0, Channels = _stacks.Keys.Any(k => k.StartsWith("pm:")) ? 3 : Primary?.Stack.Channels ?? 0, CoveragePercent = Primary is { } p ? Math.Round(p.Stack.Coverage() * 100, 2) : 0,
                 TotalExposureSeconds = _exposure, LastFrame = _last,
             };
             foreach (var x in _stacks.Values.OrderBy(x => x.Filter)) s.Filters.Add($"{(x.Filter == "" ? "(none)" : x.Filter)}: {x.Stack.Frames}");
@@ -181,7 +187,7 @@ public sealed class LiveStackService : IAsyncDisposable
             if (!_seen.Add((shot.Shooter.Text, shot.Timestamp.Text, Fingerprint(shot.Data.Data)))) return;
             queue = _queue; gen = _generation; _pending++;
         }
-        var item = new Item(shot.Data.Data, shot.Shooter.Text, shot.PointingRaHours.Value, shot.PointingDecDegrees.Value, shot.ExposureSeconds.Value, gen, shot.Filter.Text);
+        var item = new Item(shot.Data.Data, shot.Shooter.Text, shot.PointingRaHours.Value, shot.PointingDecDegrees.Value, shot.ExposureSeconds.Value, gen, shot.Filter.Text, shot.PseudoChannel.Text);
         if (!queue.Writer.TryWrite(item)) { lock (_gate) _pending--; Reject($"{shot.Shooter.Text}: queue full, frame skipped"); }
         else _ = Publish();
     }
@@ -254,6 +260,8 @@ public sealed class LiveStackService : IAsyncDisposable
         if (rawWcs is null) return "!" + how;
         var wcs = bin > 1 ? LiveStacker.Binned(rawWcs, bin) : rawWcs;
 
+        if (item.Pseudo != "") return await StackPseudoAsync(item, r, img, data, width, height, channels, wcs, how, colour);
+
         LiveStacker stack; FilterStack fs;
         var background = new float[channels];
         // which stack: one per filter (the frame's, or its FITS header's), unless filters are stacked together
@@ -288,6 +296,48 @@ public sealed class LiveStackService : IAsyncDisposable
         string extra = (key != "" ? $", {key}" : "") + (Math.Abs(added.FluxScale - 1) > 0.02 ? FormattableString.Invariant($", flux x{added.FluxScale:0.00}") : "")
                        + (added.RejectedPixels > 0 ? $", {added.RejectedPixels} outlier pixels left out" : "");
         return $"{item.Source}: stacked ({how}{colour}, {wcs.PixelScaleArcsec:0.##}\"/px → {stack.Wcs.PixelScaleArcsec:0.##}\"/px, {resample}{extra})";
+    }
+
+    /// <summary>Pseudo mono: one colour frame in which one channel was in focus. That channel goes to its own stack (the colours),
+    /// the mean of the other two, out of focus, to the luminance stack; all on the same registration.</summary>
+    private Task<string> StackPseudoAsync(Item item, LiveStackRequest r, FitsImage img, float[] data, int width, int height, int channels, TanWcs wcs, string how, string colour)
+    {
+        int c = Array.IndexOf(PseudoChannels, item.Pseudo);
+        if (c < 0) return Task.FromResult($"!pseudo mono channel {item.Pseudo} is not R, G or B");
+        if (channels != 3) return Task.FromResult("!pseudo mono needs the colour frame debayered (Debayer: Interpolated or SuperPixel)");
+        int plane = width * height;
+        var sharp = data.AsSpan(c * plane, plane).ToArray();
+        var soft = new float[plane];
+        for (int k = 0; k < 3; k++)
+        {
+            if (k == c) continue;
+            for (int i = 0; i < plane; i++) soft[i] += data[k * plane + i] / 2;
+        }
+        float bgSharp = r.NormalizeBackground.Value ? LiveStacker.Background(sharp) : 0, bgSoft = r.NormalizeBackground.Value ? LiveStacker.Background(soft) : 0;
+        FilterStack colourStack, lumaStack;
+        lock (_gate)
+        {
+            if (item.Generation != _generation) return Task.FromResult("!stack was replaced");
+            if (double.IsNaN(_scale))
+            {
+                if (Size(r, wcs.PixelScaleArcsec) is { Error: { } err }) return Task.FromResult("!" + err);
+                _scale = wcs.PixelScaleArcsec;
+            }
+            FilterStack Get(string key, bool counted) => _stacks.TryGetValue(key, out var x) ? x : _stacks[key] = new FilterStack { Stack = Create(r, _scale), Filter = key, Counted = counted };
+            colourStack = Get(PseudoKey(item.Pseudo), true); lumaStack = Get(PseudoLuminance, false);
+            if (r.NormalizeBackground.Value)
+            {
+                colourStack.Pedestal ??= [bgSharp];
+                lumaStack.Pedestal ??= [bgSoft];
+            }
+            _lastScale = wcs.PixelScaleArcsec;
+        }
+        var added = colourStack.Stack.Add(sharp, width, height, 1, wcs, [bgSharp]);
+        if (!added.Added) return Task.FromResult("!" + added.Message);
+        lumaStack.Stack.Add(soft, width, height, 1, wcs, [bgSoft]);
+        double seconds = !double.IsNaN(item.Seconds) && item.Seconds > 0 ? item.Seconds : img.GetDouble("EXPTIME", img.GetDouble("EXPOSURE", 0));
+        lock (_gate) { _exposure += seconds; colourStack.Exposure += seconds; lumaStack.Exposure += seconds; }
+        return Task.FromResult($"{item.Source}: stacked, {item.Pseudo} in focus ({how}{colour}, {wcs.PixelScaleArcsec:0.##}\"/px → {colourStack.Stack.Wcs.PixelScaleArcsec:0.##}\"/px)");
     }
 
     private async Task<(TanWcs? Wcs, string How)> RegisterAsync(LiveStackRequest r, FitsImage img, Item item, CancellationToken ct)
@@ -423,6 +473,7 @@ public sealed class LiveStackService : IAsyncDisposable
         lock (_gate)
         {
             label = _request?.Label.Text ?? "";
+            if (q.Filter.Text == "" && _stacks.Count > 0 && _stacks.Keys.All(k => k.StartsWith("pm:"))) return PseudoImage(q, label);
             fs = q.Filter.Text != "" ? _stacks.GetValueOrDefault(q.Filter.Text.Trim()) : Primary;
         }
         if (fs is null || fs.Stack.Frames == 0) return new LiveStackImage { Message = q.Filter.Text != "" ? $"nothing stacked through {q.Filter.Text} yet" : "nothing stacked yet" };
@@ -449,6 +500,75 @@ public sealed class LiveStackService : IAsyncDisposable
         {
             Ok = true, Width = w, Height = h, Channels = channels, PixelScaleArcsec = wcs.PixelScaleArcsec, Frames = stack.Frames, Filter = fs.Filter,
             Image = new ELink.Contracts.RawBytes { Data = FitsImage.WriteFloat32(w, h, data, cards, channels: channels) },
+        };
+    }
+
+    /// <summary>The pseudo mono colour image: red, green and blue from the frames in which that channel was in focus, optionally with
+    /// the out-of-focus luminance mixed in (its weight 0 leaves that data out; 1 puts in all of it).</summary>
+    private LiveStackImage PseudoImage(LiveStackImageRequest q, string label)
+    {
+        // (called with the gate held)
+        var parts = PseudoChannels.Select(c => _stacks.GetValueOrDefault(PseudoKey(c))).ToArray();
+        if (parts.Any(p => p is null || p.Stack.Frames == 0))
+            return new LiveStackImage { Message = "pseudo mono needs frames with each of red, green and blue in focus (" + string.Join(", ", PseudoChannels.Select((c, i) => $"{c}: {parts[i]?.Stack.Frames ?? 0}")) + ")" };
+        int mw = q.MaxWidth.Value > 0 ? q.MaxWidth.Value : int.MaxValue, mh = q.MaxHeight.Value > 0 ? q.MaxHeight.Value : int.MaxValue;
+        var reduced = parts.Select(p => p!.Stack.Reduced(mw, mh)).ToArray();
+        int w = reduced[0].Width, h = reduced[0].Height, plane = w * h;
+        if (reduced.Any(x => x.Width != w || x.Height != h)) return new LiveStackImage { Message = "the pseudo mono stacks differ in size" };
+        var data = new float[3 * plane];
+        for (int c = 0; c < 3; c++) Array.Copy(reduced[c].Data, 0, data, c * plane, plane);
+        var wcs = reduced[0].Wcs;
+        var pedestal = parts.Select(p => p!.Pedestal is { Length: > 0 } ped ? ped[0] : 0f).ToArray();
+        if (q.Neutralize.Value) Neutralize(data, plane);
+
+        double weight = Math.Clamp(q.OutOfFocusWeight.Value, 0, 1);
+        bool mixed = false;
+        if (weight > 0 && _stacks.GetValueOrDefault(PseudoLuminance) is { Stack.Frames: > 0 } luma)
+        {
+            var (ld, lw, lh, _) = luma.Stack.Reduced(mw, mh);
+            if (lw == w && lh == h)
+            {
+                float lsky = LiveStacker.Background(ld);
+                var lc = new float[plane];
+                double sumC = 0, sumO = 0;
+                for (int i = 0; i < plane; i++)
+                {
+                    lc[i] = (data[i] + data[plane + i] + data[2 * plane + i]) / 3;
+                    if (!float.IsNaN(lc[i]) && !float.IsNaN(ld[i])) { sumC += Math.Max(0, lc[i]); sumO += Math.Max(0, ld[i] - lsky); }
+                }
+                // the out-of-focus light is the same photons spread out: scale it to the sharp colours' total before mixing
+                float k = sumO > 0 ? (float)(sumC / sumO) : 0;
+                if (k > 0)
+                {
+                    for (int i = 0; i < plane; i++)
+                    {
+                        if (float.IsNaN(lc[i]) || float.IsNaN(ld[i])) continue;
+                        float shift = (float)(weight * ((ld[i] - lsky) * k - lc[i]));
+                        for (int c = 0; c < 3; c++) data[c * plane + i] += shift;
+                    }
+                    mixed = true;
+                }
+            }
+        }
+        float common = (pedestal[0] + pedestal[1] + pedestal[2]) / 3;
+        for (int c = 0; c < 3; c++)
+        {
+            float sky = q.Neutralize.Value ? common : pedestal[c];
+            for (int i = c * plane; i < (c + 1) * plane; i++) data[i] = float.IsNaN(data[i]) ? sky : data[i] + sky;
+        }
+        int frames = parts.Sum(p => p!.Stack.Frames);
+        var cards = wcs.Cards().ToList();
+        string Q(string t) => "'" + t.Replace("'", "''") + "'";
+        cards.Add(("OBJECT", Q(label)));
+        cards.Add(("FILTER", Q("pseudo mono")));
+        cards.Add(("NCOMBINE", frames.ToString(CultureInfo.InvariantCulture)));
+        cards.Add(("EXPTIME", parts.Sum(p => p!.Exposure).ToString("0.###", CultureInfo.InvariantCulture)));
+        cards.Add(("OOFWEIGH", (mixed ? weight : 0).ToString("0.###", CultureInfo.InvariantCulture)));
+        cards.Add(("CREATOR", Q("ELink live stack")));
+        return new LiveStackImage
+        {
+            Ok = true, Width = w, Height = h, Channels = 3, PixelScaleArcsec = wcs.PixelScaleArcsec, Frames = frames, Filter = "pseudo mono",
+            Image = new ELink.Contracts.RawBytes { Data = FitsImage.WriteFloat32(w, h, data, cards, channels: 3) },
         };
     }
 
@@ -519,7 +639,7 @@ public sealed class LiveStackService : IAsyncDisposable
             using var fs = File.OpenRead(Path.Combine(dir, f.File));
             var stack = LiveStacker.ReadFrom(fs);
             stack.Interpolation = Enum.Parse<Interpolation>(r.Interpolation.Text); stack.MatchFlux = r.MatchFlux.Value; stack.RejectSigma = Math.Max(0, r.RejectSigma.Value);
-            stacks[f.Filter] = new FilterStack { Stack = stack, Filter = f.Filter, Pedestal = f.Pedestal, Exposure = f.Exposure };
+            stacks[f.Filter] = new FilterStack { Stack = stack, Filter = f.Filter, Pedestal = f.Pedestal, Exposure = f.Exposure, Counted = f.Filter != PseudoLuminance };
         }
         return (stacks, meta.Scale, meta.Exposure);
     }

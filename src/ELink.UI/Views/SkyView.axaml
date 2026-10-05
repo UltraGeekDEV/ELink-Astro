@@ -48,6 +48,10 @@
                   <CheckBox IsChecked="{Binding ShowFields}" Content="Each scope's field, and the panels"/>
                   <CheckBox IsChecked="{Binding ShowStack}" Content="The stacked image"/>
                   <CheckBox IsChecked="{Binding ShowCoverage}" Content="How far each part has got"/>
+                  <StackPanel IsVisible="{Binding Image.PseudoMono}" Spacing="2">
+                    <TextBlock Classes="label" Text="Out-of-focus light in the image"/>
+                    <Slider Minimum="0" Maximum="1" TickFrequency="0.05" Value="{Binding Image.OutOfFocusWeight}" ToolTip.Tip="Pseudo mono: 0 uses only the in-focus colours (sharpest, the rest of the light is left out); 1 adds all the out-of-focus light (most signal, soft halos)."/>
+                  </StackPanel>
                 </StackPanel>
               </Flyout>
             </Button.Flyout>

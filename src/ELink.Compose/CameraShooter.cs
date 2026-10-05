@@ -9,7 +9,11 @@ using EVent.Connections.Models.BaseBinaryConvertibles;
 namespace ELink.Compose;
 
 /// <summary>What a train sets for one of its cameras: gain/offset presets, and the focuser to move by the filters' focus offsets.</summary>
-public sealed record CameraShooterOptions(double Gain = double.NaN, double Offset = double.NaN, string FocuserId = "", IReadOnlyDictionary<string, int>? FocusOffsets = null);
+public sealed record CameraShooterOptions(double Gain = double.NaN, double Offset = double.NaN, string FocuserId = "", IReadOnlyDictionary<string, int>? FocusOffsets = null)
+{
+    /// <summary>A colour camera taking turns to bring its red, green and blue into focus (offsets named R, G, B); each frame is tagged with the channel in focus.</summary>
+    public bool PseudoMono { get; init; }
+}
 
 /// <summary>Makes a Camera, optionally with its filter wheel, usable as a Shooter.</summary>
 public sealed class CameraShooter : IAsyncDisposable
@@ -24,12 +28,16 @@ public sealed class CameraShooter : IAsyncDisposable
     private readonly StatePublisher<ShooterState> _publisher;
     private readonly Action<FrameEvent> _onFrame;
     private string _filterUsed = "";
+    private static readonly string[] PseudoChannels = ["R", "G", "B"];
+    private string _pseudoUsed = "", _pseudoAt = "G";   // autofocus settles on green
+    private int _pseudoNext;
+    private int? _pseudoLeftAt;                          // where the focuser was left after our last move: if it is elsewhere, autofocus has been at it
 
     public CameraShooter(TypeSafeEVentNode node, string shooterId, string cameraId, string? filterWheelId = null, CameraShooterOptions? options = null)
     {
         _node = node; _id = shooterId; _cameraId = cameraId; _wheelId = filterWheelId ?? "";
         _options = options ?? new();
-        if (_options.FocuserId != "" && _options.FocusOffsets is { Count: > 0 } && _wheelId != "")
+        if (_options.FocuserId != "" && _options.FocusOffsets is { Count: > 0 } && (_wheelId != "" || _options.PseudoMono))
             _focuser = new(node, EquipmentIds.State(DeviceKinds.Focuser, _options.FocuserId), EquipmentIds.GetState(DeviceKinds.Focuser, _options.FocuserId));
         _camera = new(node, EquipmentIds.State(DeviceKinds.Camera, cameraId), EquipmentIds.GetState(DeviceKinds.Camera, cameraId));
         if (_wheelId != "")
@@ -55,7 +63,20 @@ public sealed class CameraShooter : IAsyncDisposable
     private async Task<CommandResult> ExposeAsync(ShooterExposure e)
     {
         string filter = e.Filter.Text;
-        if (filter != "")
+        _pseudoUsed = "";
+        if (_options.PseudoMono)
+        {
+            // R, G or B asked for, or taking turns when nothing is: every frame has one channel in focus
+            string? channel = PseudoChannels.FirstOrDefault(c => string.Equals(c, filter, StringComparison.OrdinalIgnoreCase));
+            if (filter != "" && channel is null) return CommandResult.Fail($"{_id} is a pseudo mono camera: its filters are R, G and B, not {filter}");
+            channel ??= PseudoChannels[_pseudoNext++ % 3];
+            if (_focuser is null) return CommandResult.Fail($"{_id} is a pseudo mono camera: it needs the train's focuser and focus offsets named R, G and B");
+            var moved = await MovePseudoAsync(channel);
+            if (!moved.Ok.Value) return moved;
+            _pseudoUsed = channel;
+            filter = "";
+        }
+        else if (filter != "")
         {
             if (_wheel is null) return CommandResult.Fail($"shooter {_id} has no filter wheel, cannot select {filter}");
             var names = _wheel.Latest?.FilterNames.Select(n => n.Text).ToList() ?? new();
@@ -73,7 +94,7 @@ public sealed class CameraShooter : IAsyncDisposable
             }
             filter = names[slot - 1];
         }
-        else filter = CurrentFilter();
+        else if (!_options.PseudoMono) filter = CurrentFilter();
         _filterUsed = filter;
 
         // the last frame can arrive a moment before the camera says it is idle again: wait for that rather than fail
@@ -107,6 +128,26 @@ public sealed class CameraShooter : IAsyncDisposable
         return CommandResult.Success();
     }
 
+    /// <summary>Brings a channel into focus: the focuser moves by the difference between its offset and that of the channel it was at.</summary>
+    private async Task<CommandResult> MovePseudoAsync(string channel)
+    {
+        var f = _focuser!.Latest;
+        if (f is null || !f.Connected.Value) return CommandResult.Fail($"focuser {_options.FocuserId} is not connected (needed to focus {channel})");
+        if (_pseudoLeftAt is { } left && left != f.Position.Value) _pseudoAt = "G";   // moved by something else, autofocus most likely: it focused on green
+        int Steps(string c) => _options.FocusOffsets is { } o && o.FirstOrDefault(kv => string.Equals(kv.Key, c, StringComparison.OrdinalIgnoreCase)) is { Key: not null } kv ? kv.Value : 0;
+        int delta = Steps(channel) - Steps(_pseudoAt);
+        if (delta != 0)
+        {
+            int target = f.Position.Value + delta;
+            var r = await Commands.CallAsync(_node, EquipmentIds.Command(DeviceKinds.Focuser, _options.FocuserId, f.CanMoveAbsolute.Value ? "MoveTo" : "MoveBy"), (BinaryConvertibleInt32)(f.CanMoveAbsolute.Value ? target : delta));
+            if (!r.Ok.Value) return CommandResult.Fail($"focus for {channel}: {r.Error.Text}");
+            try { await _focuser.WaitAsync(x => !x.Moving.Value && x.Position.Value == target, TimeSpan.FromSeconds(120)); }
+            catch (TimeoutException) { return CommandResult.Fail($"focuser did not reach the {channel} focus"); }
+        }
+        _pseudoAt = channel; _pseudoLeftAt = _focuser.Latest?.Position.Value;
+        return CommandResult.Success();
+    }
+
     private string CurrentFilter()
     {
         var w = _wheel?.Latest;
@@ -120,7 +161,7 @@ public sealed class CameraShooter : IAsyncDisposable
             await _node.FireEventAsync(ShooterIds.Shot(_id), new ShotEvent
             {
                 Shooter = _id, Format = f.Format, ExposureSeconds = f.ExposureSeconds, FrameType = f.FrameType,
-                Filter = _filterUsed, Timestamp = f.Timestamp, Data = f.Data,
+                Filter = _filterUsed, PseudoChannel = _pseudoUsed, Timestamp = f.Timestamp, Data = f.Data,
             });
         }
         catch (ObjectDisposedException) { }

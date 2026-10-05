@@ -76,6 +76,7 @@
         <WrapPanel Classes="row">
           <StackPanel><TextBlock Classes="label" Text="Filter"/><ComboBox ItemsSource="{Binding StackFilters}" SelectedItem="{Binding ShownFilter}" Width="140"/></StackPanel>
           <CheckBox IsChecked="{Binding Neutralize}" Content="Balance background and colour" VerticalAlignment="Bottom"/>
+          <StackPanel><TextBlock Classes="label" Text="Out-of-focus light (pseudo mono)"/><Slider Minimum="0" Maximum="1" Value="{Binding OutOfFocusWeight}" Width="180" ToolTip.Tip="0 = only the in-focus colours; 1 = all the out-of-focus light as well."/></StackPanel>
         </WrapPanel>
         <TextBlock Classes="label" Text="{Binding Summary}" TextWrapping="Wrap"/>
         <TextBlock Text="{Binding StateMessage}" TextWrapping="Wrap"/>

@@ -116,6 +116,11 @@ public sealed class StorageService : IAsyncDisposable
             _counters[key] = n;
 
             byte[] bytes = shot.Data.Data;
+            if (shot.PseudoChannel.Text != "" && ext is ".fits" or ".fit" && SplitPseudo(shot, nightDir, stem, ext, obj, planId) is { } pair)
+            {
+                SavePair(watchId, shot, dir, nightDir, pair, obj, planId, frame);
+                return;
+            }
             if (ext is ".fits" or ".fit")
             {
                 var cards = new Dictionary<string, string>
@@ -158,6 +163,62 @@ public sealed class StorageService : IAsyncDisposable
             _ = _publisher.PublishAsync();
         }
         finally { _writeLock.Release(); }
+    }
+
+    /// <summary>Pseudo mono frames are saved as two mono frames: the channel that was in focus (folder <c>infocus</c>) and the mean of the
+    /// other two (folder <c>oof</c>), each super-pixel debayered, so no channel is ever interpolated from another.</summary>
+    private static (byte[] InFocus, byte[] OutOfFocus)? SplitPseudo(ShotEvent shot, string nightDir, string stem, string ext, string obj, string planId)
+    {
+        try
+        {
+            var img = FitsImage.Parse(shot.Data.Data);
+            string? pattern = Debayer.PatternOf(img);
+            if (img.Channels != 1 || pattern is null) return null;
+            var c = Debayer.SuperPixel(img.Data, img.Width, img.Height, pattern);
+            int channel = "RGB".IndexOf(shot.PseudoChannel.Text, StringComparison.Ordinal);
+            if (channel < 0) return null;
+            int plane = c.Width * c.Height;
+            var sharp = c.Data.AsSpan(channel * plane, plane).ToArray();
+            var soft = new float[plane];
+            for (int k = 0; k < 3; k++)
+                if (k != channel) for (int i = 0; i < plane; i++) soft[i] += c.Data[k * plane + i] / 2;
+            IEnumerable<(string, string)> Cards(string role) => new[]
+            {
+                ("SWCREATE", "'ELink'"), ("EXPTIME", shot.ExposureSeconds.Value.ToString("0.###", CultureInfo.InvariantCulture)),
+                ("PSEUDOCH", "'" + shot.PseudoChannel.Text + "'"), ("PSEUDORL", "'" + role + "'"),
+            }.Concat(obj != "" ? [("OBJECT", "'" + obj.Replace("'", "''") + "'")] : []).Concat(planId != "" ? [("ELINKPLN", "'" + planId.Replace("'", "''") + "'")] : []);
+            return (FitsImage.WriteFloat32(c.Width, c.Height, sharp, Cards("in focus")), FitsImage.WriteFloat32(c.Width, c.Height, soft, Cards("out of focus")));
+        }
+        catch (FormatException) { return null; }
+    }
+
+    private void SavePair(string watchId, ShotEvent shot, string root, string nightDir, (byte[] InFocus, byte[] OutOfFocus) pair, string obj, string planId, string frame)
+    {
+        string channel = shot.PseudoChannel.Text;
+        string stem = Sanitize(string.Join("_", new[] { obj, frame, channel }.Where(p => p != "")) + "_" + shot.ExposureSeconds.Value.ToString("0.###", CultureInfo.InvariantCulture) + "s");
+        string? first = null;
+        foreach (var (folder, bytes) in new[] { ("infocus", pair.InFocus), ("oof", pair.OutOfFocus) })
+        {
+            string dir = Path.Combine(nightDir, folder);
+            Directory.CreateDirectory(dir);
+            string key = Path.Combine(dir, stem);
+            if (!_counters.TryGetValue(key, out int n)) n = Directory.GetFiles(dir, stem + "_*").Length;
+            string file;
+            do { n++; file = Path.Combine(dir, $"{stem}_{n:0000}.fits"); } while (File.Exists(file));
+            _counters[key] = n;
+            File.WriteAllBytes(file + ".part", bytes);
+            File.Move(file + ".part", file);
+            first ??= file;
+            var log = new
+            {
+                time = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture), file = Path.GetRelativePath(root, file), shooter = shot.Shooter.Text, watched = watchId,
+                frame, filter = channel, pseudo = folder, exposure = shot.ExposureSeconds.Value, @object = obj, plan = planId, bytes = bytes.Length,
+                raHours = Finite(shot.PointingRaHours.Value), decDegrees = Finite(shot.PointingDecDegrees.Value),
+            };
+            File.AppendAllText(Path.Combine(nightDir, "session.jsonl"), JsonSerializer.Serialize(log) + "\n", Encoding.UTF8);
+        }
+        lock (_gate) { _saved++; _lastFile = first!; _message = ""; }
+        _ = Announce(first!, watchId, obj, frame, channel, shot.ExposureSeconds.Value, pair.InFocus.Length + pair.OutOfFocus.Length);
     }
 
     private async Task Announce(string file, string shooter, string obj, string frame, string filter, double seconds, int bytes)

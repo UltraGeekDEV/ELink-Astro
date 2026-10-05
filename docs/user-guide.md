@@ -134,6 +134,14 @@ plate solver is installed. Each line takes you to the place. *Not now* puts it a
      trigger fires: at the start, every N minutes, when the focuser's temperature has moved by N °C, on a filter change
      (not for telescopes with focus offsets), or when stars have grown by N %. Without "at the start", the first exposure is
      the baseline (you focused by hand). A failed focus is noted and imaging carries on.
+   - **Pseudo mono** (a setting of an imaging camera, colour cameras only, no filter wheel): the camera takes turns to focus
+     its red, green and blue, one colour per exposure, round and round. Give the telescope focus offsets named `R`, `G`
+     and `B` (steps, relative to each other; autofocus settles on green, so `G=0`) and a focuser. Every frame is stored as
+     two mono frames, the colour that was in focus in `infocus/` and the average of the other two in `oof/`, both
+     super-pixel debayered. In the live stack the in-focus colours make the red, green and blue; the out-of-focus light is
+     stacked separately and mixed in as luminance as far as the *Out-of-focus light* slider (Sky › Layers, or the stack
+     page) says: 0 keeps the colours sharp and leaves that light out (almost no colour fringes from an achromat, at the
+     price of about two thirds of the light), 1 uses all of it (more signal, a white halo around the stars instead of a coloured one).
 
 Everything that is set up can be **edited** (the form loads what is there) or removed. It is saved and comes back on the next
 start. The *Advanced: mount pointers* list is for the curious.

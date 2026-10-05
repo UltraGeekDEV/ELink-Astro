@@ -142,8 +142,11 @@ focus triggers/offsets -> live-stack rejection/calibration -> the rest.
 - [x] Set up: add/edit/remove telescopes and scopes, pointers made for you, labelled camera settings, explained fields
 - [x] Greyed-out actions that cannot work, messages that say what is wrong next to where it went wrong
 - [ ] Night timeline on the Site page; horizon drawn as a picture
-- [ ] Per-scope colour and a short log of what each scope did tonight
-- [ ] Glossary / help for the terms (scope, telescope, depth per spot, panel)
+- [x] Per-scope colour (status strip, cards, chart fields) and a short log of what each scope did tonight
+- [x] Glossary / help for the terms (scope, telescope, depth per spot, panel, focus offset, pseudo mono)
+- [x] Plate solves of a camera's angle get the camera's pixel scale as a hint
+- [x] Pseudo mono: a colour camera takes turns to focus R, G, B (focus offsets); the in-focus channel of each frame is stacked as colour, the other two as luminance (weight 0 = left out); storage writes `infocus/` and `oof/`
+- [ ] Pseudo mono: autofocus per channel (measure R, G and B focus and fill the offsets in); a luminance-only output option
 
 ## Notes / decisions
 - EVent package in `~/ELink/package` has no nuget/ folder; real feed is `~/Desktop/EVent/EVent/dist/EVent/nuget`.

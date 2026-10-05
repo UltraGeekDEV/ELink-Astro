@@ -21,6 +21,10 @@ public sealed class HelpViewModel
         new("Plate solving", "Working out where a frame is on the sky from its stars. Needed for centring and for stacking frames that carry no sky position. ASTAP or astrometry.net."),
         new("HFR", "Half-flux radius: how large the stars are. Smaller is sharper; autofocus looks for the smallest."),
         new("Master dark / bias / flat", "Averages of many calibration frames, kept per camera. The live stack takes the dark that suits each frame off and divides by the flat."),
+        new("Focus offset", "How many focuser steps a filter (or, for pseudo mono, a colour) needs compared with the others. Changing filter moves the focuser by the difference, so every filter is in focus."),
+        new("Pseudo mono", "A colour camera used like a mono one with red, green and blue filters: it takes turns to bring each colour into focus. In every frame the in-focus colour goes to the colour stack, the other two (soft) to a luminance stack. Colour fringes from a refractor stay out of the colours."),
+        new("Out-of-focus light", "In pseudo mono, the light of the two colours that were not in focus. Leaving it out gives the sharpest colours (but throws away about two thirds of the light); adding it gives more signal with a soft, white halo around the stars. Set how much with the slider under Layers."),
+        new("Debayer / super pixel", "A colour camera's pixels each see one colour. Debayering fills in the other two from the neighbours; super pixel instead joins each 2×2 cell into one colour pixel (half the size, nothing guessed)."),
         new("Pointer", "What the software points: a mount. You rarely meet it: saving a scope makes the pointer for its mount."),
     };
 

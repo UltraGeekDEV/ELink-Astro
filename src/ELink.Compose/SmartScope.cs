@@ -636,7 +636,7 @@ public sealed class SmartScope : IAsyncDisposable
         {
             Quality = grade.Quality, QualityNote = grade.Note, Stars = grade.Stars, Hfr = grade.Hfr, Elongation = grade.Elongation, Background = grade.Background,
             Shooter = shot.Shooter, Format = shot.Format, ExposureSeconds = shot.ExposureSeconds, FrameType = shot.FrameType,
-            Filter = shot.Filter, Timestamp = shot.Timestamp, Data = shot.Data,
+            Filter = shot.Filter, Timestamp = shot.Timestamp, Data = shot.Data, PseudoChannel = shot.PseudoChannel,
             ObjectName = shot.ObjectName.Text != "" ? shot.ObjectName.Text : tag.obj,
             PlanId = shot.PlanId.Text != "" ? shot.PlanId.Text : tag.plan,
             PointingRaHours = double.IsNaN(shot.PointingRaHours.Value) ? (p?.RaHours.Value ?? double.NaN) : shot.PointingRaHours.Value,
