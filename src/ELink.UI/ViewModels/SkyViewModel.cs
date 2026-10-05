@@ -58,6 +58,8 @@ public sealed partial class SkyViewModel : ObservableObject
 
     // what the chart is given
     [ObservableProperty] private ChartFrame? _frame;
+    /// <summary>The flat horizon (altitude against azimuth) as a strip over the bottom of the chart.</summary>
+    [ObservableProperty] private bool _showFlatHorizon;
     [ObservableProperty] private IReadOnlyList<ChartPolygon> _polygons = Array.Empty<ChartPolygon>();
     [ObservableProperty] private IReadOnlyList<ChartImage> _images = Array.Empty<ChartImage>();
     [ObservableProperty] private string _planText = "";
@@ -131,7 +133,8 @@ public sealed partial class SkyViewModel : ObservableObject
     /// <summary>Redraws everything that depends on the form, the plan, the progress map and the stacked image.</summary>
     private void Rebuild()
     {
-        if (!Image.TryCentre(out var ra, out var dec)) { Frame = null; Polygons = Array.Empty<ChartPolygon>(); Images = Array.Empty<ChartImage>(); PlanText = Image.PlanProblem; PlanClass = "error"; return; }
+        if (!Image.TryCentre(out var ra, out var dec)) { Atlas.SetImageCentre(null, null, ""); Frame = null; Polygons = Array.Empty<ChartPolygon>(); Images = Array.Empty<ChartImage>(); PlanText = Image.PlanProblem; PlanClass = "error"; return; }
+        Atlas.SetImageCentre(ra, dec, Image.Label);
         double angle = Image.PositionAngle;
         var polys = new List<ChartPolygon>();
         var first = Image.PlanScopes.SelectMany(s => Fields(s).Take(1)).Cast<Footprint?>().FirstOrDefault();

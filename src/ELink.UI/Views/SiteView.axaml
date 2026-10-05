@@ -36,6 +36,9 @@
         <TextBlock Classes="section" Text="TONIGHT"/>
         <TextBlock Text="{Binding Where}"/>
         <c:NightBar Timeline="{Binding Night}" IsVisible="{Binding Known}" Margin="0,4"/>
+        <TextBlock Classes="section" Text="YOUR SKY" Margin="0,8,0,0" IsVisible="{Binding Known}"/>
+        <c:HorizonPlot Data="{Binding Atlas.Flat}" IsVisible="{Binding Known}" Height="190"/>
+        <TextBlock Classes="hint" Text="Your horizon as saved (what blocks the sky), the Sun, Moon and planets, and the paths the chosen target and the image take." IsVisible="{Binding Known}"/>
         <TextBlock Text="{Binding SkyText}"/>
         <TextBlock Text="{Binding NightText}"/>
         <TextBlock Text="{Binding MoonText}"/>

@@ -76,7 +76,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Atlas = new AtlasViewModel(mesh, Catalog, Image);
         Centering = new CenteringViewModel(mesh, Catalog);
         LiveStack = new LiveStackViewModel(mesh, Catalog, Image);
-        Site = new SiteViewModel(mesh, Catalog);
+        Site = new SiteViewModel(mesh, Catalog, Atlas);
         Equipment = new EquipmentViewModel(mesh, Catalog, OpenDeviceAsync);
 
         Scopes = new ScopesViewModel(mesh, Catalog, Autofocus, Centering, FocusAssist) { OpenRig = () => Navigate(AppView.Rig, "Set up") };

@@ -22,9 +22,12 @@ public sealed partial class SiteViewModel : ObservableObject, IDisposable
     private Timer? _timer;
     private bool _loaded;
 
-    public SiteViewModel(MeshSession mesh, CatalogViewModel catalog)
+    /// <summary>The atlas knows the horizon, the bodies and the paths: the flat horizon is drawn from it.</summary>
+    public AtlasViewModel Atlas { get; }
+
+    public SiteViewModel(MeshSession mesh, CatalogViewModel catalog, AtlasViewModel atlas)
     {
-        _mesh = mesh; _catalog = catalog;
+        _mesh = mesh; _catalog = catalog; Atlas = atlas;
         catalog.Devices.CollectionChanged += (_, _) => UiThread.Post(RebuildGps);
         RebuildGps();
     }

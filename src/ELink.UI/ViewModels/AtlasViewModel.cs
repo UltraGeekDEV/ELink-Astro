@@ -65,6 +65,16 @@ public sealed partial class AtlasViewModel : ObservableObject, IDisposable
     [ObservableProperty] private ChartHorizon? _horizon;
     [ObservableProperty] private IReadOnlyList<ChartBody> _bodies = Array.Empty<ChartBody>();
     [ObservableProperty] private bool _showHorizon = true;
+    /// <summary>The sky laid out flat (azimuth against altitude): the horizon, Sun and Moon, and the paths of the target, the image and the scopes.</summary>
+    [ObservableProperty] private FlatHorizonData? _flat;
+    private (double Ra, double Dec, string Label)? _imageCentre;
+    /// <summary>Where the image being planned is (J2000), for the flat horizon; null = no image.</summary>
+    public void SetImageCentre(double? ra, double? dec, string label)
+    {
+        var next = ra is { } r && dec is { } d ? ((double, double, string)?)(r, d, label) : null;
+        if (_imageCentre == next) return;
+        _imageCentre = next; RebuildFlat();
+    }
     [ObservableProperty] private string _visibilityText = "";
     // search and selection
     [ObservableProperty] private string _searchText = "";
@@ -117,11 +127,11 @@ public sealed partial class AtlasViewModel : ObservableObject, IDisposable
         _site = new Follower<SiteState>(_mesh.Node, SiteIds.State(SiteIds.Default), SiteIds.GetState(SiteIds.Default), s =>
         {
             _siteState = s;
-            RebuildHorizon();
+            RebuildHorizon(); RebuildFlat();
             _ = RefreshBodiesAsync();
         });
         await _site.StartAsync();
-        _skyTimer = new Timer(_ => UiThread.Post(() => { RebuildHorizon(); _ = RefreshBodiesAsync(); }), null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
+        _skyTimer = new Timer(_ => UiThread.Post(() => { RebuildHorizon(); RebuildFlat(); _ = RefreshBodiesAsync(); }), null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
 
         await FollowEquipmentAsync();
         UpdateOverlays();
@@ -153,6 +163,44 @@ public sealed partial class AtlasViewModel : ObservableObject, IDisposable
         Horizon = new ChartHorizon(line, cardinals);
     }
 
+    /// <summary>The flat horizon: the saved horizon, the bodies where they are, and where the target, the image and the scopes go from an hour ago to
+    /// twelve hours on.</summary>
+    private void RebuildFlat()
+    {
+        if (Site is not { } site || _siteState is not { } st) { Flat = null; return; }
+        var now = DateTime.UtcNow;
+        var profile = st.Config.Horizon.Select(p => (p.AzimuthDegrees.Value, p.AltitudeDegrees.Value)).ToList();
+        var line = Enumerable.Range(0, 361).Select(az => ELink.Core.Astro.Horizon.ProfileAltitude(st.Config.MinAltitudeDegrees.Value, profile, az)).ToList();
+        var bodies = _bodyList.Where(b => !double.IsNaN(b.Altitude.Value) && !double.IsNaN(b.Azimuth.Value)).Select(b =>
+        {
+            var look = BodyLook.TryGetValue(b.Label.Text, out var l) ? l : (Color.FromRgb(200, 200, 200), 0);
+            string label = b.Label.Text == "Moon" && !double.IsNaN(b.Illumination.Value) ? $"Moon {b.Illumination.Value * 100:0}%" : b.Label.Text;
+            return new FlatBody(label, b.Azimuth.Value, b.Altitude.Value, look.Color, look.Radius);
+        }).ToList();
+        FlatTrack Track(string label, double ra, double dec, Color color)
+        {
+            var (a0, z0) = ELink.Core.Astro.Horizon.AltAzJ2000(ra, dec, now, site);
+            var points = new List<FlatPoint>();
+            var from = new DateTime(now.Year, now.Month, now.Day, now.Hour, 0, 0, DateTimeKind.Utc).AddHours(-1);
+            for (int m = 0; m <= 14 * 60; m += 15)
+            {
+                var t = from.AddMinutes(m);
+                var (alt, az) = ELink.Core.Astro.Horizon.AltAzJ2000(ra, dec, t, site);
+                points.Add(new FlatPoint(az, alt, IsHour: t.Minute == 0));
+            }
+            return new FlatTrack(label, color, points, new FlatPoint(z0, a0));
+        }
+        var tracks = new List<FlatTrack>();
+        if (Selection is { } sel) tracks.Add(Track(sel.Label == "" ? "target" : sel.Label, sel.RaHours, sel.DecDegrees, Color.FromRgb(120, 255, 140)));
+        if (_imageCentre is { } ic) tracks.Add(Track(ic.Label == "" ? "image" : ic.Label, ic.Ra, ic.Dec, Color.FromRgb(255, 214, 90)));
+        foreach (var m in _mounts.Values)
+        {
+            var (alt, az) = ELink.Core.Astro.Horizon.AltAzJ2000(m.RaHours, m.DecDegrees, now, site);
+            tracks.Add(new FlatTrack(m.Label, m.Color, Array.Empty<FlatPoint>(), new FlatPoint(az, alt)));
+        }
+        Flat = new FlatHorizonData(site.LatitudeDegrees >= 0 ? 180 : 0, line, bodies, tracks);
+    }
+
     private static readonly Dictionary<string, (Color Color, double Radius)> BodyLook = new()
     {
         ["Sun"] = (Color.FromRgb(255, 220, 90), 0.267), ["Moon"] = (Color.FromRgb(225, 225, 210), 0.259),
@@ -174,7 +222,7 @@ public sealed partial class AtlasViewModel : ObservableObject, IDisposable
                 string label = x.Label.Text == "Moon" && !double.IsNaN(x.Illumination.Value) ? $"Moon {x.Illumination.Value * 100:0}%" : x.Label.Text;
                 return new ChartBody(x.RaHours.Value, x.DecDegrees.Value, label, look.Color, look.Radius);
             }).ToList();
-            UiThread.Post(() => { _bodyList = list; Bodies = chart; });
+            UiThread.Post(() => { _bodyList = list; Bodies = chart; RebuildFlat(); });
         }
         catch (Exception) { }
     }
@@ -285,6 +333,7 @@ public sealed partial class AtlasViewModel : ObservableObject, IDisposable
         var markers = _mounts.Values.ToList();
         if (Selection is { } sel) markers.Add(new ChartMarker(sel.RaHours, sel.DecDegrees, "", Color.FromRgb(120, 255, 140), IsSelection: true));
         Markers = markers;
+        RebuildFlat();
 
     }
 

@@ -240,6 +240,13 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         Assert.Equal("M 42", atlas.Results.First().Label);
         Assert.True(await Eventually(() => atlas.Selection?.Label == "M 42"));
         Assert.True(await Eventually(() => atlas.Horizon is { Line.Count: 361 } && atlas.Bodies.Count == 9), "horizon and planets on the chart");
+        // the sky laid flat: the saved horizon (flat 15°, a wall to the south-west), the bodies, the selection's path
+        Assert.True(await Eventually(() => atlas.Flat is { Profile.Count: 361, CentreAzimuth: 180 } fl && fl.Bodies.Count == 9 && fl.Tracks.Any(t => t.Label == "M 42" && t.Points.Count > 40)), "flat horizon");
+        Assert.Equal(35, atlas.Flat!.Profile[230], 0);
+        vm.Sky.ShowFlatHorizon = true;
+        await Task.Delay(300);
+        Shot(window, "07e1-flat-horizon");
+        vm.Navigate(AppView.Rig, "Site"); await Task.Delay(300); Shot(window, "07e2-site-flat"); vm.Navigate(AppView.Sky);
         Assert.True(await Eventually(() => atlas.VisibilityText.Contains("alt")), atlas.VisibilityText);
         Assert.Equal(5.588, atlas.CenterRa, 2);
         Assert.True(await Eventually(() => atlas.Dsos.Any(d => d.Id == "M 42")), "the zoomed view fetched its deep-sky objects");

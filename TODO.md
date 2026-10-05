@@ -141,7 +141,7 @@ focus triggers/offsets -> live-stack rejection/calibration -> the rest.
 - [x] Large areas: one plan-to-sky mapping for the service, the chart and the stack; great-circle edges; rasters in tiles
 - [x] Set up: add/edit/remove telescopes and scopes, pointers made for you, labelled camera settings, explained fields
 - [x] Greyed-out actions that cannot work, messages that say what is wrong next to where it went wrong
-- [ ] Night timeline on the Site page; horizon drawn as a picture
+- [x] Night timeline on the Site page; the horizon drawn as a picture (the flat horizon: altitude against azimuth, with the Sun, Moon, planets and the paths of the target, the image and the scopes; a strip on the Sky chart and a card on the Site page)
 - [x] Per-scope colour (status strip, cards, chart fields) and a short log of what each scope did tonight
 - [x] Glossary / help for the terms (scope, telescope, depth per spot, panel, focus offset, pseudo mono)
 - [x] Plate solves of a camera's angle get the camera's pixel scale as a hint
