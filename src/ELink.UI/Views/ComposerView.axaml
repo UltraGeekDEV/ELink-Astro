@@ -95,13 +95,24 @@
               <StackPanel Margin="0,0,16,8"><TextBlock Classes="label" Text="Rotator"/>
                 <ComboBox ItemsSource="{Binding Rotators}" SelectedItem="{Binding SelectedRotator}" Width="190"><ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding, Converter={x:Static i:Chips.NoneText}}"/></DataTemplate></ComboBox.ItemTemplate></ComboBox></StackPanel>
             </WrapPanel>
-            <StackPanel IsVisible="{Binding CanSetFocusOffsets}" Spacing="2">
-              <TextBlock Classes="label" Text="Focus offsets per filter (focuser steps)"/>
-              <Grid ColumnDefinitions="*,8,Auto">
-                <TextBox Text="{Binding FocusOffsets}" Watermark="L=0, R=30, Ha=120"/>
-                <Button Grid.Column="2" Content="Fill in the filter names" Command="{Binding FillOffsetsFromWheelCommand}" ToolTip.Tip="Lists the filters of the chosen wheel, ready for their steps"/>
-              </Grid>
-              <TextBlock Classes="hint" Text="When the filter changes the focuser moves by the difference, instead of refocusing."/>
+            <StackPanel IsVisible="{Binding CanSetFocusOffsets}" Spacing="4">
+              <TextBlock Classes="label" Text="Focus offsets: where each filter focuses (focuser steps, relative to each other)"/>
+              <ItemsControl ItemsSource="{Binding OffsetRows}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Grid ColumnDefinitions="160,8,140,8,Auto" Margin="0,2">
+                      <TextBox Text="{Binding Filter}" Watermark="Filter"/>
+                      <NumericUpDown Grid.Column="2" Value="{Binding Steps}" FormatString="0" Increment="5"/>
+                      <Button Grid.Column="4" Content="✕" Classes="ghost" ToolTip.Tip="Remove" Command="{Binding $parent[UserControl].DataContext.RemoveOffsetCommand}" CommandParameter="{Binding}"/>
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <StackPanel Classes="row">
+                <Button Content="Fill in the filter wheel's filters" Command="{Binding FillOffsetsFromWheelCommand}" ToolTip.Tip="One row per filter of the chosen wheel; steps you entered stay"/>
+                <Button Content="Add a filter" Command="{Binding AddOffsetCommand}"/>
+              </StackPanel>
+              <TextBlock Classes="hint" Text="When the filter changes the focuser moves by the difference between the two, instead of refocusing. Set them by focusing through each filter in turn."/>
             </StackPanel>
 
             <c:Notice Text="{Binding TrainMessage}" Kind="{Binding TrainMessageKind}"/>

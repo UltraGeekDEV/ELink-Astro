@@ -130,10 +130,10 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         composer.TrainName = "cam"; composer.FocalLength = 400; composer.SelectedWheel = "Filter_Simulator";
         foreach (var c in composer.TrainCameras) c.Role = c.CameraId == "CCD_Simulator" ? "Imaging" : ComposerViewModel.NotInTrain;
         composer.TrainCameras.First(c => c.CameraId == "CCD_Simulator").Gain = "30";
-        composer.FocusOffsets = "Red=0, Green=nonsense";
+        composer.OffsetRows.Add(new OffsetRow { Filter = "Red", Steps = 0 }); composer.OffsetRows.Add(new OffsetRow { Filter = "red", Steps = 4 });
         await composer.SaveTrainCommand.ExecuteAsync(null);
-        Assert.Contains("focus offsets are like", composer.TrainMessage);
-        composer.FocusOffsets = "Red=0, Green=25";
+        Assert.Contains("two focus offsets for red", composer.TrainMessage);
+        composer.OffsetRows[1].Filter = "Green"; composer.OffsetRows[1].Steps = 25;
         await composer.SaveTrainCommand.ExecuteAsync(null);
         Assert.True(await Eventually(() => vm.Catalog.Composition.Trains.FirstOrDefault(t => t.Id.Text == "cam") is { } t && t.FocusOffsets.Count == 2 && t.Cameras[0].Gain.Value == 30), composer.TrainMessage);
         Assert.False(composer.TrainFormOpen);
@@ -141,7 +141,7 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         Assert.True(await Eventually(() => composer.Trains.Any(t => t.Id == "cam")));
         composer.EditTrainCommand.Execute(composer.Trains.First(t => t.Id == "cam"));
         Assert.Equal("30", composer.TrainCameras.First(c => c.CameraId == "CCD_Simulator").Gain);
-        Assert.Equal("Red=0, Green=25", composer.FocusOffsets);
+        Assert.Equal(["Red=0", "Green=25"], composer.OffsetRows.Select(r => $"{r.Filter}={r.Steps}"));
         composer.CancelTrainCommand.Execute(null);
         // a scope on that mount with that telescope
         Assert.True(await Eventually(() => composer.PointerChoices.Any(c => c.Id == "eq") && composer.ShooterChoices.Any(c => c.Id == "cam")));
@@ -372,6 +372,8 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         Assert.True(await Eventually(() => vm.IndiBrowser.Devices.Count >= 5));
         vm.IndiBrowser.SelectedDevice = "Telescope Simulator";
         Assert.True(await Eventually(() => vm.IndiBrowser.Properties.Count > 10));
+        foreach (var device in vm.IndiBrowser.Devices.ToList()) { vm.IndiBrowser.SelectedDevice = device; await Task.Delay(100); Assert.Equal(vm.IndiBrowser.Properties.Count, vm.IndiBrowser.Properties.Distinct().Count()); }   // no property listed twice
+        vm.IndiBrowser.SelectedDevice = "Telescope Simulator";
         Shot(window, "08-indi-browser");
 
         vm.Dispose();

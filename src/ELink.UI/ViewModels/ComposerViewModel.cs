@@ -28,6 +28,13 @@ public sealed partial class ComposeChoice : ObservableObject
 }
 
 /// <summary>A camera on the mesh, and what it does in the telescope being set up.</summary>
+/// <summary>The focuser steps of one filter.</summary>
+public sealed partial class OffsetRow : ObservableObject
+{
+    [ObservableProperty] private string _filter = "";
+    [ObservableProperty] private int _steps;
+}
+
 public sealed partial class TrainCameraChoice : ObservableObject
 {
     public TrainCameraChoice(string cameraId, string name) { CameraId = cameraId; Name = name; }
@@ -111,7 +118,10 @@ public sealed partial class ComposerViewModel : ObservableObject
     [ObservableProperty] private string _trainName = "";
     [ObservableProperty] private double _focalLength = 400;
     [ObservableProperty] private double _aperture = 80;
-    [ObservableProperty] private string _focusOffsets = "";
+    /// <summary>Focuser steps per filter (only the differences matter): changing filter moves the focuser by the difference.</summary>
+    public ObservableCollection<OffsetRow> OffsetRows { get; } = new();
+    [RelayCommand] private void AddOffset() => OffsetRows.Add(new OffsetRow());
+    [RelayCommand] private void RemoveOffset(OffsetRow? row) { if (row is not null) OffsetRows.Remove(row); }
     [ObservableProperty] private string _selectedWheel = "";
     [ObservableProperty] private string _selectedFocuser = "";
     [ObservableProperty] private string _selectedRotator = "";
@@ -327,7 +337,7 @@ public sealed partial class ComposerViewModel : ObservableObject
     [RelayCommand]
     private void NewTrain()
     {
-        TrainEditingId = null; TrainName = ""; FocalLength = 400; Aperture = 80; FocusOffsets = "";
+        TrainEditingId = null; TrainName = ""; FocalLength = 400; Aperture = 80; OffsetRows.Clear();
         SelectedWheel = SelectedFocuser = SelectedRotator = None;
         foreach (var c in TrainCameras) { c.Role = NotInTrain; c.PixelSize = 0; c.SensorWidth = c.SensorHeight = 0; c.Gain = c.Offset = c.CoolTo = ""; c.CoolRate = 3; c.PseudoMono = false; }
         TrainMessage = ""; TrainFormOpen = true;
@@ -341,7 +351,7 @@ public sealed partial class ComposerViewModel : ObservableObject
         NewTrain();
         TrainEditingId = t.Id.Text; TrainName = t.Label.Text != "" ? t.Label.Text : t.Id.Text; FocalLength = t.FocalLengthMm.Value; Aperture = t.ApertureMm.Value;
         SelectedWheel = t.FilterWheelId.Text; SelectedFocuser = t.FocuserId.Text; SelectedRotator = t.RotatorId.Text;
-        FocusOffsets = string.Join(", ", t.FocusOffsets.Select(o => $"{o.Filter.Text}={o.Steps.Value}"));
+        OffsetRows.Clear(); foreach (var o in t.FocusOffsets) OffsetRows.Add(new OffsetRow { Filter = o.Filter.Text, Steps = o.Steps.Value });
         foreach (var cam in t.Cameras)
         {
             var choice = TrainCameras.FirstOrDefault(c => c.CameraId == cam.CameraId.Text);
@@ -358,8 +368,9 @@ public sealed partial class ComposerViewModel : ObservableObject
         if (SelectedWheel is not { } wheel || wheel == None) return;
         var state = (await _mesh.Node.CallFunctionAsync<NOTESVoid, FilterWheelState>(EquipmentIds.GetState(DeviceKinds.FilterWheel, wheel), NOTESVoid.Void, TimeSpan.FromSeconds(5)))?.FirstOrDefault();
         if (state is null || state.FilterNames.Count == 0) { TrainSays("the filter wheel has not told its filter names yet (is it connected?)"); return; }
-        var have = FocusOffsets.Split(',', ';').Select(p => p.Trim().Split('=', 2)).Where(kv => kv.Length == 2).ToDictionary(kv => kv[0].Trim(), kv => kv[1].Trim(), StringComparer.OrdinalIgnoreCase);
-        FocusOffsets = string.Join(", ", state.FilterNames.Select(n => $"{n.Text}={(have.TryGetValue(n.Text, out var v) ? v : "0")}"));
+        var have = OffsetRows.GroupBy(r => r.Filter.Trim(), StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First().Steps, StringComparer.OrdinalIgnoreCase);
+        OffsetRows.Clear();
+        foreach (var n in state.FilterNames) OffsetRows.Add(new OffsetRow { Filter = n.Text, Steps = have.TryGetValue(n.Text, out var v) ? v : 0 });
         TrainMessage = "";
     }
 
@@ -384,12 +395,13 @@ public sealed partial class ComposerViewModel : ObservableObject
                 CameraId = c.CameraId, Role = c.Role, PixelSizeUm = c.PixelSize, SensorWidth = c.SensorWidth, SensorHeight = c.SensorHeight,
                 Gain = TrainCameraChoice.Number(c.Gain), Offset = TrainCameraChoice.Number(c.Offset), CoolTo = TrainCameraChoice.Number(c.CoolTo), CoolDegreesPerMinute = Math.Clamp(c.CoolRate, 0.1, 30), PseudoMono = c.PseudoMono && c.Role == "Imaging",
             });
-        // "L=0, R=30, Ha=120": focuser steps per filter
-        foreach (var part in FocusOffsets.Split(',', ';').Select(p => p.Trim()).Where(p => p != ""))
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in OffsetRows)
         {
-            var kv = part.Split('=', 2);
-            if (kv.Length != 2 || !int.TryParse(kv[1].Trim(), out int steps)) { TrainSays($"focus offsets are like L=0, R=30, Ha=120 (not '{part}')"); return; }
-            t.FocusOffsets.Add(new FilterFocusOffset { Filter = kv[0].Trim(), Steps = steps });
+            string filter = row.Filter.Trim();
+            if (filter == "") { if (row.Steps != 0) { TrainSays("every focus offset needs the name of its filter"); return; } continue; }
+            if (!seen.Add(filter)) { TrainSays($"there are two focus offsets for {filter}"); return; }
+            t.FocusOffsets.Add(new FilterFocusOffset { Filter = filter, Steps = row.Steps });
         }
         if (t.Cameras.Count == 0) { TrainSays("choose at least one camera: Imaging, or Guiding for an off-axis guider"); return; }
         var r = await Call(ScopeIds.DefineTrain, t);

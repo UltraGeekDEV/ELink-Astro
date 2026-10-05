@@ -106,7 +106,7 @@ public sealed partial class IndiBrowserViewModel : ObservableObject, IDisposable
             row = new IndiPropertyRow(device, name);
             _rows[key] = row;
             if (!Devices.Contains(device)) { Insert(Devices, device); SelectedDevice ??= device; }
-            if (device == SelectedDevice) Properties.Add(row);
+            if (device == SelectedDevice && !Properties.Contains(row)) Properties.Add(row);   // (choosing the first device has just listed it)
         }
         row.Label = info.Label.Text; row.Group = info.Group.Text; row.Type = info.Type.Text; row.State = info.State.Text; row.Permission = info.Permission.Text;
         foreach (var el in info.Elements)
