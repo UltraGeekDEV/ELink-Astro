@@ -12,7 +12,7 @@ public sealed class HelpViewModel
         new("Image", "An area of sky, how deep it should get and which scopes may work on it. One frame of your scope is just a small area; a mosaic is a bigger one."),
         new("Frame", "The yellow rectangle on the sky chart: the image you are planning. Drag it to move it, a corner to resize it, the round handle to turn it."),
         new("Panel", "One of the pointings a mosaic is made of. The chart draws them inside the frame and says how many there are."),
-        new("Depth per spot", "How long every part of the image should be exposed in total (all shots added up). 0 means keep going until you stop it."),
+        new("Total exposure per spot", "How long every part of the image should be exposed in total (all shots added up). 0 means keep going until you stop it."),
         new("Turn", "Where the top of the image points, in degrees east of north."),
         new("Dither", "A small random shift between shots, so that hot pixels and noise do not line up. Scopes that guide dither through the guider; others shift the pointing."),
         new("Rejected frame", "A frame the scope judged bad (clouds, trailing, soft focus, bright sky). It is filed apart, not stacked, and the spot is shot again."),

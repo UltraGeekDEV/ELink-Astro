@@ -139,7 +139,7 @@ plate solver is installed. Each line takes you to the place. *Not now* puts it a
      and `B` (steps, relative to each other; autofocus settles on green, so `G=0`) and a focuser. Every frame is stored as
      two mono frames, the colour that was in focus in `infocus/` and the average of the other two in `oof/`, both
      super-pixel debayered. In the live stack the in-focus colours make the red, green and blue; the out-of-focus light is
-     stacked separately and mixed in as luminance as far as the *Out-of-focus light* slider (Sky › Layers, or the stack
+     stacked separately and mixed in as luminance as far as the *Out-of-focus light* slider (Sky › Show, or the stack
      page) says: 0 keeps the colours sharp and leaves that light out (almost no colour fringes from an achromat, at the
      price of about two thirds of the light), 1 uses all of it (more signal, a white halo around the stars instead of a coloured one).
      **Autofocus** knows about it: when a trigger fires the scope focuses green, then red and blue (each from green's focus,
@@ -200,7 +200,7 @@ constellation figures) plus faint stars for small fields.
 - **Move** by dragging, **zoom** with the wheel (towards the pointer) or `+` / `-`, **click** a star or object to select it, **double-click** it to frame it as the image (double-click the frame to zoom to it).
 - **Find** by name: `M42`, `NGC 7000`, `Vega`, `andromeda`, `Jupiter`. With several matches, pick one from the list.
 - **Right-click** the sky: frame the image here, send the scope here, what is here, centre the chart here.
-- **Layers** switches the constellations, grid, your horizon, each scope's field and mosaic panels, the stacked image and the
+- **Show** switches the constellations, grid, your horizon, each scope's field and mosaic panels, the stacked image and the
   progress map. Mounts are drawn as reticles where they point; **Mount** jumps there.
 - The panel on the right can be folded away (*Hide panel*) for more sky.
 - **Stellarium**: show the selection in it, take its selection, or make it follow a scope. In Stellarium: Telescope Control →
@@ -220,13 +220,13 @@ where you want it. The frame is the image:
   stacked picture laid in tiles so it follows the curvature of the sky. An area reaching a celestial pole is refused (its
   tiling is undefined there).
 
-Then choose how deep (*Depth per spot*: how long every part should be exposed in total; 0 = until you stop it), the shot
+Then choose how deep (*Total exposure per spot*: how long every part should be exposed in total; 0 = until you stop it), the shot
 length, which scopes share the work, and press **Start**. *More options*: filter, ISO, dither, panel spacing, a shot limit,
 the output scale, a weather device that pauses it, *Start afresh* and *Check the plan*. Each scope takes the next spot for its
 own frames as soon as it is free (spots another scope already covered are skipped, scopes are never kept in step, a slow
 mount takes fewer shots), and guides, dithers, flips and focuses by itself.
 
-**Layers** (*More options*) make an image out of several kinds of data, each with its own filter, range of pixel scales and
+**Show** (*More options*) make an image out of several kinds of data, each with its own filter, range of pixel scales and
 depth. One line per layer: `name, filter, finest ″/px, coarsest ″/px, minutes`. For example a fast wide scope can build a deep,
 coarse base while a long focal length scope adds the detail:
 

@@ -37,7 +37,7 @@
           <Button Content="+" Command="{Binding Atlas.ZoomInCommand}" ToolTip.Tip="Zoom in (mouse wheel)"/>
           <Button Content="Frame" Command="{Binding ZoomToFrameCommand}" ToolTip.Tip="Zoom to the image frame"/>
           <Button Content="Mount" Command="{Binding Atlas.CenterOnMountCommand}" ToolTip.Tip="Centre the chart on where the mount points"/>
-          <Button Content="Layers">
+          <Button Content="Show">
             <Button.Flyout>
               <Flyout Placement="BottomEdgeAlignedLeft">
                 <StackPanel Spacing="6" MinWidth="230">
@@ -161,7 +161,7 @@
                 <TextBlock Classes="hint" IsVisible="{Binding !Image.Scopes.Count}" Text="No scope yet: set one up in Rig › Set up."/>
               </StackPanel>
               <Grid ColumnDefinitions="*,8,*">
-                <StackPanel><TextBlock Classes="label" Text="Depth per spot (min)"/><NumericUpDown Value="{Binding Image.TargetMinutes}" Minimum="0" Increment="10" FormatString="0.##" ToolTip.Tip="How long every part of the image should be exposed in total. 0 = keep going until stopped. It can be changed while the image is being taken."/></StackPanel>
+                <StackPanel><TextBlock Classes="label" Text="Total exposure per spot (min)"/><NumericUpDown Value="{Binding Image.TargetMinutes}" Minimum="0" Increment="10" FormatString="0.##" ToolTip.Tip="How long every part of the image should be exposed in total. 0 = keep going until stopped. It can be changed while the image is being taken."/></StackPanel>
                 <Button Grid.Column="2" Content="Apply to the running image" Command="{Binding Image.ApplyTargetCommand}" IsVisible="{Binding Image.IsActive}" VerticalAlignment="Bottom" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
                         ToolTip.Tip="Change the depth of the image that is being taken"/>
               </Grid>
@@ -187,7 +187,7 @@
                     <StackPanel Grid.Row="3"><TextBlock Classes="label" Text="Pause when this is unsafe"/><ComboBox ItemsSource="{Binding Image.Weather}" SelectedItem="{Binding Image.SelectedWeather}" HorizontalAlignment="Stretch"/></StackPanel>
                   </Grid>
                   <StackPanel>
-                    <TextBlock Classes="label" Text="Layers (optional): name, filter, finest ″/px, coarsest ″/px, minutes"/>
+                    <TextBlock Classes="label" Text="Data layers (optional, advanced): name, filter, finest ″/px, coarsest ″/px, minutes"/>
                     <TextBox Text="{Binding Image.Layers}" AcceptsReturn="True" MinHeight="54" Watermark="base, L, 4, 10, 30&#x0a;detail, L, 0, 2, 120" ToolTip.Tip="Kinds of data the image is made of. A frame feeds a layer when it was shot through its filter and its pixel scale is in the layer's range, so a fast wide scope can build a deep, coarse base while a long focal length one adds detail, each to its own depth. Empty = everything is one layer."/>
                   </StackPanel>
                   <CheckBox IsChecked="{Binding Image.LiveStack}" Content="Build the picture while shooting"/>
