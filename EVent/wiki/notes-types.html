@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Defining NOTES types &middot; EVent Wiki</title>
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem('evwiki-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+</head>
+<body>
+<header class="topbar">
+  <button class="menu-btn" aria-label="Toggle navigation" onclick="document.body.classList.toggle('nav-open')">&#9776;</button>
+  <a class="brand" href="index.html"><span class="logo">EV</span>EVent <span class="brand-sub">Wiki</span></a>
+  <div class="search">
+    <input id="search" type="search" placeholder="Search the wiki&hellip;  ( / )" autocomplete="off" aria-label="Search">
+    <div id="search-results" class="search-results" hidden></div>
+  </div>
+  <button id="theme-btn" class="theme-btn" aria-label="Toggle dark mode" title="Toggle light/dark">&#9680;</button>
+</header>
+<div class="layout">
+  <aside class="sidebar"><nav><div class="nav-sec"><div class="nav-sec-title">Overview</div><ul><li><a href="index.html">Home</a></li><li><a href="architecture.html">Architecture</a></li><li><a href="concepts.html">Core concepts</a></li><li><a href="glossary.html">Glossary</a></li></ul></div><div class="nav-sec"><div class="nav-sec-title">EVent core</div><ul><li><a href="routing.html">Links & interest routing</a></li><li><a href="drpc.html">Distributed RPC (dRPC)</a></li><li><a href="transports.html">Transports</a></li><li><a href="wire-format.html">Wire format</a></li>
+<li><a href="firewall.html">Firewall node</a></li>
+<li><a href="namespace.html">Namespace node</a></li></ul></div><div class="nav-sec"><div class="nav-sec-title">NOTES</div><ul><li><a href="notes.html">What is NOTES?</a></li><li><a href="notes-types.html" class="current" aria-current="page">Defining NOTES types</a></li><li><a href="notes-protocol.html">Type agreement protocol</a></li><li><a href="notes-events.html">NOTES events reference</a></li>
+<li><a href="non.html">NON dynamic objects</a></li></ul></div><div class="nav-sec"><div class="nav-sec-title">Putting it together</div><ul><li><a href="integration.html">How EVent and NOTES fit</a></li><li><a href="examples.html">Examples & cookbook</a></li>
+<li><a href="scripting.html">Scripting node</a></li>
+<li><a href="native.html">C++ leaves</a></li></ul></div><div class="nav-sec"><div class="nav-sec-title">API reference</div><ul><li><a href="api-typesafe-node.html">TypeSafeEVentNode</a></li><li><a href="api-eventnode.html">EVentNode</a></li><li><a href="api-clients.html">Clients & helpers</a></li><li><a href="api-serialization.html">Serialization types</a></li><li><a href="api-transports.html">Transport classes</a></li><li><a href="api-constants.html">Event ID constants</a></li></ul></div><div class="nav-sec"><div class="nav-sec-title">Review</div><ul><li><a href="issues.html">Issues & open questions</a></li><li><a href="harness.html">Test harness & results</a></li><li><a href="roadmap.html">Roadmap</a></li></ul></div></nav></aside>
+  <main class="content">
+    <div class="crumbs"><a href="index.html">EVent Wiki</a> <span>/</span> NOTES <span>/</span> Defining NOTES types</div>
+    <article>
+      <h1>Defining NOTES types</h1>
+      <p class="lead">Writing IBinaryConvertible types that NOTES can describe: records, collections and recursive types.</p>
+      <h2 id="the-ibinaryconvertible-contract">The IBinaryConvertible contract</h2><div class="code"><div class="code-title">IBinaryConvertable.cs</div><pre><code class="lang-csharp">public abstract class IBinaryConvertible            // abstract class, despite the "I"
+{
+    public abstract string Name { get; }            // type name; part of every NOTES signature
+    public abstract NOTESDescriptor Descriptor { get; }
+    public abstract bool FromBytes(ref Span&lt;byte&gt; data);  // consume from the front, advance the span
+    public abstract byte[] ToBytes();
+}
+</code></pre></div><p>All generic APIs also require a public parameterless constructor (<code>where T : IBinaryConvertible, new()</code>). Receivers create an instance and fill it in.</p><h2 id="a-composite-type-step-by-step">A composite type, step by step</h2><p>This is <code>CatDescriptor</code> from the Examples, annotated:</p><div class="code"><div class="code-title">Examples/TestClass.cs (annotated)</div><pre><code class="lang-csharp">using Event.Connections.Models.BaseBinaryConvertibles;   // NOTESDescriptor
+using EVent.Connections.Models.BaseBinaryConvertibles;   // IBinaryConvertible, primitives
+
+public class CatDescriptor : IBinaryConvertible
+{
+    // 1. Members are themselves IBinaryConvertible, and must never be null
+    public BinaryConvertibleString CatName { get; set; } = new BinaryConvertibleString();
+    public BinaryConvertibleUInt64 ID      { get; set; } = new BinaryConvertibleUInt64();
+    public BinaryConvertibleUInt64 Age     { get; set; } = new BinaryConvertibleUInt64();
+    public BinaryConvertibleString Owner   { get; set; } = new BinaryConvertibleString();
+
+    // 2. Name: the root of the signature ("Cat.Name:string", ...)
+    public override string Name =&gt; "Cat";
+
+    // 3. One static descriptor per type
+    private static readonly NOTESDescriptor descriptor = new NOTESDescriptor();
+    public override NOTESDescriptor Descriptor =&gt; descriptor;
+
+    // 4. Register every member once, in the static constructor.
+    //    The string is the field's NOTES name. It need not match the C# property name.
+    static CatDescriptor()
+    {
+        descriptor.RegisterField("Name",  (CatDescriptor x) =&gt; x.CatName);
+        descriptor.RegisterField("ID",    (CatDescriptor x) =&gt; x.ID);
+        descriptor.RegisterField("Age",   (CatDescriptor x) =&gt; x.Age);
+        descriptor.RegisterField("Owner", (CatDescriptor x) =&gt; x.Owner);
+    }
+
+    public CatDescriptor() { }                      // 5. required by new() constraints
+    public CatDescriptor(BinaryConvertibleString name, BinaryConvertibleUInt64 id,
+                         BinaryConvertibleUInt64 age, BinaryConvertibleString owner)
+    { CatName = name; ID = id; Age = age; Owner = owner; }
+
+    // 6. Delegate (de)serialization to the descriptor
+    public override bool FromBytes(ref Span&lt;byte&gt; data) =&gt; descriptor.FromBytes(this, ref data);
+    public override byte[] ToBytes() =&gt; descriptor.ToBytes(this).ToArray();
+
+    // optional: JSON-like dump of the current values
+    public override string ToString() =&gt; descriptor.ToString(this);
+}
+</code></pre></div><h3 id="rules">Rules</h3><ul><li>Register in the <strong>static constructor</strong>. <code>RegisterField</code> instantiates the field type (<code>new TField()</code>), which triggers that type's own static constructor, so nested descriptors are complete in time.</li><li>The accessor must return the <em>live</em> member instance. Deserialization fills that instance in place (<code>fieldProvider(target).FromBytes(...)</code>), so never return a copy.</li><li>Initialise every member to a non-null instance, both in the default constructor and in property initialisers.</li><li>Register each member exactly once. A type with a duplicate registration name is refused (<code>NOTESTypeException</code>, logged; <code>HookEvent</code> and <code>FireEvent</code> return <code>false</code>).</li><li>Type names and registration names must be non-empty and must not contain any of <code>{}[]:,=&lt;&gt;|?@</code>. They're the signature's delimiters, or reserved for later extensions (<a href="#signature-grammar">Signature grammar</a>).</li><li>Pick a stable <code>Name</code>. Changing it changes the signature of every event that uses the type anywhere (<a class="iss sev-info" href="issues.html#I-33" title="NOTES type identity is nominal on the root Name, and structural below it">I-33</a>).</li></ul><h2 id="leaves-and-children">Leaves and children</h2><p><code>RegisterField</code> <code class="src" title="EVent/Connections/Models/BaseBinaryConvertibles/NOTESDescriptor.cs">NOTESDescriptor.cs</code> looks at the member type:</p><div class="table-wrap"><table class="wrap"><thead><tr><th>Member type</th><th>Stored as</th><th>NOTES writes it as</th><th>In the signature</th></tr></thead><tbody><tr><td>A collection (<code>INOTESCollection</code>)</td><td><code>FieldDescriptor</code> in <code>fields</code>, with its optional field cap (<code>MaxCount</code>)</td><td>int32 count, then each element in NOTES layout</td><td><code>name:Element[]</code> or <code>name:Element[&lt;=N]</code> in the parent's definition</td></tr><tr><td>Empty descriptor (a <em>leaf</em>)</td><td><code>FieldDescriptor</code> in <code>fields</code></td><td>The member's own <code>ToBytes</code>/<code>FromBytes</code></td><td><code>name:TypeName</code> in the parent's definition</td></tr><tr><td>Non-empty descriptor (a <em>record</em>)</td><td><code>NOTESChild</code> in <code>children</code></td><td>Its fields in sorted order, recursively</td><td><code>name:TypeName</code> in the parent's definition, plus a <code>TypeName{...}</code> definition of its own</td></tr></tbody></table></div><p>Nesting works to any depth. <code>NOTESTEstObject</code> in the Examples has three leaves and two <code>NOTESTestChild</code> children, each with one leaf. Its signature is the three entries shown in the diagram on <a href="notes.html#the-idea">What is NOTES?</a>.</p><div class="callout warn"><div class="callout-title">Caution</div><p>A composite type that forgets to register its members has an empty descriptor, so it's silently treated as a <em>leaf</em> and its own <code>ToBytes</code> is used. Plain (untyped) serialization writes all leaves before all children, whatever order they were registered in (<a class="iss sev-info" href="issues.html#I-32" title="Wire order is &#x27;leaf fields first, then children&#x27;, whatever the registration order">I-32</a>).</p></div><h2 id="built-in-leaf-types">Built-in leaf types</h2><p>One per C# basic type. The value is in <code>Value</code> (except <code>float</code> and <code>string</code>, see below); each converts implicitly from and to its C# type. The <a href="native.html#types">C++ leaf</a> maps the same leaves to C++ types.</p><div class="table-wrap"><table class="wrap"><thead><tr><th>Type</th><th><code>Name</code></th><th>Conversions</th></tr></thead><tbody><tr><td><code>BinaryConvertibleBool</code></td><td><code>bool</code></td><td><code>bool ↔ BinaryConvertibleBool</code></td></tr><tr><td><code>BinaryConvertibleSByte</code></td><td><code>int8</code></td><td><code>sbyte ↔ BinaryConvertibleSByte</code></td></tr><tr><td><code>BinaryConvertibleByte</code></td><td><code>uint8</code></td><td><code>byte ↔ BinaryConvertibleByte</code></td></tr><tr><td><code>BinaryConvertibleInt16</code></td><td><code>int16</code></td><td><code>short ↔ BinaryConvertibleInt16</code></td></tr><tr><td><code>BinaryConvertibleUInt16</code></td><td><code>uint16</code></td><td><code>ushort ↔ BinaryConvertibleUInt16</code></td></tr><tr><td><code>BinaryConvertibleInt32</code></td><td><code>int32</code></td><td><code>int ↔ BinaryConvertibleInt32</code></td></tr><tr><td><code>BinaryConvertibleUInt32</code></td><td><code>uint32</code></td><td><code>uint ↔ BinaryConvertibleUInt32</code></td></tr><tr><td><code>BinaryConvertibleInt64</code></td><td><code>int64</code></td><td><code>long ↔ BinaryConvertibleInt64</code></td></tr><tr><td><code>BinaryConvertibleUInt64</code></td><td><code>UInt64</code></td><td><code>ulong ↔ BinaryConvertibleUInt64</code></td></tr><tr><td><code>BinaryConvertibleFloat</code></td><td><code>float</code></td><td><code>float ↔ BinaryConvertibleFloat</code> (the value is in the public field <code>value</code>)</td></tr><tr><td><code>BinaryConvertibleDouble</code></td><td><code>double</code></td><td><code>double ↔ BinaryConvertibleDouble</code></td></tr><tr><td><code>BinaryConvertibleDecimal</code></td><td><code>decimal</code></td><td><code>decimal ↔ BinaryConvertibleDecimal</code></td></tr><tr><td><code>BinaryConvertibleChar</code></td><td><code>char16</code></td><td><code>char ↔ BinaryConvertibleChar</code></td></tr><tr><td><code>BinaryConvertibleString</code></td><td><code>string</code></td><td><code>string ↔ BinaryConvertibleString</code> (the value is <code>Text</code>)</td></tr><tr><td><code>BinaryConvertibleCollection&lt;T&gt;</code></td><td>not a leaf: <code>T[]</code></td><td><code>List&lt;T&gt;</code>, <code>HashSet&lt;T&gt;</code>, <code>T[]</code> → collection. See <a href="#collections">Collections</a>.</td></tr><tr><td><code>NOTESVoid</code></td><td><code>Void</code></td><td>Use <code>NOTESVoid.Void</code></td></tr></tbody></table></div><div class="callout note"><div class="callout-title">Leaf types as event types</div><p>A leaf type can be an event's type directly, for example <code>HookEvent("temp", (BinaryConvertibleFloat t) =&gt; ...)</code> or a <code>NOTESVoid</code> &ldquo;signal&rdquo; event. The type is then its own single field: the signature is <code>["=float"]</code> or <code>["=Void"]</code>, and the payload is exactly the leaf's own bytes.</p></div><div class="callout tip"><div class="callout-title">Tip</div><p>The implicit conversions let you write <code>new CatDescriptor("Tom", 1, 3, "Attila")</code>. Generic type inference doesn't apply user-defined conversions, though, so <code>FireEvent("X", 21.5f)</code> won't compile. Write <code>FireEvent("X", (BinaryConvertibleFloat)21.5f)</code> or give the type argument explicitly.</p></div><h2 id="writing-a-custom-leaf-type">Writing a custom leaf type</h2><p>For a value that isn't a composition of existing types, implement the bytes yourself and leave the descriptor empty:</p><div class="code"><div class="code-title">Custom leaf (illustrative)</div><pre><code class="lang-csharp">public class BinaryConvertibleBool : IBinaryConvertible
+{
+    private static readonly NOTESDescriptor descriptor = new NOTESDescriptor(); // empty =&gt; leaf
+    public override NOTESDescriptor Descriptor =&gt; descriptor;
+    public override string Name =&gt; "bool";          // appears in every signature using it
+    public bool Value { get; set; }
+
+    public override bool FromBytes(ref Span&lt;byte&gt; data)
+    {
+        if (data.Length &lt; 1) return false;             // validate, don't throw
+        Value = data[0] != 0;
+        data = data.Slice(1);                          // ALWAYS advance past what you read
+        return true;
+    }
+    public override byte[] ToBytes() =&gt; new[] { (byte)(Value ? 1 : 0) };
+    public static implicit operator BinaryConvertibleBool(bool v) =&gt; new() { Value = v };
+}
+</code></pre></div><p>A leaf must be <strong>self-delimiting</strong>: <code>FromBytes</code> has to consume exactly its own bytes, because the next field starts where it stops. Variable-length leaves need a length prefix, like <code>BinaryConvertibleString</code>. <code>TCPConnectionData</code> breaks this rule and can't be embedded in other types: it consumes the rest of the buffer.</p><h2 id="collections">Collections</h2><p><code>BinaryConvertibleCollection&lt;T&gt;</code> is a NOTES-native type (commit <code>729bbe2</code>). Its element type is part of the signature and its elements are written in NOTES layout, so every rule that applies to a field applies inside a collection too: a reordered element type still lines up, and a different or superset element type is refused. Collections are ordered and homogeneous (one element type).</p><div class="code"><pre><code class="lang-csharp">public class Kennel : IBinaryConvertible
+{
+    public BinaryConvertibleString Street { get; set; } = "";
+    public BinaryConvertibleCollection&lt;Cat&gt; Cats { get; set; } = new();
+    public override string Name =&gt; "Kennel";
+    private static readonly NOTESDescriptor d = new();
+    public override NOTESDescriptor Descriptor =&gt; d;
+    static Kennel()
+    {
+        d.RegisterField("Street", (Kennel x) =&gt; x.Street);
+        d.RegisterField("Cats",   (Kennel x) =&gt; x.Cats);                    // Cat[]      (uncapped)
+        // d.RegisterField("Cats", (Kennel x) =&gt; x.Cats, maxCount: 16);     // Cat[&lt;=16]  (capped)
+    }
+    public override bool FromBytes(ref Span&lt;byte&gt; data) =&gt; d.FromBytes(this, ref data);
+    public override byte[] ToBytes() =&gt; d.ToBytes(this).ToArray();
+}
+
+// Signature:  =Kennel
+//             Cat{Age:UInt64,ID:UInt64,Name:string,Owner:string}
+//             Kennel{Cats:Cat[],Street:string}
+var k = new Kennel { Street = "Main", Cats = new List&lt;Cat&gt; { new("Tom", 7, 3, "Ann") } };
+typed.FireEvent("kennel", k);
+</code></pre></div><div class="table-wrap"><table class="wrap"><thead><tr><th>Topic</th><th>Behaviour</th></tr></thead><tbody><tr><td>Element types</td><td>Any NOTES type: leaves (<code>string[]</code>), records (<code>Cat[]</code>), and collections (<code>int32[][]</code>).</td></tr><tr><td>Using it</td><td>It's an <code>IList&lt;T&gt;</code> (and <code>IReadOnlyList&lt;T&gt;</code>), so it works exactly like a <code>List&lt;T&gt;</code>: indexer, <code>Add</code>, <code>AddRange</code>, <code>Insert</code>, <code>Remove</code>, <code>Count</code>, <code>foreach</code>, LINQ and collection initializers (<code>new CatList { tom, felix }</code>). Implicit conversions from <code>List&lt;T&gt;</code>, <code>HashSet&lt;T&gt;</code> and arrays still work for the plain collection.</td></tr><tr><td>Caps</td><td>Optional, uncapped by default. A cap is declared on a <em>collection definition</em> or where a collection field is registered, never inside a message. It's part of the type, so capped and uncapped (or two different caps) don't match, and it's enforced on both sides: <code>FireEvent</code> returns <code>false</code> for too many elements, and a receiver drops a message whose count exceeds the cap. See <a href="#caps">Caps</a> below.</td></tr><tr><td>Collection-typed events</td><td><code>HookEvent("names", (BinaryConvertibleCollection&lt;BinaryConvertibleString&gt; n) =&gt; ...)</code> gives <code>["=string[]"]</code>. Hooking a capped definition instead, such as a <code>NameList</code> capped at 16, gives <code>["=string[&lt;=16]"]</code>.</td></tr><tr><td>Nulls</td><td>Elements can't be null: <code>FireEvent</code> returns <code>false</code>. A whole collection field can be absent if it's registered as <a href="#optional-fields">optional</a> (<code>Cats:Cat[&lt;=4]?</code>).</td></tr><tr><td>Wire</td><td>int32 little-endian count, then each element in NOTES layout, with no per-element length prefix. Every element must encode to at least one byte (a collection of zero-byte values is refused), which is what bounds a receiver's work by the message size.</td></tr><tr><td>Outside NOTES</td><td>The collection's own <code>ToBytes</code>, used by the core and by raw events, is unchanged: a count, then length-prefixed items (<a href="wire-format.html#primitive-encodings">Wire format</a>).</td></tr></tbody></table></div><h3 id="caps">Caps</h3><p>A cap is one number, &ldquo;at most N elements&rdquo;, and it belongs to a collection. There are two places to declare it (commit <code>eca89fb</code>):</p><div class="code"><pre><code class="lang-csharp">// 1. A collection definition: a class whose own descriptor holds the cap. Reuse it anywhere.
+public class CatList : BinaryConvertibleCollection&lt;Cat&gt;                  // Cat[&lt;=16]
+{
+    private static readonly NOTESDescriptor d = NOTESDescriptor.Collection(maxCount: 16);
+    public override NOTESDescriptor Descriptor =&gt; d;
+}
+
+//    Nested collections: each definition caps only its own level.
+public class Row : BinaryConvertibleCollection&lt;BinaryConvertibleInt32&gt;   // int32[&lt;=4]
+{
+    private static readonly NOTESDescriptor d = NOTESDescriptor.Collection(maxCount: 4);
+    public override NOTESDescriptor Descriptor =&gt; d;
+}
+public class RowList : BinaryConvertibleCollection&lt;Row&gt;                  // int32[&lt;=4][&lt;=2]
+{
+    private static readonly NOTESDescriptor d = NOTESDescriptor.Collection(maxCount: 2);
+    public override NOTESDescriptor Descriptor =&gt; d;
+}
+
+public CatList Cats { get; set; } = new();
+d.RegisterField("Cats", (Kennel x) =&gt; x.Cats);                           // Cats:Cat[&lt;=16]
+typed.HookEvent("cats", (CatList c) =&gt; ...);                              // =Cat[&lt;=16]
+
+// 2. On a collection field, where it's registered.
+public BinaryConvertibleCollection&lt;Cat&gt; Pets { get; set; } = new();
+d.RegisterField("Pets", (Owner x) =&gt; x.Pets, maxCount: 8);               // Pets:Cat[&lt;=8]
+d.RegisterField("Age",  (Cat x) =&gt; x.Age, maxCount: 8);                  // doesn't compile: int32 isn't a collection
+</code></pre></div><ul><li>The <code>maxCount</code> overloads of <code>RegisterField</code> and <code>RegisterOptionalField</code> require the field type to be a collection (<code>INOTESCollection</code>), so a cap on anything else is a compile error.</li><li>A field cap covers the field's own collection only. Inner collections get their caps from their own definitions, so nothing restates the nesting. Suffixes bind left to right: <code>int32[&lt;=4][&lt;=2]</code> is at most 2 rows of at most 4 values.</li><li>If a field is capped and its collection definition is capped too, the two must be <strong>exactly equal</strong>, or <code>RegisterField</code> throws <code>ArgumentException</code>. Whether a field may narrow its definition's cap, and whether nodes with different caps should be able to talk, are open (<a class="iss sev-low" href="issues.html#I-48" title="Collection caps must match exactly (no narrowing, no compatible sizes)">I-48</a>).</li><li>A collection descriptor holds only the cap: registering fields on it throws, and giving one to a type that isn't a collection is refused by NOTES.</li><li>Collections compare by structure, not by class name: a <code>CatList</code> and any other &ldquo;Cat, at most 16&rdquo; definition are the same NOTES type.</li><li>A capped definition enforces its cap in its own <code>ToBytes</code>/<code>FromBytes</code> too, and so does a field cap in the plain (non-NOTES) serializer, so caps hold on raw events as well.</li><li>A cap tells an endpoint without a heap exactly how much to preallocate.</li></ul><h2 id="optional-fields">Optional fields</h2><p>A field registered with <code>RegisterOptionalField</code> may be null, which is sent as <em>absent</em>. The field is marked <code>?</code> in the signature, so optional and required are different types (commit <code>c1f7363</code>):</p><div class="code"><pre><code class="lang-csharp">public class Order : IBinaryConvertible
+{
+    public BinaryConvertibleInt32 Id { get; set; } = 0;
+    public BinaryConvertibleString? Note { get; set; }                  // may be null
+    public BinaryConvertibleCollection&lt;Cat&gt;? Cats { get; set; }         // may be null
+    ...
+    static Order()
+    {
+        d.RegisterField("Id", (Order x) =&gt; x.Id);
+        d.RegisterOptionalField("Note", (Order x) =&gt; x.Note, (x, v) =&gt; x.Note = v);
+        d.RegisterOptionalField("Cats", (Order x) =&gt; x.Cats, (x, v) =&gt; x.Cats = v, maxCount: 4);
+    }
+}
+// Order{Cats:Cat[&lt;=4]?,Id:int32,Note:string?}
+</code></pre></div><ul><li>Any field can be optional: a leaf, a record or a collection. Collection <em>elements</em> can't be null.</li><li>On the wire it's one byte (<code>0</code> absent, <code>1</code> present) followed by the value when present. Any other byte value is malformed.</li><li>Reading needs the setter: an absent field is set to its default if it has one (<a href="#documenting-fields">Documenting fields</a>), otherwise to <code>null</code> (clearing a stale value), and a present one gets a newly created instance.</li></ul><h2 id="documenting-fields">Documenting fields: description, range, default</h2><p>Every <code>RegisterField</code> and <code>RegisterOptionalField</code> returns a builder that documents the field it just registered. None of this is part of the NOTES type, and none of it is enforced, with one exception: the default of an optional field.</p><div class="code"><pre><code class="lang-csharp">static Thermo()
+{
+    d.RegisterField("Celsius", (Thermo x) =&gt; x.Celsius)
+        .Description("temperature in degrees Celsius").Range(-40, 125);
+    d.RegisterOptionalField("Label", (Thermo x) =&gt; x.Label, (x, v) =&gt; x.Label = v)
+        .Description("sensor label").Default("unnamed");
+    d.RegisterOptionalField("Samples", (Thermo x) =&gt; x.Samples, (x, v) =&gt; x.Samples = v)
+        .Description("readings averaged").Range(1, 100).Default(1);
+    d.RegisterOptionalField("Where", (Thermo x) =&gt; x.Where, (x, v) =&gt; x.Where = v)
+        .Description("where the sensor is").Default(new Spot { Floor = 0, Room = "hall" });
+}
+
+// and on the endpoint itself:
+node.HookEvent("Reading", (Thermo t) =&gt; Show(t), "a room temperature reading, sent every minute");
+node.RegisterFunction("Setpoint", (Spot s) =&gt; Target(s), "the target temperature for a spot");
+</code></pre></div><div class="table-wrap"><table class="wrap"><thead><tr><th>Builder call</th><th>Meaning</th></tr></thead><tbody><tr><td><code>.Description(text)</code></td><td>Intent, unit, anything a reader of the type should know.</td></tr><tr><td><code>.Range(min, max)</code></td><td>The bounds the value is meant to stay in, as decimals; either may be null. For a string or a collection it is the length. Not enforced: a value outside it is sent and received normally. A record has no range (<code>ArgumentException</code>), and neither does <code>min &gt; max</code>.</td></tr><tr><td><code>.Default(value)</code></td><td>Typed as the field. On an <strong>optional</strong> field, a value that arrives absent is set to a fresh copy of it instead of null, in the NOTES layout and the plain layout alike. The default is the <em>reader's</em>: it comes from the receiving node's own registration, so a node whose type has no default still reads null. On a required field it is documentation only. The value is copied when registered.</td></tr></tbody></table></div><p>Because documentation isn't part of the type, two programs whose types have the same shape agree even if they document them differently (harness U16, N70). The documentation travels with the agreed type instead: a proposal carries its proposer's field documentation (<code>NOTESEventDescriptor.InputAnnotations</code>, <code>ReturnAnnotations</code>) and endpoint description (the optional last argument of <code>HookEvent</code> and <code>RegisterFunction</code>), and the network keeps what the agreed descriptor came with. The first node to agree an ID documents it; a later node with other wording still joins, and its wording is not used. Within one application the types usually come from one place anyway.</p><p>Discovery shows it (<a href="namespace.html#discovery">Namespace node</a>): each record that has documented fields gets an <code>"Annotations"</code> object, next to its <code>Fields</code> and <code>Children</code>. This is <code>House.Reading</code> from harness S19:</p><div class="code"><pre><code class="lang-json">{
+  "Id": "House.Reading",
+  "Kind": "event",
+  "Description": "a room temperature reading, sent every minute",
+  "Input": {
+    "Type": "Thermo",
+    "Fields": {
+      "Celsius": "float",
+      "Label": "string?",
+      "Samples": "int32?"
+    },
+    "Children": {
+      "Where": {
+        "Optional": true,
+        "Fields": {
+          "Floor": "int32",
+          "Room": "string"
+        },
+        "Annotations": {
+          "Floor": {
+            "Description": "storey, 0 = ground floor",
+            "Min": -2,
+            "Max": 10
+          },
+          "Room": {
+            "Description": "room name as on the floor plan",
+            "Min": 1,
+            "Max": 32
+          }
+        }
+      }
+    },
+    "Annotations": {
+      "Celsius": {
+        "Description": "temperature in degrees Celsius",
+        "Min": -40,
+        "Max": 125
+      },
+      "Label": {
+        "Description": "sensor label",
+        "Default": "unnamed"
+      },
+      "Samples": {
+        "Description": "readings averaged",
+        "Min": 1,
+        "Max": 100,
+        "Default": 1
+      },
+      "Where": {
+        "Description": "where the sensor is",
+        "Default": {
+          "Floor": 0,
+          "Room": "hall"
+        }
+      }
+    }
+  }
+}
+</code></pre></div><p>Defaults are written as JSON values (numbers as numbers, strings as strings, records as objects), ranges as numbers. The same object appears in <code>NOTESDescriptor.ToString()</code> for a live type and in <code>NOTESSignatureJson.ToJson(signature, annotations)</code> for a signature. <code>NOTESFlexibleSerDes.For(value).Annotations</code> lists a type's documentation, one <code>NOTESFieldAnnotation</code> (<code>Record</code>, <code>Field</code>, <code>Description</code>, <code>Min</code>, <code>Max</code>, <code>Default</code>) per documented field.</p>
+      <h2 id="recursive-types">Recursive types</h2><p>A record may contain itself, directly or through other types, as long as the cycle passes through a <em>collection</em> or an <em>optional field</em>: either one lets a value end. The signature just refers to the type by name. A tree, through a collection:</p><div class="code"><pre><code class="lang-csharp">public class TreeNode : IBinaryConvertible
+{
+    public BinaryConvertibleInt32 Value { get; set; } = 0;
+    public BinaryConvertibleCollection&lt;TreeNode&gt; Children { get; set; } = new();
+    public override string Name =&gt; "TreeNode";
+    private static readonly NOTESDescriptor d = new();
+    public override NOTESDescriptor Descriptor =&gt; d;
+    static TreeNode()
+    {
+        d.RegisterField("Value",    (TreeNode x) =&gt; x.Value);
+        d.RegisterField("Children", (TreeNode x) =&gt; x.Children);   // fine inside TreeNode's own static constructor
+    }
+    public override bool FromBytes(ref Span&lt;byte&gt; data) =&gt; d.FromBytes(this, ref data);
+    public override byte[] ToBytes() =&gt; d.ToBytes(this).ToArray();
+}
+// Signature: =TreeNode
+//            TreeNode{Children:TreeNode[],Value:int32}
+</code></pre></div><p>A linked list, directly through an optional field:</p><div class="code"><pre><code class="lang-csharp">public class LinkedNode : IBinaryConvertible
+{
+    public BinaryConvertibleInt32 Value { get; set; } = 0;
+    public LinkedNode? Next { get; set; }                               // null ends the list
+    public override string Name =&gt; "LinkedNode";
+    private static readonly NOTESDescriptor d = new();
+    public override NOTESDescriptor Descriptor =&gt; d;
+    static LinkedNode()
+    {
+        d.RegisterField("Value", (LinkedNode x) =&gt; x.Value);
+        d.RegisterOptionalField("Next", (LinkedNode x) =&gt; x.Next, (x, v) =&gt; x.Next = v);
+    }
+    public override bool FromBytes(ref Span&lt;byte&gt; data) =&gt; d.FromBytes(this, ref data);
+    public override byte[] ToBytes() =&gt; d.ToBytes(this).ToArray();
+}
+// Signature: =LinkedNode
+//            LinkedNode{Next:LinkedNode?,Value:int32}
+</code></pre></div><ul><li>Registering the type being defined, or a collection of it, inside its own static constructor is safe. Mutual recursion (<code>A{B:B?}</code>, <code>B{A:A}</code>) works too, whichever static constructor runs first.</li><li>A cycle made only of <em>required</em> record fields would make every value infinite, and is refused (<code>NOTESTypeException</code>, with the cycle in the message). The check runs over the whole type graph, so it doesn't depend on which type is the event's root or on registration order.</li><li>NOTES sends a tree, not a graph. A value that shares a subtree writes it once per occurrence, and a cyclic object graph (a list whose last node points back to the first) can't be sent: it hits the nesting limit and <code>FireEvent</code> returns <code>false</code>.</li><li>Values can nest at most <code>NOTESFlexibleSerDes.MaxNestingDepth</code> levels (256 by default, process-wide). Each collection and each present optional field is one level, so that's also the longest linked list. Deeper values are refused when sending and dropped when receiving.</li></ul><h2 id="signature-grammar">Signature grammar</h2><div class="code"><pre><code class="lang-text">signature = entry*                           ; sorted ordinally (UTF-16 code units)
+entry     = "=" TypeRef                      ; the event's root type, exactly one
+          | Name "{" field ("," field)* "}"  ; one per record type, fields sorted
+field     = FieldName ":" TypeRef ["?"]              ; "?" marks an optional field
+TypeRef   = LeafName | RecordName
+          | TypeRef "[]"                     ; collection
+          | TypeRef "[&lt;=" N "]"              ; capped collection
+</code></pre></div><div class="table-wrap"><table class="wrap"><thead><tr><th>Characters</th><th>Status</th></tr></thead><tbody><tr><td><code>{ } [ ] : , =</code></td><td>Delimiters of the grammar above.</td></tr><tr><td><code>|</code></td><td>Reserved for polymorphism (tagged unions), which is deliberately left out of the wire protocol for now.</td></tr><tr><td><code>?</code></td><td>Marks an optional field (after the whole TypeRef: <code>Cats:Cat[&lt;=4]?</code>).</td></tr><tr><td><code>&lt; &gt;</code></td><td>Used by caps. Ranges and defaults are documentation, not part of the type, so they don't appear in signatures (<a href="#documenting-fields">Documenting fields</a>).</td></tr><tr><td><code>@</code></td><td>Reserved.</td></tr></tbody></table></div><p>Names must be non-empty and free of these characters and of control characters. Within one event, a record name has exactly one definition, a name can't be both a leaf and a record, and two different C# leaf types can't share a name.</p><h2 id="reading-untrusted-input">Reading untrusted input</h2><p>A typed message comes from any node on the network, so the NOTES reader validates everything and drops the message (the handler isn't called) instead of throwing:</p><div class="table-wrap"><table class="wrap"><thead><tr><th>Input</th><th>Result</th></tr></thead><tbody><tr><td>Negative count, count above the cap, count above the remaining bytes</td><td>dropped; nothing allocated for it</td></tr><tr><td>An element that consumes no bytes</td><td>dropped; this bounds the total work by the message size</td></tr><tr><td>More than <code>MaxNestingDepth</code> nested collections and present optional fields, or too little stack left</td><td>dropped, never a stack overflow</td></tr><tr><td>An optional field's presence byte other than 0 or 1</td><td>dropped</td></tr><tr><td>Truncated input, or a malformed leaf (for example a string length past the end)</td><td>dropped</td></tr><tr><td>Bytes left over after the value</td><td>dropped (the layouts can't really match)</td></tr></tbody></table></div><p>Harness <a href="harness.html#u08">U08</a> feeds these cases in, including a 200,000-level nesting attack and a count of 50 million in an 8-byte message. <a href="harness.html#u09">U09</a> covers the types NOTES refuses to describe, <a href="harness.html#u11">U11</a> the caps, and <a href="harness.html#u12">U12</a> optional fields and a 200,000-deep chain of present flags. The plain (non-NOTES) <code>FromBytes</code> of a type returns <code>false</code> instead of overflowing the stack too.</p><h2 id="inspecting-a-type">Inspecting a type</h2><div class="code"><pre><code class="lang-csharp">// Structure (JSON-like)
+Console.WriteLine(new CatDescriptor().Descriptor.ToString());
+// Values
+Console.WriteLine(new CatDescriptor("Tom", 1, 3, "Attila"));      // uses descriptor.ToString(this)
+
+// The signature NOTES will negotiate, and the canonical bytes
+var notes = NOTESFlexibleSerDes.For(new CatDescriptor());     // throws NOTESTypeException if not describable
+foreach (var entry in notes.Signature) Console.WriteLine(entry);
+// =Cat
+// Cat{Age:UInt64,ID:UInt64,Name:string,Owner:string}
+byte[] bytes = notes.ToBytes(new CatDescriptor("Tom", 1, 3, "Attila"));
+</code></pre></div><p>NodeA in the Examples uses the same technique to print the signature of <code>NOTESTEstObject</code>. <code>Descriptor.ToString()</code> prints the same structure as indented JSON, and <code>Descriptor.ToString(value)</code> a value (a signature that arrived over the network can be turned into the same JSON shape without the C# type: <code>NOTESSignatureJson</code>, see <a href="namespace.html#discovery">Namespace node</a>).</p>
+    </article>
+    <nav class="pager"><a class="prev" href="notes.html"><span>Previous</span>What is NOTES?</a><a class="next" href="notes-protocol.html"><span>Next</span>Type agreement protocol</a></nav>
+    <footer class="foot">Generated from the EVent source tree. Line references point at commit 67d35c7; code added by later commits (canonical order e2e550c, agreement recovery 7e35633, merge descriptors 6bbe9c2, type checks c0a0c42, merge cleanup 56bab8b, type graph 729bbe2, caps and optional fields c1f7363, collection definitions eca89fb, link faults c08d67b) is referenced by file.</footer>
+  </main>
+  <aside class="toc" aria-label="On this page"><div class="toc-title">On this page</div><ul id="toc"></ul></aside>
+</div>
+<script src="assets/search-index.js"></script>
+<script src="assets/site.js"></script>
+</body>
+</html>

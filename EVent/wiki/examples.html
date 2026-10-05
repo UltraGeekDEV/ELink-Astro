@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Examples &amp;amp; cookbook &middot; EVent Wiki</title>
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem('evwiki-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+</head>
+<body>
+<header class="topbar">
+  <button class="menu-btn" aria-label="Toggle navigation" onclick="document.body.classList.toggle('nav-open')">&#9776;</button>
+  <a class="brand" href="index.html"><span class="logo">EV</span>EVent <span class="brand-sub">Wiki</span></a>
+  <div class="search">
+    <input id="search" type="search" placeholder="Search the wiki&hellip;  ( / )" autocomplete="off" aria-label="Search">
+    <div id="search-results" class="search-results" hidden></div>
+  </div>
+  <button id="theme-btn" class="theme-btn" aria-label="Toggle dark mode" title="Toggle light/dark">&#9680;</button>
+</header>
+<div class="layout">
+  <aside class="sidebar"><nav><div class="nav-sec"><div class="nav-sec-title">Overview</div><ul><li><a href="index.html">Home</a></li><li><a href="architecture.html">Architecture</a></li><li><a href="concepts.html">Core concepts</a></li><li><a href="glossary.html">Glossary</a></li></ul></div><div class="nav-sec"><div class="nav-sec-title">EVent core</div><ul><li><a href="routing.html">Links & interest routing</a></li><li><a href="drpc.html">Distributed RPC (dRPC)</a></li><li><a href="transports.html">Transports</a></li><li><a href="wire-format.html">Wire format</a></li>
+<li><a href="firewall.html">Firewall node</a></li>
+<li><a href="namespace.html">Namespace node</a></li></ul></div><div class="nav-sec"><div class="nav-sec-title">NOTES</div><ul><li><a href="notes.html">What is NOTES?</a></li><li><a href="notes-types.html">Defining NOTES types</a></li><li><a href="notes-protocol.html">Type agreement protocol</a></li><li><a href="notes-events.html">NOTES events reference</a></li>
+<li><a href="non.html">NON dynamic objects</a></li></ul></div><div class="nav-sec"><div class="nav-sec-title">Putting it together</div><ul><li><a href="integration.html">How EVent and NOTES fit</a></li><li><a href="examples.html" class="current" aria-current="page">Examples & cookbook</a></li>
+<li><a href="scripting.html">Scripting node</a></li>
+<li><a href="native.html">C++ leaves</a></li></ul></div><div class="nav-sec"><div class="nav-sec-title">API reference</div><ul><li><a href="api-typesafe-node.html">TypeSafeEVentNode</a></li><li><a href="api-eventnode.html">EVentNode</a></li><li><a href="api-clients.html">Clients & helpers</a></li><li><a href="api-serialization.html">Serialization types</a></li><li><a href="api-transports.html">Transport classes</a></li><li><a href="api-constants.html">Event ID constants</a></li></ul></div><div class="nav-sec"><div class="nav-sec-title">Review</div><ul><li><a href="issues.html">Issues & open questions</a></li><li><a href="harness.html">Test harness & results</a></li><li><a href="roadmap.html">Roadmap</a></li></ul></div></nav></aside>
+  <main class="content">
+    <div class="crumbs"><a href="index.html">EVent Wiki</a> <span>/</span> Putting it together <span>/</span> Examples &amp; cookbook</div>
+    <article>
+      <h1>Examples &amp; cookbook</h1>
+      <p class="lead">A walkthrough of the bundled demo, plus snippets you can adapt.</p>
+      <h2 id="the-bundled-examples-project">The bundled Examples project</h2><p><code>Examples/</code> is a console app that starts three <code>TypeSafeEVentNode</code>s <em>in one process</em> (<code class="src" title="Examples/Program.cs">Program.cs</code>) and chains them together over TCP on localhost, using UDP discovery:</p><figure class="diagram"><svg class="dg" viewBox="0 0 820 260" width="820" role="img" xmlns="http://www.w3.org/2000/svg"><title>Example topology</title><line x1="190" y1="108" x2="330" y2="108" class="dg-link"/><text x="260" y="100" text-anchor="middle" class="dg-label">TCP link</text><line x1="490" y1="108" x2="630" y2="108" class="dg-link"/><text x="560" y="100" text-anchor="middle" class="dg-label">TCP link</text><rect x="30" y="80" width="160" height="56" rx="9" class="dg-box core"/><text x="110" y="104" text-anchor="middle" class="dg-head">NodeC</text><text x="110" y="122" text-anchor="middle" class="dg-sub">EVentNode</text><line x1="110" y1="136" x2="110" y2="180" class="dg-link"/><rect x="30" y="180" width="160" height="50" rx="9" class="dg-box local"/><text x="110" y="202" text-anchor="middle" class="dg-head">LocalCallbackClient</text><text x="110" y="219" text-anchor="middle" class="dg-sub">your code on NodeC</text><rect x="330" y="80" width="160" height="56" rx="9" class="dg-box core"/><text x="410" y="104" text-anchor="middle" class="dg-head">NodeB</text><text x="410" y="122" text-anchor="middle" class="dg-sub">EVentNode</text><line x1="410" y1="136" x2="410" y2="180" class="dg-link"/><rect x="330" y="180" width="160" height="50" rx="9" class="dg-box local"/><text x="410" y="202" text-anchor="middle" class="dg-head">LocalCallbackClient</text><text x="410" y="219" text-anchor="middle" class="dg-sub">your code on NodeB</text><rect x="630" y="80" width="160" height="56" rx="9" class="dg-box core"/><text x="710" y="104" text-anchor="middle" class="dg-head">NodeA</text><text x="710" y="122" text-anchor="middle" class="dg-sub">EVentNode</text><line x1="710" y1="136" x2="710" y2="180" class="dg-link"/><rect x="630" y="180" width="160" height="50" rx="9" class="dg-box local"/><text x="710" y="202" text-anchor="middle" class="dg-head">LocalCallbackClient</text><text x="710" y="219" text-anchor="middle" class="dg-sub">your code on NodeA</text><text x="410" y="30" text-anchor="middle" class="dg-sub">Every line is an IEVentClient from the point of view of the node it attaches to.</text></svg><figcaption>NodeC &harr; NodeB &harr; NodeA. NodeB and NodeC each call <code>TryEstablishConnection</code> using discovery.</figcaption></figure><div class="table-wrap"><table class="wrap"><thead><tr><th>Node</th><th>File</th><th>Listens</th><th>Does</th></tr></thead><tbody><tr><td>NodeA</td><td><code class="src" title="Examples/NodeA.cs">NodeA.cs</code></td><td>TCP 5698, discoverable as <code>"NodeA"</code></td><td>Hooks <code>TestA</code> as <code>CatDescriptor</code> and <code>TestB</code> as <code>NOTESTEstObject</code>. For every console line it fires both, printing the received values and <code>TestB</code>'s signature.</td></tr><tr><td>NodeB</td><td><code class="src" title="Examples/NodeB.cs">NodeB.cs</code></td><td>TCP 5699, <code>"NodeB"</code></td><td>Joins NodeA's network. Acts as a pure relay.</td></tr><tr><td>NodeC</td><td><code class="src" title="Examples/NodeC.cs">NodeC.cs</code></td><td>TCP 5700, <code>"NodeC"</code></td><td>Joins NodeB, then hooks <code>TestA</code> as <code>&lt;strong&gt;CatDescriptorReordered&lt;/strong&gt;</code>, the same fields declared in a different order. This demonstrates NOTES reordering.</td></tr><tr><td>HubD</td><td><code class="src" title="Examples/NodeB.cs">NodeB.cs:27&ndash;36</code></td><td>&ndash;</td><td>Commented out. It shows the older <code>FireEvent(AdminEvents.CreateInterconnect, …)</code> way of linking.</td></tr></tbody></table></div><h3 id="what-happens-in-order">What happens, in order</h3><ol class="steps"><li>All three constructors run in parallel. Each starts its TCP listener and discovery responder, registers the NOTES functions, and waits for <code>AwaitReady</code>.</li><li>NodeA hooks <code>TestA</code>. Its network is just itself, so the agreement trivially succeeds, and the signature <code>[=Cat, Cat{Age:UInt64,ID:UInt64,Name:string,Owner:string}]</code> is established. The same happens for <code>TestB</code>.</li><li>NodeB calls <code>TryEstablishConnection(TCPAUTO "NodeA")</code>: stop events, discover NodeA over multicast, probe, confirm NodeA runs NOTES, compare descriptors (NodeB has none), close the probe, dial for real. The link handshake runs, and NodeB's <code>OnConnected</code> imports <code>TestA</code> and <code>TestB</code>.</li><li>NodeC does the same toward NodeB. Its <code>OnConnected</code> imports the descriptors in the background and re-shares them with the whole network.</li><li>NodeC hooks <code>TestA</code> with <code>CatDescriptorReordered</code>. If the import has finished, it takes the <em>established</em> path and reorders its SerDes to the canonical order. If not, NodeA and NodeB answer <code>Established</code> to its proposal, and C adopts their descriptor straight away.</li><li>Type a line into the console: NodeA fires <code>TestA</code> (a <code>CatDescriptor</code> named after your input) and <code>TestB</code>. NodeA's own handler prints, NodeC's handler prints the reordered cat, and each <code>FireEvent</code> returns after both handlers have run.</li></ol><div class="callout note"><div class="callout-title">Note</div><p>Because the whole demo runs in one process, it doesn't exercise cross-process issues. NodeC's message text is also misleading: it says the data came &ldquo;from HubC&rdquo;, but it originates at NodeA (<a class="iss sev-low" href="issues.html#I-36" title="Rough edges in the Examples">I-36</a>).</p></div><h3 id="running-it">Running it</h3><div class="code"><pre><code class="lang-bash">dotnet run --project Examples
+# type any text + Enter; watch NodeA and NodeC print the cat
+</code></pre></div><p>Multicast discovery needs a network interface that can join the multicast group, and a firewall that allows UDP 8563 and the TCP ports.</p><h2 id="cookbook">Cookbook</h2><p>Snippets built from the public API as it exists in the code. They have <strong>not been compiled</strong>, because no .NET SDK was available while writing this wiki, but they follow the signatures exactly. Each one notes any caveats.</p><h3 id="1-a-typed-message-type">1. A typed message type</h3><div class="code"><div class="code-title">SensorReading.cs</div><pre><code class="lang-csharp">using Event.Connections.Models.BaseBinaryConvertibles;
+using EVent.Connections.Models.BaseBinaryConvertibles;
+
+public class SensorReading : IBinaryConvertible
+{
+    public BinaryConvertibleString Sensor  { get; set; } = "";
+    public BinaryConvertibleFloat  Celsius { get; set; } = 0f;
+    public BinaryConvertibleUInt64 Ticks   { get; set; } = 0UL;
+
+    public override string Name =&gt; "SensorReading";               // part of the contract!
+    private static readonly NOTESDescriptor descriptor = new NOTESDescriptor();
+    public override NOTESDescriptor Descriptor =&gt; descriptor;
+    static SensorReading()
+    {
+        descriptor.RegisterField("Sensor",  (SensorReading x) =&gt; x.Sensor);
+        descriptor.RegisterField("Celsius", (SensorReading x) =&gt; x.Celsius);
+        descriptor.RegisterField("Ticks",   (SensorReading x) =&gt; x.Ticks);
+    }
+    public override bool FromBytes(ref Span&lt;byte&gt; d) =&gt; descriptor.FromBytes(this, ref d);
+    public override byte[] ToBytes() =&gt; descriptor.ToBytes(this).ToArray();
+    public override string ToString() =&gt; descriptor.ToString(this);
+}
+</code></pre></div><h3 id="2-typed-pub-sub-across-two-processes">2. Typed pub/sub across two processes</h3><div class="code"><div class="code-title">Typed pub/sub</div><pre><code class="lang-csharp">// ---- process "Collector"
+var collector = new TypeSafeEVentNode("Collector", new TCPServer(IPAddress.Any, 7000, "Collector"));
+await collector.HookEventAsync("sensors/reading", async (SensorReading r) =&gt;
+{
+    // A thread-pool task per delivery; the prober's FireEventAsync completes when this does.
+    // It may await other calls, including FireEventAsync back to the prober.
+    await StoreAsync(r);
+});
+Console.ReadLine();
+
+// ---- process "Probe-7"
+var probe = new TypeSafeEVentNode("Probe-7", new TCPServer(IPAddress.Any, 7001, "Probe-7"));
+if (await probe.TryEstablishConnectionAsync(new Package(ConnectionTypes.TCPDiscovery, "Collector")) != MergeResult.Connected)
+    return;
+// FireEventAsync returns false until Probe-7 has learnt the agreed type (shared right after
+// connecting). Hooking the event also works, but makes Probe-7 a subscriber.
+while (!await probe.FireEventAsync("sensors/reading", new SensorReading { Sensor = "probe-7", Celsius = 21.5f }))
+    await Task.Delay(50);
+</code></pre></div><h3 id="3-linking-by-address-instead-of-discovery">3. Linking by address instead of discovery</h3><div class="code"><div class="code-title">Direct TCP</div><pre><code class="lang-csharp">var node = new TypeSafeEVentNode("Edge", new TCPServer(IPAddress.Any, 7101));
+var target = new TCPConnectionData
+{
+    TargetIP   = "10.0.0.5",
+    TargetPort = 7000,
+};
+node.TryEstablishConnection(new Package(ConnectionTypes.TCP, target));
+// or: new TCPConnectionData(new IPEndPoint(IPAddress.Parse("10.0.0.5"), 7000))
+</code></pre></div><div class="callout note"><div class="callout-title">Note</div><p><code>SourcePort</code> (default 0) picks which of the node's TCP servers dials: the one listening on that port. Leave it 0 when the node has one.</p></div><h3 id="4-raw-events-with-a-plain-eventnode">4. Raw events with a plain EVentNode</h3><div class="code"><div class="code-title">Raw events</div><pre><code class="lang-csharp">using EVent.CoreFunctionality;                          // EVentNode
+using Event.CoreFunctionality;                          // LocalCallbackClient
+using EVent.Connections.Models.BaseBinaryConvertibles;  // primitives
+using EVent.Connections.TCP;
+
+var node = new EVentNode("Telemetry", new TCPServer(IPAddress.Any, 7200, "Telemetry"));
+node.Run();
+var local = node.AddLocalCallbackLayer();
+
+Action&lt;BinaryConvertibleFloat&gt; onTemp = t =&gt; Console.WriteLine($"{t.value:0.0} °C");
+local.HookEvent("temp", onTemp);                        // announces interest network-wide
+local.FireEvent("temp", (BinaryConvertibleFloat)21.5f); // explicit cast: inference won't convert
+local.UnHookEvent("temp", onTemp);                      // same delegate instance
+</code></pre></div><div class="callout note"><div class="callout-title">Note</div><p>Raw events aren't type-checked. The receiver's <code>FromBytes</code> decides, and failures are dropped silently. Don't use the same ID as a typed event or a function: calls to it would get no answer from the raw subscriber.</p></div><h3 id="5-plain-drpc-ask-every-node">5. Plain dRPC: ask every node</h3><div class="code"><div class="code-title">Scatter/gather query</div><pre><code class="lang-csharp">// on every node that should answer
+local.RegisterFunction&lt;NOTESVoid, BinaryConvertibleString&gt;("whoami", _ =&gt; Environment.MachineName);
+
+// anywhere
+foreach (var name in node.CallFunction&lt;BinaryConvertibleString, NOTESVoid&gt;("whoami", NOTESVoid.Void))
+    Console.WriteLine(name.Text);
+</code></pre></div><h3 id="connecting-a-plain-eventnode">Connecting a plain EVentNode</h3><p><code>EVentNode</code> has no connect method. Inject a <code>CreateInterconnect</code> admin package through a local layer, which is exactly what <code>TypeSafeEVentNode</code> does internally <code class="src" title="EVent/CoreFunctionality/TypeSafeEVentNode.cs">TypeSafeEVentNode.cs:294</code>, <code class="src" title="EVent/CoreFunctionality/TypeSafeEVentNode.cs">TypeSafeEVentNode.cs:306</code>:</p><div class="code"><div class="code-title">Linking a raw node</div><pre><code class="lang-csharp">using Event.CoreFunctionality.EVentIDs;
+using EVent.Connections;
+
+var connected = new ManualResetEventSlim();
+node.OnConnected(_ =&gt; connected.Set());
+
+var connectionInfo = new Package(ConnectionTypes.TCPDiscovery, "Collector");
+local.SendPackage(new Package(AdminEvents.CreateInterconnect, PackageType.ServerAdminEvent, connectionInfo));
+
+connected.Wait(TimeSpan.FromSeconds(10));
+</code></pre></div><div class="callout warn"><div class="callout-title">Caution</div><p>This skips the NOTES compatibility check, which is fine for tools. Discovery that finds nobody gives up after <code>ClientTCPDiscovery.Timeout</code> (10&nbsp;s by default), and the dial fails without holding up the node's local layer.</p></div><h3 id="6-a-network-monitor">6. A network monitor</h3><div class="code"><div class="code-title">Monitor</div><pre><code class="lang-csharp">var monitor = new EVentNode("Monitor", new TCPServer(IPAddress.Any, 7300));
+monitor.Run();
+var local = monitor.AddLocalCallbackLayer();
+monitor.OnEventAdded(id   =&gt; Console.WriteLine($"+ {id}"));
+monitor.OnEventRemoved(id =&gt; Console.WriteLine($"- {id}"));
+monitor.OnDataReceived((p, _) =&gt; Console.WriteLine($"  {p.type} {p.EventID} ({p.Data.Length} B)"));
+// link as in "Connecting a plain EVentNode", then e.g. dump the agreed type of an event:
+foreach (var d in monitor.CallFunction&lt;NOTESEventDescriptor, BinaryConvertibleString&gt;(NOTESEvents.QueryDescriptors, "TestA"))
+    Console.WriteLine($"{d.EventID.Text}: {string.Join(", ", d.Expected.binaryConvertibles.Select(s =&gt; s!.Text))}");
+</code></pre></div><div class="callout note"><div class="callout-title">Note</div><p><code>OnDataReceived</code> only sees traffic that is routed <em>through</em> the monitor, meaning events it (or something behind it) is interested in. In a tree, that's the traffic on the monitor's own branches.</p></div><h3 id="7-serial-device-checklist">7. Serial device checklist</h3><ul><li>Implement <a href="wire-format.html#package-frame">Package framing</a> on the device.</li><li>At 9600&nbsp;baud, echo <code>SerialHandshake</code> with the host's server ID, then answer <code>SetBaudrate</code> with an <code>int32</code> and switch rates.</li><li>Answer <code>InterconnectRunning</code> with your <code>ListEvents</code>, answer <code>QueryEvents</code> with <code>ListEvents</code>, and send <code>EventAdded</code> for what you provide.</li><li>Send something at least every second, or the host drops you (<a class="iss sev-high" href="issues.html#I-09" title="Serial links are dropped after about 1 second of silence and never re-established">I-09</a>). Keep packages under 247 bytes (<a class="iss sev-medium" href="issues.html#I-16" title="The serial receive buffer is fixed at 250 bytes">I-16</a>).</li><li>To receive <em>typed</em> events, register the event ID and answer each <code>FunctionCall</code> with a <code>FunctionReturn</code> whose <code>ReturnValues</code> contains one package with data <code>0x00</code> (a <code>NOTESVoid</code>), restoring the caller's handle. Decode the parameters in the event's established field order.</li></ul><div class="callout note"><div class="callout-title">More recipes</div><p>Each newer part has its own worked example: a <a href="firewall.html#building-one">firewall</a> between two networks, an <a href="namespace.html#example-application-api">application API through a firewall and a namespace</a>, the <a href="namespace.html#sub-networks">Minecraft tree</a> of namespaces, <a href="non.html#quick-tour">NON</a> calls without classes, and a <a href="scripting.html#the-frame">script</a> that turns readings into alerts.</p></div><h2 id="pitfalls">Pitfalls</h2><div class="table-wrap"><table class="wrap"><thead><tr><th>Symptom</th><th>Likely cause</th></tr></thead><tbody><tr><td><code>FireEvent</code> takes exactly the call timeout (30&nbsp;s by default)</td><td>A subscriber's callback is stuck; <code>FireEvent</code> stops waiting for it after <a href="api-eventnode.html#callfunction"><code>FunctionCallTimeout</code></a> or the <code>timeout</code> you pass.</td></tr><tr><td>Everything slows down under load</td><td>Many thread-pool threads blocked in <code>FireEvent</code> / <code>CallFunction</code>. Use the <code>…Async</code> forms (<a href="api-typesafe-node.html#threading">Threading</a>).</td></tr><tr><td><code>HookEvent</code> takes long to return</td><td>A merge is in progress (typed operations are paused until it ends, which each merge step bounds with <code>MergeStepTimeout</code>), or a node doesn't answer the agreement calls (bounded by <code>FunctionCallTimeout</code>).</td></tr><tr><td><code>TryEstablishConnection</code> returns <code>Unreachable</code></td><td>Discovery found nobody, or the target didn't answer within <code>MergeStepTimeout</code>.</td></tr><tr><td><code>FireEvent</code> returns false</td><td>The type isn't agreed yet, or this node hasn't learned it.</td></tr><tr><td><code>HookEvent</code> returns false</td><td>Another type is established for the ID, or a proposal of another type is pending. A pending one expires after <code>ProposalTimeToLive</code> (5&nbsp;s by default), so retrying later can succeed.</td></tr><tr><td><code>HookEvent</code> / <code>FireEvent</code> return <code>false</code> on a node that knows the event</td><td>Your type's signature differs from the agreed one: a missing or extra field, another field type, or another root <code>Name</code>.</td></tr><tr><td>Serial device disconnects after a second</td><td><a class="iss sev-high" href="issues.html#I-09" title="Serial links are dropped after about 1 second of silence and never re-established">I-09</a></td></tr><tr><td>CPU at 100% (or more) running the Examples</td><td>Busy <code>while(true){}</code> loops (<a class="iss sev-low" href="issues.html#I-36" title="Rough edges in the Examples">I-36</a>).</td></tr><tr><td>Traffic storm after adding a link</td><td>You closed a cycle with a raw link. That's expected: the core doesn't stop loops (<a href="routing.html#topology-rules">Topology rules</a>). Join through <code>TryEstablishConnection</code>, which refuses such links.</td></tr><tr><td><code>TryEstablishConnection</code> returns <code>false</code></td><td>Use <code>TryEstablishConnectionAsync</code> (or the <code>out MergeResult</code> overload) to see why. <code>AlreadyConnected</code>: the target is already in your network. <code>Timeout</code>: a node on the way stopped answering. <code>Busy</code>: a merge in the way never ended, so its node is broken.</td></tr></tbody></table></div>
+    </article>
+    <nav class="pager"><a class="prev" href="integration.html"><span>Previous</span>How EVent and NOTES fit</a><a class="next" href="scripting.html"><span>Next</span>Scripting node</a></nav>
+    <footer class="foot">Generated from the EVent source tree. Line references point at commit 67d35c7; code added by later commits (canonical order e2e550c, agreement recovery 7e35633, merge descriptors 6bbe9c2, type checks c0a0c42, merge cleanup 56bab8b, type graph 729bbe2, caps and optional fields c1f7363, collection definitions eca89fb, link faults c08d67b) is referenced by file.</footer>
+  </main>
+  <aside class="toc" aria-label="On this page"><div class="toc-title">On this page</div><ul id="toc"></ul></aside>
+</div>
+<script src="assets/search-index.js"></script>
+<script src="assets/site.js"></script>
+</body>
+</html>

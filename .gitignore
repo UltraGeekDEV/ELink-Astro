@@ -6,5 +6,5 @@ obj/
 *.fits
 *.bin
 /artifacts/
-# nuget/ holds the EVent packages (EVent is not on nuget.org): committed so a fresh clone builds
+# EVent/ holds EVent with its packages in EVent/nuget (not on nuget.org): committed so a fresh clone builds
 package/

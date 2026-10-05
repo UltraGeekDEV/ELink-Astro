@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roadmap &middot; EVent Wiki</title>
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem('evwiki-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+</head>
+<body>
+<header class="topbar">
+  <button class="menu-btn" aria-label="Toggle navigation" onclick="document.body.classList.toggle('nav-open')">&#9776;</button>
+  <a class="brand" href="index.html"><span class="logo">EV</span>EVent <span class="brand-sub">Wiki</span></a>
+  <div class="search">
+    <input id="search" type="search" placeholder="Search the wiki&hellip;  ( / )" autocomplete="off" aria-label="Search">
+    <div id="search-results" class="search-results" hidden></div>
+  </div>
+  <button id="theme-btn" class="theme-btn" aria-label="Toggle dark mode" title="Toggle light/dark">&#9680;</button>
+</header>
+<div class="layout">
+  <aside class="sidebar"><nav><div class="nav-sec"><div class="nav-sec-title">Overview</div><ul><li><a href="index.html">Home</a></li><li><a href="architecture.html">Architecture</a></li><li><a href="concepts.html">Core concepts</a></li><li><a href="glossary.html">Glossary</a></li></ul></div><div class="nav-sec"><div class="nav-sec-title">EVent core</div><ul><li><a href="routing.html">Links & interest routing</a></li><li><a href="drpc.html">Distributed RPC (dRPC)</a></li><li><a href="transports.html">Transports</a></li><li><a href="wire-format.html">Wire format</a></li>
+<li><a href="firewall.html">Firewall node</a></li>
+<li><a href="namespace.html">Namespace node</a></li></ul></div><div class="nav-sec"><div class="nav-sec-title">NOTES</div><ul><li><a href="notes.html">What is NOTES?</a></li><li><a href="notes-types.html">Defining NOTES types</a></li><li><a href="notes-protocol.html">Type agreement protocol</a></li><li><a href="notes-events.html">NOTES events reference</a></li>
+<li><a href="non.html">NON dynamic objects</a></li></ul></div><div class="nav-sec"><div class="nav-sec-title">Putting it together</div><ul><li><a href="integration.html">How EVent and NOTES fit</a></li><li><a href="examples.html">Examples & cookbook</a></li>
+<li><a href="scripting.html">Scripting node</a></li>
+<li><a href="native.html">C++ leaves</a></li></ul></div><div class="nav-sec"><div class="nav-sec-title">API reference</div><ul><li><a href="api-typesafe-node.html">TypeSafeEVentNode</a></li><li><a href="api-eventnode.html">EVentNode</a></li><li><a href="api-clients.html">Clients & helpers</a></li><li><a href="api-serialization.html">Serialization types</a></li><li><a href="api-transports.html">Transport classes</a></li><li><a href="api-constants.html">Event ID constants</a></li></ul></div><div class="nav-sec"><div class="nav-sec-title">Review</div><ul><li><a href="issues.html">Issues & open questions</a></li><li><a href="harness.html">Test harness & results</a></li><li><a href="roadmap.html" class="current" aria-current="page">Roadmap</a></li></ul></div></nav></aside>
+  <main class="content">
+    <div class="crumbs"><a href="index.html">EVent Wiki</a> <span>/</span> Review <span>/</span> Roadmap</div>
+    <article>
+      <h1>Roadmap</h1>
+      <p class="lead">What comes next, and the decisions already taken for it. Nothing here is built yet.</p>
+      <p>The first uses of EVent are on trusted home networks: lights (WLED) reacting to a game on the home Wi-Fi, a game controller on a serial port that fakes XInput or feeds an EVent input engine, mods for Minecraft and Factorio talking to each other. That sets the priorities below.</p>
+      <h2 id="decisions">Decisions</h2>
+      <div class="table-wrap"><table class="wrap"><thead><tr><th>Topic</th><th>Decision</th></tr></thead><tbody><tr><td>Trust</td><td>Links stay unauthenticated and unencrypted for now: the first users are on trusted networks. Routers bind to loopback where possible.</td></tr><tr><td>Languages</td><td>Every language other than C# joins as a <a href="native.html">leaf</a> of a C# router; the embedded side gets its own routers (the ESP-NOW dongles).</td></tr><tr><td>Leaf transports</td><td>TCP loopback today; shared memory later, behind the same <code>Transport</code> interface; serial for microcontrollers.</td></tr><tr><td>Dongle topology</td><td>A mesh of ESP-NOW dongles, each a router, with a reliable link layer (see <a href="#esp-now-mesh">below</a>). Custom hardware with more memory may come later.</td></tr><tr><td>Microcontroller leaves</td><td>Should work without heap memory where possible (an Arduino Uno has 2&nbsp;KB of RAM).</td></tr></tbody></table></div>
+      <h2 id="serial">Serial (needs hardware)</h2>
+      <p>Waits for test boards: two ESP32s, one behind a USB-to-TTL converter and one on its native USB port (the ESP32-S2/S3's USB CDC serial has caused problems before, so both paths are tested).</p>
+      <ul><li>Fix <a class="iss sev-high" href="issues.html#I-09">I-09</a> (links dropped after about 1&nbsp;s of silence, never re-established), <a class="iss sev-medium" href="issues.html#I-16">I-16</a> (250-byte receive buffer), <a class="iss sev-medium" href="issues.html#I-22">I-22</a> (every unknown port probed every second).</li><li>Harness scenarios on real ports: both boards, reconnects, sustained input rates.</li></ul>
+      <h2 id="micro-leaf">Micro leaf (any Arduino board)</h2>
+      <p>A leaf for controllers on any Arduino-supported board, over serial, ideally without heap memory (about 0.5&ndash;1&nbsp;KB of RAM). A leaf with endpoints fixed at compile time only needs a small, predictable part of the protocol:</p>
+      <ul><li><strong>Frames:</strong> one fixed receive buffer (128&ndash;256 bytes); frames are written straight to the port as they are built, with no send buffer.</li><li><strong>Interest:</strong> the router's <code>ListEvents</code> can be large, so it is parsed as it streams in, keeping one flag per own ID.</li><li><strong>Types:</strong> the micro leaf stores nobody else's types and doesn't answer the NOTES functions. At startup it proposes its own types through the router (TryInitiate, Finalize, Abort), keeping one agreed/refused flag per endpoint; the C# side keeps the full picture.</li><li><strong>Answers:</strong> a <code>FunctionReturn</code> needn't repeat the caller's input (the router reads only the handle and the answers), so the input can be dropped once decoded.</li><li><strong>Calls:</strong> a fixed number of call slots, each writing its answer straight into a struct the caller provides.</li><li><strong>Signatures</strong> are generated at compile time (C++17 <code>constexpr</code>, which avr-gcc handles) or by a small desktop tool from the same struct definitions: to be decided when it is tried with avr-gcc.</li><li><strong>Limits:</strong> endpoints fixed at compile time, values no larger than the buffer, no dynamic types, no listing the network.</li></ul>
+      <p>It is a byte stream, so it can be built and tested on the desktop (TCP or a pseudo-terminal against the C# harness) before the boards arrive.</p>
+      <h2 id="handshake-v2">Handshake v2: frame size</h2>
+      <p>Add the largest frame a side accepts to <code>LinkHandshake</code> (protocol version 2, minimum still 1). A router then never sends a leaf a frame it can't hold: a call that wouldn't fit is refused on the router's side instead of failing quietly on the device. It also bounds <a class="iss sev-medium" href="issues.html#I-52">I-52</a>.</p>
+      <h2 id="esp-leaf">ESP leaf</h2>
+      <p>The portable core (<code>non.hpp</code>, <code>dyn.hpp</code>, <code>wire.hpp</code>, <code>notes.hpp</code>: C++17, no exceptions, no I/O, no threads) with a leaf sized for an ESP32: one or two threads, small buffers, poll dispatch. ESP-IDF has <code>std::thread</code> and lwIP sockets, so the desktop leaf may compile there, but it is sized for a desktop (up to 64 handler threads, a 64&nbsp;KB receive buffer). None of it has been compiled for an ESP yet.</p>
+      <h2 id="esp-now-mesh">ESP-NOW dongle mesh</h2>
+      <p>A dongle adds wireless EVent to any EVent-capable serial or USB port, and dongles form a mesh. Each dongle is a router between its serial link and its ESP-NOW peers.</p>
+      <div class="table-wrap"><table class="wrap"><thead><tr><th>Layer</th><th>What it does</th></tr></thead><tbody><tr><td>Spanning tree</td><td>EVent links must form a tree (loops break interest routing). The dongles build a spanning tree over the ESP-NOW mesh, like the Spanning Tree Protocol network switches use, and rebuild it when a dongle disappears. EVent links run over tree edges only.</td></tr><tr><td>Reliable link</td><td>A TCP-like layer per tree edge: fragmentation (ESP-NOW frames are 250 bytes, more on newer ESP-IDF), sequence numbers, acknowledgements, retransmits, duplicate suppression.</td></tr><tr><td>Router core</td><td>Interest routing, prefix routes, call fan-out and answer merging, the handshake and NOTES participation, in portable C++, reusable on the custom hardware later.</td></tr></tbody></table></div>
+      <p>All three can be built and tested in simulation first: UDP in place of ESP-NOW, with injected loss, reordering and dongles disappearing.</p>
+      <h2 id="languages">Other languages and engines</h2>
+      <div class="table-wrap"><table class="wrap"><thead><tr><th>Target</th><th>Plan</th></tr></thead><tbody><tr><td>Java (Minecraft mods)</td><td>A leaf like the C++ one: sockets and threads, types from Java records or annotated classes. Minecraft's Java 17/21 is fine.</td></tr><tr><td>Lua (Factorio)</td><td>Factorio mods can't open sockets and can't push anything out: the only way in is RCON. So a Lua mod queues outgoing events and exposes a <code>remote</code> interface, and a bridge (a C# leaf) talks RCON to the game: it turns incoming events into <code>remote.call</code> commands and polls the mod's queue every few ticks for outgoing ones. Latency is about one poll interval.</td></tr><tr><td>Unity</td><td>Unity's C# is .NET Standard 2.1, which can't load a .NET 8 library. Preferred: multi-target the C# core to .NET Standard 2.1 (polyfills for <code>Int128</code>, generic math, <code>Random.Shared</code> and similar), so Unity gets the full node. Alternative: a small .NET Standard 2.1 leaf.</td></tr><tr><td>Godot 4 (C#), plain .NET, Unreal</td><td>Work today: the C# library, or the <a href="native.html">C++ leaf</a>.</td></tr></tbody></table></div>
+      <h2 id="conformance">Leaf conformance kit</h2>
+      <p>The harness drives the C++ leaf through <code>evn_leaf_peer</code>, a small command-line peer (commands on stdin, replies on stdout, values as hex of their NON bytes). Made the standard, every new leaf implements the same peer tool and reuses all Y scenarios unchanged: the cheapest way to verify Java, Unity and Lua leaves.</p>
+      <h2 id="smaller">Smaller items</h2>
+      <ul><li>Build and run the C++ leaf on Windows (the Winsock transport is written, never compiled).</li><li>Game input at 500&ndash;1000&nbsp;Hz: use <code>PublishEvent</code> (fire and forget: no acknowledgements, ordered; several times the throughput of <code>FireEvent</code>) or raw events; add a latency and throughput scenario over serial.</li><li>A WLED bridge example: a C# node (or a scripting-node script) turning events into WLED's JSON API or UDP real-time protocols (DDP, E1.31). A native EVent usermod inside WLED needs the ESP leaf first.</li><li>The shared-memory transport for local leaves.</li><li>Authentication and encryption, when EVent leaves trusted networks.</li></ul>
+      <h2 id="order">Suggested order</h2>
+      <ol><li>Leaf conformance kit.</li><li>Micro leaf and handshake v2 (desktop-tested).</li><li>Java leaf.</li><li>Unity (multi-target).</li><li>Factorio mod and bridge.</li><li>Router core and the reliable mesh layer, in simulation.</li><li>With the boards: Serial fixes, the micro leaf on real boards, ESP-NOW for real.</li></ol>
+    </article>
+    <nav class="pager"><a class="prev" href="harness.html"><span>Previous</span>Test harness &amp; results</a><span></span></nav>
+    <footer class="foot">Plans and decisions; nothing on this page is built yet.</footer>
+  </main>
+  <aside class="toc" aria-label="On this page"><div class="toc-title">On this page</div><ul id="toc"></ul></aside>
+</div>
+<script src="assets/search-index.js"></script>
+<script src="assets/site.js"></script>
+</body>
+</html>

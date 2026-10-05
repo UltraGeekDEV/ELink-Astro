@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C++ leaves &middot; EVent Wiki</title>
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem('evwiki-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+</head>
+<body>
+<header class="topbar">
+  <button class="menu-btn" aria-label="Toggle navigation" onclick="document.body.classList.toggle('nav-open')">&#9776;</button>
+  <a class="brand" href="index.html"><span class="logo">EV</span>EVent <span class="brand-sub">Wiki</span></a>
+  <div class="search">
+    <input id="search" type="search" placeholder="Search the wiki&hellip;  ( / )" autocomplete="off" aria-label="Search">
+    <div id="search-results" class="search-results" hidden></div>
+  </div>
+  <button id="theme-btn" class="theme-btn" aria-label="Toggle dark mode" title="Toggle light/dark">&#9680;</button>
+</header>
+<div class="layout">
+  <aside class="sidebar"><nav><div class="nav-sec"><div class="nav-sec-title">Overview</div><ul><li><a href="index.html">Home</a></li><li><a href="architecture.html">Architecture</a></li><li><a href="concepts.html">Core concepts</a></li><li><a href="glossary.html">Glossary</a></li></ul></div><div class="nav-sec"><div class="nav-sec-title">EVent core</div><ul><li><a href="routing.html">Links & interest routing</a></li><li><a href="drpc.html">Distributed RPC (dRPC)</a></li><li><a href="transports.html">Transports</a></li><li><a href="wire-format.html">Wire format</a></li>
+<li><a href="firewall.html">Firewall node</a></li>
+<li><a href="namespace.html">Namespace node</a></li></ul></div><div class="nav-sec"><div class="nav-sec-title">NOTES</div><ul><li><a href="notes.html">What is NOTES?</a></li><li><a href="notes-types.html">Defining NOTES types</a></li><li><a href="notes-protocol.html">Type agreement protocol</a></li><li><a href="notes-events.html">NOTES events reference</a></li>
+<li><a href="non.html">NON dynamic objects</a></li></ul></div><div class="nav-sec"><div class="nav-sec-title">Putting it together</div><ul><li><a href="integration.html">How EVent and NOTES fit</a></li><li><a href="examples.html">Examples & cookbook</a></li>
+<li><a href="scripting.html">Scripting node</a></li>
+<li><a href="native.html" class="current" aria-current="page">C++ leaves</a></li></ul></div><div class="nav-sec"><div class="nav-sec-title">API reference</div><ul><li><a href="api-typesafe-node.html">TypeSafeEVentNode</a></li><li><a href="api-eventnode.html">EVentNode</a></li><li><a href="api-clients.html">Clients & helpers</a></li><li><a href="api-serialization.html">Serialization types</a></li><li><a href="api-transports.html">Transport classes</a></li><li><a href="api-constants.html">Event ID constants</a></li></ul></div><div class="nav-sec"><div class="nav-sec-title">Review</div><ul><li><a href="issues.html">Issues & open questions</a></li><li><a href="harness.html">Test harness & results</a></li><li><a href="roadmap.html">Roadmap</a></li></ul></div></nav></aside>
+  <main class="content">
+    <div class="crumbs"><a href="index.html">EVent Wiki</a> <span>/</span> Putting it together <span>/</span> C++ leaves</div>
+    <article>
+      <h1>C++ leaves</h1>
+      <p class="lead">Programs in other languages join an EVent network as typed <strong>leaf nodes</strong>: one link to a router, their own NOTES implementation, no routing of their own. The C++ library in <code>cpp/</code> is the first.</p>
+      <p>The <strong>router</strong> is an ordinary C# node, usually on the same machine: the interconnect between languages, machines and transports. A leaf talks to it over a byte stream (TCP on the loopback interface today; shared memory later, behind the same interface) and is a full participant in <a href="notes.html">NOTES</a> for its own endpoints: it takes part in type agreement, knows the network's agreed types, and checks every event and call against them in both directions. It never forwards anything and never merges networks; that is the router's job. Nothing listens on the C++ side: the leaf dials the router's ordinary <code>TCPServer</code>.</p>
+      <div class="table-wrap"><table class="wrap"><thead><tr><th></th><th>Router (C# node)</th><th>Leaf (C++)</th></tr></thead><tbody><tr><td>Links</td><td>any number, any transport, merges and loop checks</td><td>exactly one, to its router</td></tr><tr><td>Routing</td><td>routes by interest, prefix routes, namespaces, firewalls</td><td>none: sends to the router what the router routes onward</td></tr><tr><td>Types</td><td>agrees and stores them</td><td>agrees and stores them (the same protocol)</td></tr><tr><td>Own endpoints</td><td>local layer</td><td><strong>local loopback</strong>: its hooks get its own fires and its functions answer its own calls, without a round trip</td></tr></tbody></table></div>
+      <h2 id="building">Building</h2>
+      <p>The library is header-only C++17 (<code>cpp/include/evn/</code>); a program includes <code>&lt;evn/leaf.hpp&gt;</code> and links the platform's threads. With CMake:</p>
+      <div class="code"><pre><code class="lang-cmake">add_subdirectory(path/to/cpp)             # the INTERFACE target evn: include path + Threads
+target_link_libraries(my_app PRIVATE evn)
+</code></pre></div>
+      <div class="code"><pre><code class="lang-bash">cpp/build.sh      # builds the self-test and the harness's peer tool into cpp/build, runs the tests
+</code></pre></div>
+      <div class="table-wrap"><table class="wrap"><thead><tr><th>Header</th><th>What it holds</th></tr></thead><tbody><tr><td><code>non.hpp</code></td><td>NOTES types from C++ structs, field documentation, canonical signatures, the NON byte layout (encode/decode).</td></tr><tr><td><code>dyn.hpp</code></td><td>Dynamic types: any type from its signature, <code>dyn::Value</code>, its NON layout and JSON.</td></tr><tr><td><code>wire.hpp</code></td><td>Frames, the link protocol's messages and the NOTES descriptor in EVent's plain layout.</td></tr><tr><td><code>notes.hpp</code></td><td>The type store: how a participant answers the agreement protocol.</td></tr><tr><td><code>transport.hpp</code></td><td>The <code>Transport</code> interface (a reliable byte stream) and <code>TcpTransport</code> (POSIX sockets; Winsock under <code>_WIN32</code>).</td></tr><tr><td><code>leaf.hpp</code></td><td><code>evn::Leaf</code>: the desktop leaf (threads, re-dialing).</td></tr></tbody></table></div>
+      <p>The first four are the <strong>portable core</strong>: C++17 without exceptions, I/O or threads (the self-test is built with <code>-fno-exceptions</code>), so an embedded implementation (ESP-IDF, later) can reuse them with its own shell.</p>
+      <h2 id="types">Types</h2>
+      <p>A struct becomes a NOTES record by mapping its fields once, next to it. The NOTES name defaults to the struct's name; <code>EVN_RECORD_NAMED</code> gives another (needed for a type in a namespace: <code>EVN_RECORD_NAMED(app::Reading, "Reading", ...)</code>, placed in that namespace). Field order in the macro doesn't matter: the wire order is by name, as everywhere in NOTES. <code>EVN_DOCS</code> documents fields; the documentation travels with the types this program proposes and shows in every directory, exactly as <code>RegisterField(...).Description(...).Range(...).Default(...)</code> does in C#.</p>
+      <div class="code"><pre><code class="lang-cpp">#include &lt;evn/leaf.hpp&gt;
+
+struct Spot { int32_t Floor = 0; std::string Room; };
+EVN_RECORD(Spot, Floor, Room)
+
+struct Thermo {
+    float Celsius = 0;
+    std::optional&lt;std::string&gt; Label;          // optional: Label:string?
+    std::optional&lt;Spot&gt; Where;
+    std::vector&lt;double&gt; History;               // History:double[]
+    evn::Capped&lt;uint8_t, 16&gt; Flags;            // Flags:uint8[&lt;=16]
+};
+EVN_RECORD(Thermo, Celsius, Label, Where, History, Flags)
+EVN_DOCS(Thermo, evn::doc("Celsius", "temperature in degrees Celsius").range(-40, 125),
+                 evn::doc("Label", "sensor label").default_value("unnamed"))
+// signature: =Thermo  Spot{Floor:int32,Room:string}
+//            Thermo{Celsius:float,Flags:uint8[&lt;=16],History:double[],Label:string?,Where:Spot?}
+</code></pre></div>
+      <div class="table-wrap"><table class="wrap"><thead><tr><th>C++</th><th>NOTES</th><th>Bytes</th></tr></thead><tbody><tr><td><code>bool</code></td><td><code>bool</code></td><td>1 (0 or 1; anything else is refused)</td></tr><tr><td><code>int8_t</code> / <code>uint8_t</code></td><td><code>int8</code> / <code>uint8</code></td><td>1</td></tr><tr><td><code>int16_t</code> / <code>uint16_t</code></td><td><code>int16</code> / <code>uint16</code></td><td>2</td></tr><tr><td><code>int32_t</code> / <code>uint32_t</code></td><td><code>int32</code> / <code>uint32</code></td><td>4</td></tr><tr><td><code>int64_t</code> / <code>uint64_t</code></td><td><code>int64</code> / <code>UInt64</code></td><td>8</td></tr><tr><td><code>float</code> / <code>double</code></td><td><code>float</code> / <code>double</code></td><td>4 / 8, IEEE-754</td></tr><tr><td><code>char16_t</code></td><td><code>char16</code></td><td>2 (a UTF-16 code unit, C#'s <code>char</code>)</td></tr><tr><td><code>evn::Decimal</code></td><td><code>decimal</code></td><td>16: .NET's <code>decimal.GetBits</code> (magnitude, scale, sign); <code>parse</code>, <code>to_string</code>, <code>to_double</code></td></tr><tr><td><code>std::string</code></td><td><code>string</code></td><td>int32 length + UTF-8</td></tr><tr><td><code>evn::Void</code></td><td><code>Void</code></td><td>1 (a function without input, an event's answer)</td></tr><tr><td><code>std::vector&lt;T&gt;</code>, <code>evn::Capped&lt;T, N&gt;</code></td><td><code>T[]</code>, <code>T[&lt;=N]</code></td><td>int32 count + elements</td></tr><tr><td><code>std::optional&lt;T&gt;</code>, <code>evn::Box&lt;T&gt;</code> (fields only)</td><td><code>T?</code></td><td>presence byte + value; <code>Box</code> is for a record that contains itself (<code>struct Node { int32_t V; evn::Box&lt;Node&gt; Next; }</code>)</td></tr></tbody></table></div>
+      <p>Any other integer type maps by size and signedness (<code>long long</code> is <code>int64</code>); plain <code>char</code> is refused, being signed on some platforms and not on others. <code>evn::signature_of&lt;T&gt;()</code>, <code>evn::encode</code> and <code>evn::decode</code> are there for tools and tests; decode is strict (short input, leftover bytes, a bool other than 0/1, an invalid decimal, an over-cap or lying count, nesting deeper than 64 all fail).</p>
+      <p>An application's own leaf type (like a C# class with no fields and its own bytes) is a <code>Codec</code> specialization:</p>
+      <div class="code"><pre><code class="lang-cpp">struct Stamp { uint16_t Value = 0; };
+template &lt;&gt; struct evn::Codec&lt;Stamp&gt; {
+    static std::string ref(evn::Schema&amp; s, int) { return evn::leaf_ref(s, "stamp16"); }
+    static bool write(evn::Writer&amp; w, const Stamp&amp; v, int) { w.le(v.Value); return true; }
+    static bool read(evn::Reader&amp; r, Stamp&amp; v, int) { return r.le(v.Value); }
+};
+</code></pre></div>
+      <h2 id="the-leaf">The leaf</h2>
+      <div class="code"><pre><code class="lang-cpp">evn::Leaf leaf("sensor");
+if (!leaf.connect_tcp("127.0.0.1", 5698)) return 1;          // the router's TCPServer port
+
+auto hooked = leaf.hook&lt;Thermo&gt;("Home.Reading", [](const Thermo&amp; t) { std::cout &lt;&lt; t.Celsius &lt;&lt; "\n"; },
+                                "a room temperature reading");   // empty token: a type conflict
+leaf.provide&lt;evn::Void, int32_t&gt;("Home.Count", [](const evn::Void&amp;) { return 42; });
+leaf.provide&lt;Spot, std::string&gt;("Home.Name", [](const Spot&amp; s) -&gt; std::optional&lt;std::string&gt; {
+    if (s.Room.empty()) return std::nullopt;                  // no answer from this provider
+    return s.Room + " on floor " + std::to_string(s.Floor);
+});
+
+bool ok = leaf.fire("Home.Reading", Thermo{21.5f});            // false only on a type mismatch
+auto counts = leaf.call&lt;int32_t&gt;("Home.Count", evn::Void{});   // std::optional&lt;std::vector&lt;int32_t&gt;&gt;: one per provider
+leaf.publish("Home.Reading", Thermo{21.5f});              // fire and forget: no acknowledgements, in order
+leaf.remove(hooked);
+</code></pre></div>
+      <div class="table-wrap"><table class="wrap"><thead><tr><th>Member</th><th>What it does</th></tr></thead><tbody><tr><td><code>connect_tcp(host, port)</code>, <code>attach(transport)</code></td><td>Link to the router and wait for its handshake (<code>handshake_timeout</code>). With <code>reconnect</code> (default on), a lost link is dialed again every <code>reconnect_delay</code>; calling <code>connect_tcp</code> again meanwhile changes the target.</td></tr><tr><td><code>hook&lt;T&gt;(id, callback, description)</code></td><td>Subscribe; agrees <code>T</code> as the type first if the network has none. Returns a <code>Token</code>, empty on a conflict.</td></tr><tr><td><code>provide&lt;In, Out&gt;(id, handler, description)</code></td><td>Provide a function. The handler returns <code>Out</code>, or <code>std::optional&lt;Out&gt;</code> where <code>nullopt</code> gives no answer.</td></tr><tr><td><code>provide_async&lt;In, Out&gt;(id, handler)</code></td><td>A provider that answers later: <code>handler(const In&amp;, evn::Answer&lt;Out&gt; answer)</code>, then <code>answer(value)</code> or <code>answer.none()</code> once, from any thread.</td></tr><tr><td><code>fire(id, value, options)</code>, <code>call&lt;Out&gt;(id, input, options)</code></td><td>Deliver to every subscriber / call every provider, here and in the network, and wait. <code>fire</code> is true also when nobody subscribed; <code>call</code> gives one answer per provider, empty if there are none, <code>nullopt</code> on a type mismatch.</td></tr><tr><td><code>publish(id, value)</code></td><td>Fire and forget: hands the value to every subscriber (here and in the network) and returns without waiting for them. No acknowledgement travels and nothing is kept for the event, so streams of readings go several times faster than with <code>fire</code>. Events from one leaf reach a subscriber in the order published (a subscriber's handlers get one ID's events one at a time). It says nothing about the event having been handled: a router or subscriber that is gone, a link that breaks or a handler that throws loses it silently. True also when nobody subscribed; false on a type mismatch or when stopped. The router sees a <code>FunctionCall</code> whose call ID has bit 63 set (<a href="wire-format.html#eventfunction-drpc-envelope">wire format</a>).</td></tr><tr><td><code>fire_async</code>, <code>call_async&lt;Out&gt;</code></td><td>The same without waiting: a <code>std::future</code>. Dropping it is fire-and-forget.</td></tr><tr><td><code>fire_then(id, value, done)</code>, <code>call_then&lt;Out&gt;(id, input, done)</code></td><td>The same with a callback, run like a handler.</td></tr><tr><td><code>hook_raw(id, callback)</code>, <code>fire_raw(id, bytes)</code></td><td>Raw (untyped) events: bytes as they are, no type checks, no waiting.</td></tr><tr><td><code>hook_dynamic</code>, <code>provide_dynamic</code>, <code>fire_dynamic</code>, <code>call_dynamic</code></td><td>The same with <a href="#dynamic">dynamic values</a> instead of structs.</td></tr><tr><td><code>list()</code>, <code>type_of(id)</code>, <code>known_types()</code></td><td>The network's endpoints, like C#'s <a href="scripting.html#network-directory">NetworkDirectory</a> (namespaces expanded through their <code>$Describe</code>; raw-only IDs as "untyped"); one ID's agreed type (signatures, description, field documentation); the types this leaf knows.</td></tr><tr><td><code>remove(token)</code></td><td>Drop a hook or function; the router stops routing the ID here when nothing else here handles it. The agreed type stays.</td></tr><tr><td><code>on_link(handler)</code>, <code>connected()</code>, <code>router_handshake()</code>, <code>stop()</code></td><td>Link changes; the router's handshake (implementation, protocol version); leave the network (also on destruction). A router with an incompatible protocol version is refused (and not re-dialed).</td></tr></tbody></table></div>
+      <p><code>CallOptions</code> carries a timeout (default <code>call_timeout</code>, 30 s) and an <code>evn::Cancel</code>: <code>cancel.cancel()</code> ends every call made with it now, as if its timeout had passed. A leaf without a link still works for its own endpoints (loopback), and types it agrees offline are offered to the network when it connects.</p>
+      <h2 id="async">Asynchronous calls</h2>
+      <div class="code"><pre><code class="lang-cpp">for (auto&amp; r : readings) leaf.fire_async("Home.Reading", r);          // fire-and-forget
+
+auto pending = leaf.call_async&lt;int32_t&gt;("Home.Count", evn::Void{});    // std::future&lt;std::optional&lt;std::vector&lt;int32_t&gt;&gt;&gt;
+// ... other work ...
+auto counts = pending.get();
+
+evn::Cancel cancel;
+leaf.call_then&lt;std::string&gt;("Home.Name", Spot{2, "attic"},
+    [](const std::optional&lt;std::vector&lt;std::string&gt;&gt;&amp; names) { /* runs like a handler */ },
+    evn::CallOptions(evn::Millis(2000), cancel));
+cancel.cancel();                                                       // completes it now with what arrived
+</code></pre></div>
+      <p>Blocking and asynchronous calls share one engine: the router's answer, this leaf's own handlers, a deadline and a cancel all complete the same call record, whichever comes first. The asynchronous path holds no thread while it waits, also not while it asks the network for an ID's type or waits out a <a href="notes-protocol.html">merge freeze</a>.</p>
+      <h2 id="dispatch">Where handlers run</h2>
+      <p>By default (<code>Dispatch::Threads</code>) handlers and callbacks run on the leaf's handler threads, several at once (created on demand, at most <code>max_workers</code>, 64): make them thread-safe. <code>Dispatch::Poll</code> runs them on the application's own thread instead, inside <code>poll()</code>, for GUIs, games and event loops:</p>
+      <div class="code"><pre><code class="lang-cpp">evn::LeafOptions options;
+options.dispatch = evn::Dispatch::Poll;
+options.wakeup = [&amp;] { loop.post_wakeup(); };     // called from any thread when work is waiting (optional)
+evn::Leaf leaf("game", options);
+// ...
+while (running) {
+    leaf.poll();                                   // runs waiting handlers and callbacks here
+    render();
+}
+</code></pre></div>
+      <p>The leaf's own protocol work (type agreement, the merge freeze) stays on its threads, so a busy application never stalls the network. In poll mode a blocking <code>fire</code> or <code>call</code> from the polling thread runs this leaf's own handlers inline; but it can't answer a call from the network while it waits, so prefer the asynchronous forms there. A handler that throws gives no answer.</p>
+      <h2 id="dynamic">Dynamic types</h2>
+      <p>A program that meets types at run time (a logger, a bridge, a tool) uses <code>dyn::Value</code>: records by field name, lists, numbers, strings, with the network's agreed type deciding the bytes. Values convert from and to JSON in the <a href="non.html">NON</a> shapes.</p>
+      <div class="code"><pre><code class="lang-cpp">leaf.hook_dynamic("Home.Reading", [](const evn::dyn::Value&amp; v) {
+    std::cout &lt;&lt; evn::dyn::to_json(v) &lt;&lt; "\n";           // {"Celsius":21.5,"Where":{"Floor":1,"Room":"den"}}
+});
+evn::dyn::Value r;
+r["Celsius"] = 19.5;
+r["Where"]["Room"] = "attic";                            // missing required fields or unknown ones: refused
+r["Where"]["Floor"] = 2;
+leaf.fire_dynamic("Home.Reading", r);
+auto sums = leaf.call_dynamic("Lab.Sum", *parsed_json);  // std::optional&lt;std::vector&lt;dyn::Value&gt;&gt;
+// proposing a type from a signature (any order; agreed in canonical form):
+leaf.provide_dynamic("Shop.Order", echo, {"=Order", "Order{Item:string,Note:string?,Qty:int32}"},
+                                         {"=Order", "Order{Item:string,Note:string?,Qty:int32}"});
+</code></pre></div>
+      <p>Numbers convert like NON's: an integer into any integer field it fits, any number into float, double and decimal, never a fraction into an integer; a one-character string into <code>char16</code>. A custom leaf needs <code>dyn::register_leaf(name, step_over)</code> and is held as its raw bytes.</p>
+      <h2 id="protocol">The leaf protocol</h2>
+      <p>What a leaf does on the wire, for implementing one in another language. Frames and layouts are those of the <a href="wire-format.html">wire format</a>; payloads of the protocol's own messages are in the plain layout, application values in the NON layout.</p>
+      <ol><li><strong>Link.</strong> Open the byte stream to the router and send <code>InterconnectRunning</code> (<code>ServerAdminEvent</code>) with the handshake: int32 protocol version, int32 oldest version accepted, string implementation (the C++ leaf sends 1, 1, "evn-cpp"). The router sends its own; if its version is outside the leaf's range (or its payload is empty, version 0), send a <code>LinkFault</code> naming both and close. Otherwise answer it (and any <code>QueryEvents</code>) with <code>ListEvents</code>: a plain collection of strings, the leaf's <em>interest</em>. The router's <code>ListEvents</code> is its interest: the IDs it routes onward (names and prefix routes <code>A.*</code>). The link is up once it arrived.</li><li><strong>Interest.</strong> The IDs the leaf handles (typed or raw), plus the NOTES functions it answers (below). Send <code>EventAdded</code> / <code>EventRemoved</code> (a string) when an ID gains its first or loses its last handler; apply the router's to its interest set. After an <code>EventAdded</code>, call <code>AwaitReady</code> (it travels behind the notice): once it completes, the whole network routes the ID to the leaf.</li><li><strong>Calling.</strong> A typed event is a call whose providers answer nothing. To call ID <em>X</em>: if the router routes <em>X</em> (by name or by a covering prefix route), send a <code>FunctionCall</code> frame with an <code>EVentFunction</code> (Parameters: the frame <code>X</code>/<code>FunctionCall</code>/input; ReturnValues: empty; Handle: an ID of the leaf's choosing); run the leaf's own handlers of <em>X</em> too; the router answers once, with a <code>FunctionReturn</code> carrying the same Handle and every other provider's answers. A call waits at most its timeout; a link that drops completes it with what arrived.</li><li><strong>Answering.</strong> Answer every <code>FunctionCall</code> from the router with a <code>FunctionReturn</code>: the same <code>EVentFunction</code> (same Handle, same Parameters) with one <code>Package(X, FunctionReturn, answer)</code> per non-empty answer in ReturnValues. Always answer, even with nothing: the network waits for it.</li><li><strong>Raw events</strong> are <code>Data</code> frames: send one if the router routes the ID; deliver incoming ones to the raw subscribers. Nothing is answered.</li><li><strong>Types.</strong> Answer the NOTES functions like a .NET node (table below). To use an ID: if its type is known, the local types must match it; otherwise propose (below). Before sending, a leaf that doesn't know the ID's type asks <code>QueryDescriptors</code> and adopts the answer; nobody interested means nothing to check.</li><li><strong>Proposing.</strong> Call <code>TryInitiateNOTESDescriptor</code> with a descriptor (input signature, ID, answer signature, a random weight 0&hellip;2<sup>31</sup>-2, description, field annotations). All replies 0 (accepted): call <code>FinalizeNOTESDescriptor</code>; any -1 there: <code>AbortNOTESDescriptor</code> and fail. Otherwise abort, then: a -1 (conflict) fails; a 2 (established) means fetch the type with <code>QueryDescriptors</code> and adopt it if equal; else (1, pending) wait 100 ms and start over. The leaf's own responder answers its own proposal too (loopback), which is what makes an offline leaf agree with itself.</li><li><strong>After the handshake</strong>, if the router's list contains <code>NOTESShareDescriptors</code> and the leaf knows types, call it with all of them: the network commits those it lacks. The router does the same towards the leaf.</li><li><strong>Malformed input</strong> (a bad frame or protocol payload): send <code>LinkFault</code> with the reason and close the stream.</li></ol>
+      <div class="table-wrap"><table class="wrap"><thead><tr><th>Function</th><th>Input &rarr; answer</th><th>Behaviour</th></tr></thead><tbody><tr><td><code>TryInitiateNOTESDescriptor</code></td><td>descriptor &rarr; int32</td><td>Established: 2 if equal, else -1. A live pending proposal (younger than the proposal TTL, 5 s): -1 if a different type; if equal, the incoming one replaces it and gets 0 when the pending weight is lower, else 1. Nothing: hold it as pending, 0.</td></tr><tr><td><code>FinalizeNOTESDescriptor</code></td><td>descriptor &rarr; int32</td><td>Commit it: 1, or -1 if a different type is established. Clears the pending entry.</td></tr><tr><td><code>AbortNOTESDescriptor</code></td><td>descriptor &rarr; Void</td><td>Drop the pending entry only if it is this proposal (same type and weight).</td></tr><tr><td><code>QueryDescriptors</code></td><td>string &rarr; descriptor</td><td>The established descriptor, or no answer.</td></tr><tr><td><code>NOTESQueryDescriptorSet</code></td><td>strings &rarr; descriptors</td><td>Those known of the IDs asked, or no answer.</td></tr><tr><td><code>NOTESShareDescriptors</code></td><td>descriptors &rarr; strings</td><td>Commit each (as Finalize); answer the conflicting IDs, or nothing.</td></tr><tr><td><code>StopEvents</code> / <code>AllowEvents</code></td><td>Void &rarr; Void</td><td>The merge freeze: close the gate (new fires, calls and agreements wait) and answer once the ones inside finished; reopen it.</td></tr><tr><td><code>AwaitReady</code></td><td>Void &rarr; Void</td><td>Answer once the gate is open.</td></tr></tbody></table></div>
+      <p>Descriptors compare by ID, input and answer signature; description, weight and field documentation don't count. A leaf never answers <code>NOTESMergePing</code>: it has no merges of its own. Listing the network is built from the same pieces: the router's interest, <code>NOTESQueryDescriptorSet</code> for the IDs routed by name, and each namespace's <code>ns.$Describe</code> (a typed function answering <code>EVentNamespace</code>) for prefix routes.</p>
+      <h2 id="mixed-networks">Tested</h2>
+      <p>Harness group Y runs C# routers with C++ leaves in separate processes (the <code>evn_leaf_peer</code> tool, scripted over stdin; values cross as hex of their NON bytes, so both sides compare bytes):</p>
+      <ul><li><strong>Y01</strong>: the self-test; signatures and bytes identical to .NET for 14 values of 12 types (every primitive at its edges, optional, nested, list, recursive, capped, a custom leaf); bytes .NET refuses are refused.</li><li><strong>Y02&ndash;Y03</strong>: events and calls both ways, byte-identical; one call answered by a C# and a C++ provider together; a type defined in C++ binds C# classes; wrong types refused on both sides.</li><li><strong>Y04</strong>: loopback offline; types agreed offline reach the network on connecting; removing a hook withdraws its route.</li><li><strong>Y05</strong>: two leaves through one router; concurrent proposals never agree two types.</li><li><strong>Y06</strong>: a leaf behind a <a href="namespace.html">namespace</a>; a merge with a leaf attached (it answers the freeze); a router restart, after which the leaf re-dials and re-shares its types.</li><li><strong>Y07</strong>: 2000 calls each way over loopback TCP, from 8 threads (about 14,000&ndash;22,000 calls/s on the test machine).</li><li><strong>Y08</strong>: <code>list()</code> gives exactly C#'s <code>NetworkDirectory</code> (namespace endpoints, a raw-only ID, the leaf's own).</li><li><strong>Y09</strong>: 1000 fire-and-forget events, futures and callbacks, a slow call cancelled after 100 ms, a provider answering 300 ms later.</li><li><strong>Y10</strong>: <code>Dispatch::Poll</code>: handlers and callbacks on the main thread, woken through the wakeup hook.</li><li><strong>Y11</strong>: field documentation identical whichever language proposed the type.</li><li><strong>Y12</strong>: dynamic values: a C# type read as JSON, one fired from JSON, wrong shapes refused, calls, a provider proposed from a signature, a custom leaf.</li><li><strong>Y13</strong>: raw events both ways, and back to the leaf's own raw hook.</li><li><strong>Y14</strong>: the versioned handshake: the leaf refuses a router speaking protocol 99 with a <code>LinkFault</code>, and reports a current router's handshake.</li></ul>
+      <p>See <a href="harness.html#native">Test harness &amp; results</a>.</p>
+      <h2 id="limits">Limits</h2>
+      <ul><li>Windows: <code>TcpTransport</code> has a Winsock implementation, but it hasn't been compiled or run yet (no Windows toolchain where this was written).</li><li>A default in the field documentation is documentation only on the C++ side: an absent optional field reads as <code>nullopt</code> (C# reads it as the default).</li><li>Hooking and providing (type agreement, then confirming the route) block the calling thread; the network answers within a few round trips.</li><li>A <code>provide_async</code> handler must answer before the leaf stops.</li><li>Names are compared by byte order in C++ and by UTF-16 order in .NET; they agree for all but some non-ASCII names, so keep record and field names ASCII.</li><li>The embedded implementation, embedded routers (ESP-NOW and other transports) and the shared-memory transport are separate work that will reuse the portable core.</li></ul>
+    </article>
+    <nav class="pager"><a class="prev" href="scripting.html"><span>Previous</span>Scripting node</a><a class="next" href="api-typesafe-node.html"><span>Next</span>TypeSafeEVentNode</a></nav>
+    <footer class="foot">Generated from the EVent source tree. The C++ library is in <code>cpp/</code>.</footer>
+  </main>
+  <aside class="toc" aria-label="On this page"><div class="toc-title">On this page</div><ul id="toc"></ul></aside>
+</div>
+<script src="assets/search-index.js"></script>
+<script src="assets/site.js"></script>
+</body>
+</html>

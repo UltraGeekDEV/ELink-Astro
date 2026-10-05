@@ -155,7 +155,7 @@ focus triggers/offsets -> live-stack rejection/calibration -> the rest.
 - [x] Set up: scopes are not offered as things to put on a mount (only a scope that already combines others shows them)
 
 ## Notes / decisions
-- EVent package in `~/ELink/package` has no nuget/ folder; real feed is `~/Desktop/EVent/EVent/dist/EVent/nuget`.
+- EVent lives in `EVent/` (docs in `EVent/wiki`, skill in `EVent/skill`, JS/C++/C# leaves); packages are the local feed `EVent/nuget`. `PublishEvent` is fire and forget (ordered, no acks): use it for streams.
 - INDI simulators available: ccd, telescope, focus, wheel, rotator, dome, weather, gps, guide, sqm, io, lightpanel, dustcover, receiver.
 - Typed events in EVent are acknowledged synchronously: a slow subscriber stalls the publisher, so high-rate
   data (BLOBs, position streams) needs care (separate IDs / raw events / throttling).

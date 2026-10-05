@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scripting node &middot; EVent Wiki</title>
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem('evwiki-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+</head>
+<body>
+<header class="topbar">
+  <button class="menu-btn" aria-label="Toggle navigation" onclick="document.body.classList.toggle('nav-open')">&#9776;</button>
+  <a class="brand" href="index.html"><span class="logo">EV</span>EVent <span class="brand-sub">Wiki</span></a>
+  <div class="search">
+    <input id="search" type="search" placeholder="Search the wiki&hellip;  ( / )" autocomplete="off" aria-label="Search">
+    <div id="search-results" class="search-results" hidden></div>
+  </div>
+  <button id="theme-btn" class="theme-btn" aria-label="Toggle dark mode" title="Toggle light/dark">&#9680;</button>
+</header>
+<div class="layout">
+  <aside class="sidebar"><nav><div class="nav-sec"><div class="nav-sec-title">Overview</div><ul><li><a href="index.html">Home</a></li><li><a href="architecture.html">Architecture</a></li><li><a href="concepts.html">Core concepts</a></li><li><a href="glossary.html">Glossary</a></li></ul></div><div class="nav-sec"><div class="nav-sec-title">EVent core</div><ul><li><a href="routing.html">Links & interest routing</a></li><li><a href="drpc.html">Distributed RPC (dRPC)</a></li><li><a href="transports.html">Transports</a></li><li><a href="wire-format.html">Wire format</a></li>
+<li><a href="firewall.html">Firewall node</a></li>
+<li><a href="namespace.html">Namespace node</a></li></ul></div><div class="nav-sec"><div class="nav-sec-title">NOTES</div><ul><li><a href="notes.html">What is NOTES?</a></li><li><a href="notes-types.html">Defining NOTES types</a></li><li><a href="notes-protocol.html">Type agreement protocol</a></li><li><a href="notes-events.html">NOTES events reference</a></li>
+<li><a href="non.html">NON dynamic objects</a></li></ul></div><div class="nav-sec"><div class="nav-sec-title">Putting it together</div><ul><li><a href="integration.html">How EVent and NOTES fit</a></li><li><a href="examples.html">Examples & cookbook</a></li>
+<li><a href="scripting.html" class="current" aria-current="page">Scripting node</a></li>
+<li><a href="native.html">C++ leaves</a></li></ul></div><div class="nav-sec"><div class="nav-sec-title">API reference</div><ul><li><a href="api-typesafe-node.html">TypeSafeEVentNode</a></li><li><a href="api-eventnode.html">EVentNode</a></li><li><a href="api-clients.html">Clients & helpers</a></li><li><a href="api-serialization.html">Serialization types</a></li><li><a href="api-transports.html">Transport classes</a></li><li><a href="api-constants.html">Event ID constants</a></li></ul></div><div class="nav-sec"><div class="nav-sec-title">Review</div><ul><li><a href="issues.html">Issues & open questions</a></li><li><a href="harness.html">Test harness & results</a></li><li><a href="roadmap.html">Roadmap</a></li></ul></div></nav></aside>
+  <main class="content">
+    <div class="crumbs"><a href="index.html">EVent Wiki</a> <span>/</span> Putting it together <span>/</span> Scripting node</div>
+    <article>
+      <h1>Scripting node</h1>
+      <p class="lead">Connect applications that were never written for each other: pick an event, pick what it should drive, write the few lines in between, and they run on the network.</p>
+      <p>The scripting node is a typed node with a small web page (project <code>EVent.Scripting</code>). The page lists everything the network offers. You choose one <strong>input</strong> (an event to react to, or a function to answer) and any number of <strong>outputs</strong> (events to fire, functions to call). The node generates a <strong>frame</strong>: C# classes for every type involved, written from the network's agreed <a href="non.html">NON</a> types and documented with their descriptions, ranges and defaults, and the signature of a <code>Handle</code> method. You write the body of <code>Handle</code> (or have an AI write it from the frame); the node compiles it with Roslyn and registers it as a handler. Nobody writes a DTO, and the applications on either side don't change.</p>
+      <h2 id="running-it">Running it</h2>
+      <div class="code"><pre><code class="lang-csharp">var scripting = await ScriptingNode.StartAsync("Scripts", port: 5780, storeDirectory: "/var/lib/event/scripts",
+    new TCPServer(IPAddress.Any, 5790, "Scripts"));
+scripting.Node.TryEstablishConnection(networkInfo);     // an ordinary typed node: join it anywhere
+Console.WriteLine(scripting.Web.PageUrl);               // http://127.0.0.1:5780/?token=...
+</code></pre></div>
+      <p>Or, to try it with a ready-made network (a sensor firing <code>Reading</code> every few seconds, <code>Hvac.Setpoint</code>, <code>Alerts</code> printed to the console, the Minecraft and Chat namespaces):</p>
+      <div class="code"><pre><code class="lang-bash">dotnet run --project EVent.Harness -- scripting-demo
+</code></pre></div>
+      <p>Without the page, <code>ScriptHost</code> does the same from code: <code>new ScriptHost(node)</code>, then <code>ListEndpointsAsync</code>, <code>GenerateFrameAsync(input, outputs)</code>, <code>CheckAsync</code> (compile only), <code>DeployAsync(input, outputs, body, name, replaceId)</code>, <code>Scripts</code>, <code>Remove(id)</code>, and with a store <code>StartRestoring()</code>. <code>ScriptingWebHost.StartAsync(host, port)</code> puts the page in front of any host.</p>
+      <h2 id="the-page">The page</h2>
+      <div class="table-wrap"><table class="wrap"><thead><tr><th>Part</th><th>What it does</th></tr></thead><tbody><tr><td>Network</td><td>Every endpoint of the node's network with its kind (event, function, untyped), type and description, filterable; each one's NON type on request. <strong>In</strong> picks the input, <strong>Out</strong> the outputs. Untyped endpoints (raw events with no agreed type) can't be picked.</td></tr><tr><td>Frame</td><td>Generated, read-only. <strong>Copy frame</strong>; <strong>Copy for AI</strong> copies a ready prompt: the task, the frame, and the endpoints' NON types as JSON.</td></tr><tr><td>Body</td><td>The statements inside <code>Handle</code>. <strong>Paste</strong> (a fenced code block from an AI is unwrapped), <strong>Copy</strong>, <strong>Clear</strong>; Tab indents, Ctrl+Enter deploys. Compile errors list under it with their line in the body; clicking one jumps there.</td></tr><tr><td>Running</td><td>The deployed scripts with their runs, failures and last error, refreshed every few seconds; stored scripts that can't run yet are marked <strong>waiting</strong> with the reason. <strong>Edit</strong> loads a script's selection and body; deploying then replaces it (the new one is running before the old one goes). <strong>Remove</strong> unregisters it.</td></tr></tbody></table></div>
+      <h2 id="the-frame">The frame</h2>
+      <p>For <code>Reading</code> (an event of <code>Thermo</code>) in, and <code>Alerts</code> (an event of <code>Alert</code>) and <code>Hvac.Setpoint</code> (a function from <code>Spot</code> to <code>Thermo</code>) out, the frame reads, shortened:</p>
+      <div class="code"><pre><code class="lang-csharp">// Endpoints:
+//   in   Reading: event of Thermo — a room temperature reading, sent every few seconds
+//   out  Alerts: event of Alert — alerts for the people in the house
+//   out  Hvac.Setpoint: function Spot -&gt; Thermo — the target temperature for a spot
+namespace EVentScript
+{
+    /// &lt;summary&gt;NON record &lt;c&gt;Thermo&lt;/c&gt;, used by Reading (event), Hvac.Setpoint (answer).&lt;/summary&gt;
+    public sealed class Thermo : NONRecordView
+    {
+        /// &lt;summary&gt;&lt;c&gt;Celsius&lt;/c&gt;: float. temperature in degrees Celsius. Range: -40 to 125 (not enforced).&lt;/summary&gt;
+        public float Celsius { get; set; }
+        /// &lt;summary&gt;&lt;c&gt;Label&lt;/c&gt;: string, optional. sensor label. Default: "unnamed" (what an absent value reads as).&lt;/summary&gt;
+        public string? Label { get; set; }
+        /// &lt;summary&gt;&lt;c&gt;Where&lt;/c&gt;: Spot, optional. where the sensor is. ...&lt;/summary&gt;
+        public Spot? Where { get; set; }
+        ...
+    }
+    public sealed class Spot : NONRecordView { ... }
+    public sealed class Alert : NONRecordView { ... }
+
+    public static class Script
+    {
+        public static async Task Handle(Thermo input,
+            Func&lt;Alert, Task&lt;bool&gt;&gt; fireAlerts,
+            Func&lt;Spot, Task&lt;IReadOnlyList&lt;Thermo&gt;&gt;&gt; callHvac_Setpoint,
+            CancellationToken cancellation)
+        {
+            // ▶ your code goes here
+        }
+    }
+}
+</code></pre></div>
+      <p>and a body that turns hot readings into alerts:</p>
+      <div class="code"><pre><code class="lang-csharp">if (input.Celsius &lt;= 28)
+    return;
+var room = input.Where ?? new Spot { Room = "unknown" };
+var target = await callHvac_Setpoint(room);
+await fireAlerts(new Alert
+{
+    Message = $"{room.Room} is {input.Celsius} °C (setpoint {target.FirstOrDefault()?.Celsius})",
+    Level = input.Celsius &gt; 35 ? 2 : 1
+});
+</code></pre></div>
+      <ul><li><strong>One class per record type.</strong> A record several endpoints use (the same name and shape) is one class, so a value from one endpoint goes straight into another (<code>input.Where</code> above is the <code>Spot</code> that <code>Hvac.Setpoint</code> takes). Two records with one name and different shapes become <code>Name</code> and <code>Name_2</code>.</li><li><strong>Members.</strong> <code>int32</code>, <code>UInt64</code>, <code>float</code>, <code>string</code> are <code>int</code>, <code>ulong</code>, <code>float</code>, <code>string</code>; an optional field is nullable; a record is its class; a list is a <code>NONListView&lt;T&gt;</code> (an <code>IList&lt;T&gt;</code> that writes through); <code>Void</code> is <code>Nothing</code>; an application's own leaf is its C# class (the scripting node must have it registered with <code>NONLeaves</code>). Every class wraps a <a href="non.html">NONObject</a> (<code>Raw</code>), so a value is sent without any copying or serialization code.</li><li><strong>The signature.</strong> <code>input</code> is what arrived. An output event is a <code>Func&lt;T, Task&lt;bool&gt;&gt;</code> (the fire); an output function a <code>Func&lt;TIn, Task&lt;IReadOnlyList&lt;TOut&gt;&gt;&gt;</code> (every provider's answer). If the input is a function, <code>Handle</code> returns <code>Task&lt;TAnswer&gt;</code>: the answer to the caller, null for none. <code>cancellation</code> is cancelled when the script is removed or replaced.</li><li><strong>Documentation.</strong> Descriptions, ranges and defaults become XML comments, and the endpoint descriptions sit in the header and the parameter comments: what a person or an AI needs to write the body.</li></ul>
+      <h2 id="how-a-script-runs">How a script runs</h2>
+      <p>The frame and the body are compiled together with Roslyn, in memory, into an assembly of their own, loaded in a collectible context so a removed or replaced script can be unloaded. A generated entry point sits between the node and <code>Handle</code>: it wraps the <code>NONValue</code> that arrived in the input class, and each <code>Func</code> turns the class back into a <code>NONValue</code> and calls the node's dynamic API (<code>FireEventDynamicAsync</code>, <code>CallFunctionDynamicAsync</code>). The script is registered like any handler (<code>HookEventDynamicAsync</code>, or <code>RegisterFunctionDynamicAsync</code> for a function input), so a publisher's <code>FireEvent</code> completes when the script does, and the usual call timeouts apply.</p>
+      <p>An exception in a script is caught: it counts as a failure, is shown on the page with its message, and a function input gets no answer from that run. The node and the other scripts carry on (harness X07). A script that never finishes can't be stopped, only abandoned: the publisher's timeout ends its wait.</p>
+      <h2 id="persistence">Persistence</h2>
+      <p>With a store folder (the <code>storeDirectory</code> of <code>ScriptingNode.StartAsync</code>, or <code>new ScriptHost(node, new ScriptStore(folder))</code>), every deployed script is saved there as <code>{id}.json</code>: its id, name, input, outputs, body and deploy time. Files are written under a temporary name and moved into place, so a crash never leaves half a script. Replacing a script saves the new one and deletes the old; <strong>Remove</strong> deletes it; shutting the node down deletes nothing.</p>
+      <p>On start (<code>ScriptHost.StartRestoring()</code>, which <code>ScriptingNode</code> calls), the stored scripts are deployed again with their old ids. A freshly started node usually hasn't joined its network yet, so their endpoints have no agreed type: they show on the page as <strong>waiting</strong>, with the reason, and are tried again every <code>ScriptHost.RestoreRetry</code> (2&nbsp;s) until they run, typically right after the node joins. A stored script that no longer compiles against the network's types (a type changed) keeps waiting with its first compile error as the reason; edit it, or remove it. A file in the folder that isn't a script is skipped and left alone (harness X08).</p>
+      <p>The demo keeps its scripts in the local application data folder (<code>~/.local/share/EVent/scripting-demo</code> on Linux).</p>
+      <h2 id="security">Security</h2>
+      <div class="callout warn"><div class="callout-title">A script is code</div><p>A deployed script runs with the full rights of the scripting node's process; .NET has no sandbox. So the page listens on <code>127.0.0.1</code> only, every request needs the token made at start (it is in the printed URL; the API takes it as the <code>X-EVent-Token</code> header), and a request whose <code>Host</code> or <code>Origin</code> isn't that local address is refused, so a web page elsewhere can't reach the API through your browser, not even by pointing a DNS name at 127.0.0.1. Only give the URL to people you would give a shell (harness X06).</p></div>
+      
+      <h2 id="network-directory">NetworkDirectory</h2>
+      <p>The page's list comes from <code>NetworkDirectory</code> (<code>EVent/Policy/NetworkDirectory.cs</code>), which works from any typed node: <code>ListAsync()</code> returns every endpoint of the network as <code>EndpointDescription</code>s, <code>ListJsonAsync()</code> the same as JSON. IDs routed by name are asked about in one batched descriptor query; each <a href="namespace.html">namespace</a> (a prefix route) is expanded through its <code>$Describe</code>, nested ones included; the protocol's own IDs and <code>$</code> IDs are left out. From inside a namespace it lists that namespace's IDs and its imports (X01).</p>
+      <h2 id="api">HTTP API</h2>
+      <div class="table-wrap"><table class="wrap"><thead><tr><th>Request</th><th>Answer</th></tr></thead><tbody><tr><td><code>GET /?token=…</code></td><td>The page.</td></tr><tr><td><code>GET /api/endpoints</code></td><td>The catalog: <code>id</code>, <code>kind</code>, <code>description</code>, <code>inputType</code>, <code>returnType</code>, <code>typed</code>, <code>type</code> (the NON JSON).</td></tr><tr><td><code>POST /api/frame</code> <code>{input, outputs}</code></td><td><code>{frame, signature, aiPrompt}</code>, or 400 with <code>error</code> for an endpoint without an agreed type.</td></tr><tr><td><code>POST /api/scripts</code> <code>{input, outputs, body, name?, replace?}</code></td><td><code>{ok, id, error, diagnostics}</code>; 400 when it doesn't compile or can't be registered. Each diagnostic has <code>severity</code>, <code>id</code>, <code>message</code>, <code>line</code>, <code>column</code>, <code>inBody</code>.</td></tr><tr><td><code>GET /api/scripts</code>, <code>GET /api/scripts/{id}</code></td><td>The running scripts with their stats; one script with its body.</td></tr><tr><td><code>DELETE /api/scripts/{id}</code></td><td>Removes it (204).</td></tr></tbody></table></div>
+      <p>Every <code>/api</code> request needs the <code>X-EVent-Token</code> header.</p>
+      <h2 id="limits">Limits</h2>
+      <ul><li>One input per script; any number of outputs.</li><li>The body is the inside of one method; local functions work, other classes don't.</li><li>A script may use the base library (System, LINQ, collections, tasks); it has no other packages.</li><li>The store keeps the current version of each script, not a history.</li><li>Endpoints need an agreed type; an application's own leaf types need their class on the scripting node.</li></ul>
+      <p>Harness scenarios X01&ndash;X08 cover this page: see <a href="harness.html#scripting">Test harness &amp; results</a>.</p>
+    </article>
+    <nav class="pager"><a class="prev" href="examples.html"><span>Previous</span>Examples &amp; cookbook</a><a class="next" href="native.html"><span>Next</span>C++ leaves</a></nav>
+    <footer class="foot">Generated from the EVent source tree. The scripting node is the <code>EVent.Scripting</code> project.</footer>
+  </main>
+  <aside class="toc" aria-label="On this page"><div class="toc-title">On this page</div><ul id="toc"></ul></aside>
+</div>
+<script src="assets/search-index.js"></script>
+<script src="assets/site.js"></script>
+</body>
+</html>

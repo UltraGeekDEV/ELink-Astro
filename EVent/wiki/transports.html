@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transports &middot; EVent Wiki</title>
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem('evwiki-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+</head>
+<body>
+<header class="topbar">
+  <button class="menu-btn" aria-label="Toggle navigation" onclick="document.body.classList.toggle('nav-open')">&#9776;</button>
+  <a class="brand" href="index.html"><span class="logo">EV</span>EVent <span class="brand-sub">Wiki</span></a>
+  <div class="search">
+    <input id="search" type="search" placeholder="Search the wiki&hellip;  ( / )" autocomplete="off" aria-label="Search">
+    <div id="search-results" class="search-results" hidden></div>
+  </div>
+  <button id="theme-btn" class="theme-btn" aria-label="Toggle dark mode" title="Toggle light/dark">&#9680;</button>
+</header>
+<div class="layout">
+  <aside class="sidebar"><nav><div class="nav-sec"><div class="nav-sec-title">Overview</div><ul><li><a href="index.html">Home</a></li><li><a href="architecture.html">Architecture</a></li><li><a href="concepts.html">Core concepts</a></li><li><a href="glossary.html">Glossary</a></li></ul></div><div class="nav-sec"><div class="nav-sec-title">EVent core</div><ul><li><a href="routing.html">Links & interest routing</a></li><li><a href="drpc.html">Distributed RPC (dRPC)</a></li><li><a href="transports.html" class="current" aria-current="page">Transports</a></li><li><a href="wire-format.html">Wire format</a></li>
+<li><a href="firewall.html">Firewall node</a></li>
+<li><a href="namespace.html">Namespace node</a></li></ul></div><div class="nav-sec"><div class="nav-sec-title">NOTES</div><ul><li><a href="notes.html">What is NOTES?</a></li><li><a href="notes-types.html">Defining NOTES types</a></li><li><a href="notes-protocol.html">Type agreement protocol</a></li><li><a href="notes-events.html">NOTES events reference</a></li>
+<li><a href="non.html">NON dynamic objects</a></li></ul></div><div class="nav-sec"><div class="nav-sec-title">Putting it together</div><ul><li><a href="integration.html">How EVent and NOTES fit</a></li><li><a href="examples.html">Examples & cookbook</a></li>
+<li><a href="scripting.html">Scripting node</a></li>
+<li><a href="native.html">C++ leaves</a></li></ul></div><div class="nav-sec"><div class="nav-sec-title">API reference</div><ul><li><a href="api-typesafe-node.html">TypeSafeEVentNode</a></li><li><a href="api-eventnode.html">EVentNode</a></li><li><a href="api-clients.html">Clients & helpers</a></li><li><a href="api-serialization.html">Serialization types</a></li><li><a href="api-transports.html">Transport classes</a></li><li><a href="api-constants.html">Event ID constants</a></li></ul></div><div class="nav-sec"><div class="nav-sec-title">Review</div><ul><li><a href="issues.html">Issues & open questions</a></li><li><a href="harness.html">Test harness & results</a></li><li><a href="roadmap.html">Roadmap</a></li></ul></div></nav></aside>
+  <main class="content">
+    <div class="crumbs"><a href="index.html">EVent Wiki</a> <span>/</span> EVent core <span>/</span> Transports</div>
+    <article>
+      <h1>Transports</h1>
+      <p class="lead">TCP, UDP discovery and serial links, and how to add your own.</p>
+      <p>A transport is an <code>ICommsProtocol</code>. It produces <code>QueuedClient</code> links for the node, and each link wraps an <code>IStreamClient</code> that moves framed packages. Pass any number of transports to a node's constructor.</p><div class="code"><div class="code-title">ICommsProtocol.cs / IStreamClient.cs</div><pre><code class="lang-csharp">public interface ICommsProtocol
+{
+    void OnClientAccepted(Action&lt;QueuedClient&gt; action);          // node subscribes to inbound links
+    void Run();                                                  // start listening / scanning
+    Task&lt;QueuedClient?&gt; EstablishInterconnect(Package package);  // dial out, or return null if not mine
+    void Stop();
+}
+public interface IStreamClient
+{
+    Task Send(byte[] data);           // write one serialized Package
+    Task&lt;Package?&gt; ReadPackage();     // next full Package; null means the link is closed
+    void Close();
+}
+</code></pre></div><p><code>EstablishInterconnect</code> is called with the <em>whole</em> <code>CreateInterconnect</code> admin package. Its <code>Data</code> contains a nested <code>Package</code> whose <code>EventID</code> names the connection type (<code>ConnectionTypes.*</code>) and whose data holds the parameters. Every transport on the node is asked, and each returns <code>null</code> unless the request is for it.</p><h2 id="tcp">TCP</h2><p><code>TCPServer(IPAddress listen, int port, params string[] serverBroadcastedIDs)</code> listens for inbound TCP links and, for each ID given, runs a <code>ServerTCPBroadcast</code> responder so other nodes can find it by name. <code>Run</code> binds the port (and throws if it's taken); <code>Stop</code> releases it and stops the responders, and the server can be started again.</p><div class="table-wrap"><table class="wrap"><thead><tr><th>Connection type</th><th>Inner package</th><th>Behaviour</th><th>Source</th></tr></thead><tbody><tr><td><code>"TCP"</code> (<code>ConnectionTypes.TCP</code>)</td><td><code>TCPConnectionData</code>: UTF-8 text <code>"ip:targetPort:sourcePort"</code></td><td>Dials <code>ip:targetPort</code>. <code>sourcePort</code> picks which of the node's TCP servers does it: the one listening on that port, or any of them when it's 0.</td><td><code class="src" title="EVent/Connections/TCP/TCPServer.cs">TCPServer.cs</code></td></tr><tr><td><code>"TCPAUTO"</code> (<code>ConnectionTypes.TCPDiscovery</code>)</td><td><code>BinaryConvertibleString</code> server ID</td><td>Resolves the ID by UDP multicast, then dials. Every <code>TCPServer</code> on the node will do this.</td><td><code class="src" title="EVent/Connections/TCP/TCPServer.cs">TCPServer.cs</code></td></tr></tbody></table></div><div class="code"><div class="code-title">Creating TCP interconnects</div><pre><code class="lang-csharp">// Direct: this node's TCPServer listening on 5699 dials 192.168.1.20:5698
+var direct = new TCPConnectionData { TargetIP = "192.168.1.20", TargetPort = 5698, SourcePort = 5699 };
+node.TryEstablishConnection(new Package(ConnectionTypes.TCP, direct));
+
+// Discovery: find whoever advertises "NodeA" on the LAN
+node.TryEstablishConnection(new Package(ConnectionTypes.TCPDiscovery, "NodeA"));
+</code></pre></div><h3 id="udp-multicast-discovery">UDP multicast discovery</h3><figure class="diagram"><svg class="dg seq" viewBox="0 0 806 312" width="806" role="img" xmlns="http://www.w3.org/2000/svg"><title>Discovery</title><defs><marker id="m5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="dg-arrowhead"/></marker></defs><line x1="91.5" y1="52" x2="91.5" y2="270" class="dg-life"/><line x1="477.7" y1="52" x2="477.7" y2="270" class="dg-life"/><line x1="685.8" y1="52" x2="685.8" y2="270" class="dg-life"/><rect x="12.0" y="18" width="159.0" height="34" rx="7" class="dg-box ext"/><text x="91.5" y="40" class="dg-head" text-anchor="middle">ClientTCPDiscovery</text><rect x="12.0" y="270" width="159.0" height="34" rx="7" class="dg-box ext"/><text x="91.5" y="292" class="dg-head" text-anchor="middle">ClientTCPDiscovery</text><rect x="398.2" y="18" width="159.0" height="34" rx="7" class="dg-box proto"/><text x="477.7" y="40" class="dg-head" text-anchor="middle">239.255.12.85:8563</text><rect x="398.2" y="270" width="159.0" height="34" rx="7" class="dg-box proto"/><text x="477.7" y="292" class="dg-head" text-anchor="middle">239.255.12.85:8563</text><rect x="577.2" y="18" width="217.3" height="34" rx="7" class="dg-box ext"/><text x="685.8" y="40" class="dg-head" text-anchor="middle">ServerTCPBroadcast "NodeA"</text><rect x="577.2" y="270" width="217.3" height="34" rx="7" class="dg-box ext"/><text x="685.8" y="292" class="dg-head" text-anchor="middle">ServerTCPBroadcast "NodeA"</text><line x1="91.5" y1="102" x2="473.7" y2="102" class="dg-msg" marker-end="url(#m5)"/><text x="284.6" y="95" text-anchor="middle" class="dg-label">Package{BroadcastHandshake, EventID="NodeA", no data}</text><line x1="477.7" y1="136" x2="681.8" y2="136" class="dg-msg" marker-end="url(#m5)"/><text x="581.8" y="129" text-anchor="middle" class="dg-label">(multicast delivery)</text><path d="M685.8 166 h26 v14 h-22" class="dg-msg" fill="none" marker-end="url(#m5)"/><rect x="519.3" y="164" width="162.6" height="17" rx="3" class="dg-selfbg"/><text x="523.3" y="177" class="dg-label">EventID == my serverID?</text><line x1="685.8" y1="210" x2="95.5" y2="210" class="dg-msg dash" marker-end="url(#m5)"/><text x="388.7" y="203" text-anchor="middle" class="dg-label">unicast Package{BroadcastHandshake, "NodeACallback", 10-byte handshake}</text><path d="M91.5 240 h26 v14 h-22" class="dg-msg" fill="none" marker-end="url(#m5)"/><rect x="121.5" y="238" width="478.4" height="17" rx="3" class="dg-selfbg"/><text x="125.5" y="251" class="dg-label">EventID == "NodeACallback"? check CRC32, build IPEndPoint, TCP connect</text></svg><figcaption>Discovery (<code class="src" title="EVent/Connections/UDP/ClientTCPDiscovery.cs">ClientTCPDiscovery.cs</code>, <code class="src" title="EVent/Connections/UDP/ServerTCPBroadcast.cs">ServerTCPBroadcast.cs</code>). The group and port are public static fields and can be changed.</figcaption></figure><p>The reply payload is a <code>BroadcastHandshake</code>: 4 bytes of IPv4 address, a 2-byte port (<em>big-endian</em>), and a CRC-32 (little-endian) over those 6 bytes. The advertised IP is <code>TCPServer.AdvertisedAddress</code> if set, else the listening address if it's a specific IPv4 address, else <code>IPUtils.GetLocalIPv4()</code> (which falls back to an interface address, then loopback, on machines without a default route). The client re-sends its request every second (<code>ClientTCPDiscovery.RetryInterval</code>) and ignores replies for other IDs.</p><p>If nobody answers, the client gives up after <code>ClientTCPDiscovery.Timeout</code> (10&nbsp;s by default) and the dial fails. <code>TryEstablishConnection</code> stops waiting for it after <code>MergeStepTimeout</code>.</p><h2 id="serial">Serial</h2><p><code>SerialServer(string ServerID)</code> scans <code>SerialPort.GetPortNames()</code> once a second. For each new port, it opens the port at 9600&nbsp;baud and runs a handshake. If the handshake succeeds, the port becomes a link. Serial is <em>accept-only</em>: <code>EstablishInterconnect</code> always returns <code>null</code>.</p><figure class="diagram"><svg class="dg seq" viewBox="0 0 524 410" width="524" role="img" xmlns="http://www.w3.org/2000/svg"><title>Serial handshake</title><defs><marker id="m6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="dg-arrowhead"/></marker></defs><line x1="87.9" y1="52" x2="87.9" y2="368" class="dg-life"/><line x1="447.2" y1="52" x2="447.2" y2="368" class="dg-life"/><rect x="12.0" y="18" width="151.8" height="34" rx="7" class="dg-box node"/><text x="87.9" y="40" class="dg-head" text-anchor="middle">SerialServer (PC)</text><rect x="12.0" y="368" width="151.8" height="34" rx="7" class="dg-box node"/><text x="87.9" y="390" class="dg-head" text-anchor="middle">SerialServer (PC)</text><rect x="382.2" y="18" width="129.9" height="34" rx="7" class="dg-box ext"/><text x="447.2" y="40" class="dg-head" text-anchor="middle">Device on COMx</text><rect x="382.2" y="368" width="129.9" height="34" rx="7" class="dg-box ext"/><text x="447.2" y="390" class="dg-head" text-anchor="middle">Device on COMx</text><rect x="27.9" y="72" width="479.3" height="24" rx="5" class="dg-note"/><text x="267.5" y="88" text-anchor="middle" class="dg-notetext">port opened at 9600 8N1, read timeout 1 s</text><line x1="87.9" y1="142" x2="443.2" y2="142" class="dg-msg" marker-end="url(#m6)"/><text x="267.5" y="135" text-anchor="middle" class="dg-label">Package{Data, "SerialHandshake", string ServerID}</text><line x1="447.2" y1="176" x2="91.9" y2="176" class="dg-msg dash" marker-end="url(#m6)"/><text x="267.5" y="169" text-anchor="middle" class="dg-label">Package{"SerialHandshake", string == ServerID}</text><line x1="87.9" y1="210" x2="443.2" y2="210" class="dg-msg" marker-end="url(#m6)"/><text x="267.5" y="203" text-anchor="middle" class="dg-label">Package{Data, "SetBaudrate", no payload}</text><line x1="447.2" y1="244" x2="91.9" y2="244" class="dg-msg dash" marker-end="url(#m6)"/><text x="267.5" y="237" text-anchor="middle" class="dg-label">Package{"SetBaudrate", int32 baud}</text><path d="M87.9 274 h26 v14 h-22" class="dg-msg" fill="none" marker-end="url(#m6)"/><rect x="117.9" y="272" width="297.0" height="17" rx="3" class="dg-selfbg"/><text x="121.9" y="285" class="dg-label">port.BaudRate = baud; new QueuedClient(...)</text><line x1="4" y1="310" x2="520" y2="310" class="dg-div"/><rect x="8" y="301" width="274.7" height="18" rx="9" class="dg-divbox"/><text x="16.0" y="314" class="dg-divtext">From here: the normal EVent link handshake</text><line x1="87.9" y1="348" x2="443.2" y2="348" class="dg-msg" marker-end="url(#m6)"/><text x="267.5" y="341" text-anchor="middle" class="dg-label">InterconnectRunning ...</text></svg><figcaption>The serial handshake as implemented in <code class="src" title="EVent/Connections/Serial/SerialStreamClient.cs">SerialStreamClient.cs:48&ndash;111</code>. The device-side implementation isn't in this repository (<a class="iss sev-info" href="issues.html#I-35" title="&#x27;Multiple platforms&#x27; is not reflected in the repository">I-35</a>).</figcaption></figure><p>A device that wants to join an EVent network over serial must:</p><ol><li>Speak the <a href="wire-format.html">Package framing</a> at 9600&nbsp;baud.</li><li>Echo the <code>SerialHandshake</code> package with the same server ID, then answer <code>SetBaudrate</code> with its desired baud rate (<code>int32</code>, little-endian), and switch to that rate.</li><li>Then take part in the normal link handshake (<code>InterconnectRunning</code>, <code>ListEvents</code>, &hellip;) and answer <code>FunctionCall</code>s for anything it registers.</li></ol><div class="callout warn"><div class="callout-title">Serial caveats</div><p>Current limitations: the link is dropped after about 1&nbsp;s without incoming data and is never re-established (<a class="iss sev-high" href="issues.html#I-09" title="Serial links are dropped after about 1 second of silence and never re-established">I-09</a>); packages over 246 bytes crash the reader (<a class="iss sev-medium" href="issues.html#I-16" title="The serial receive buffer is fixed at 250 bytes">I-16</a>); ports that fail the handshake are probed again every second (<a class="iss sev-medium" href="issues.html#I-22" title="SerialServer probes every unknown serial port every second">I-22</a>).</p></div><h2 id="queuedclient-the-link-wrapper">QueuedClient: the link wrapper</h2><p><code>QueuedClient</code> <code class="src" title="EVent/CoreFunctionality/QueuedClient.cs">QueuedClient.cs</code> is what the node sees for every remote link. <code>Send</code> enqueues into a channel (raw events are limited to <code>MaxQueuedDataBytes</code> of them: the sender's task waits for room), and a background pump (<code>EmptyQueue</code>) serializes each package and writes it to the stream. A package with an empty EventID is dropped, which is how <code>Shutdown()</code> wakes the pump so it can exit. If a write fails, the pump closes the stream, and the read loop then ends and removes the client. <code>ReadPackage</code> delegates to the stream client.</p><h2 id="writing-a-new-transport">Writing a new transport</h2><p>To add a transport (WebSocket, BLE, named pipes, &hellip;) you implement two small interfaces. For stream-shaped media, <code>Package.ReadPackage(Stream)</code> already does the framing for you.</p><div class="code"><div class="code-title">Sketch: a named-pipe transport</div><pre><code class="lang-csharp">using EVent.Connections;
+using EVent.Connections.Models;
+using EVent.Connections.Models.BaseBinaryConvertibles;
+using EVent.CoreFunctionality;
+using System.IO.Pipes;
+
+// 1. Byte stream &lt;-&gt; Package
+class PipeStreamClient : IStreamClient
+{
+    private readonly Stream stream;
+    public PipeStreamClient(Stream s) =&gt; stream = s;
+    public Task Send(byte[] data) =&gt; stream.WriteAsync(data).AsTask();
+    public Task&lt;Package?&gt; ReadPackage() =&gt; Package.ReadPackage(stream); // null =&gt; closed
+    public void Close() =&gt; stream.Dispose();
+}
+
+// 2. Accept and dial
+class PipeProtocol : ICommsProtocol
+{
+    public const string ConnectionType = "PIPE";         // your own connection-type ID
+    private Action&lt;QueuedClient&gt;? accepted;
+    private readonly string pipeName;
+    private volatile bool alive = true;
+    public PipeProtocol(string pipeName) =&gt; this.pipeName = pipeName;
+
+    public void OnClientAccepted(Action&lt;QueuedClient&gt; action) =&gt; accepted += action;
+
+    public void Run() =&gt; Task.Run(async () =&gt;
+    {
+        while (alive)
+        {
+            var server = new NamedPipeServerStream(pipeName, PipeDirection.InOut,
+                NamedPipeServerStream.MaxAllowedServerInstances, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+            await server.WaitForConnectionAsync();
+            accepted?.Invoke(new QueuedClient(new PipeStreamClient(server)));
+        }
+    });
+
+    public async Task&lt;QueuedClient?&gt; EstablishInterconnect(Package createInterconnect)
+    {
+        var info = new Package();
+        Span&lt;byte&gt; bytes = createInterconnect.Data;        // nested connection-info package
+        if (!info.FromBytes(ref bytes) || info.EventID != ConnectionType) return null;
+
+        var target = new BinaryConvertibleString();
+        Span&lt;byte&gt; p = info.Data;
+        if (!target.FromBytes(ref p)) return null;
+
+        var client = new NamedPipeClientStream(".", target.Text, PipeDirection.InOut, PipeOptions.Asynchronous);
+        await client.ConnectAsync(5000);
+        return new QueuedClient(new PipeStreamClient(client));
+    }
+
+    public void Stop() =&gt; alive = false;
+}
+
+// usage
+var node = new TypeSafeEVentNode("P1", new PipeProtocol("ev-p1"));
+node.TryEstablishConnection(new Package(PipeProtocol.ConnectionType, "ev-p2"));
+</code></pre></div><div class="callout note"><div class="callout-title">Note</div><p>This sketch follows the contracts the existing transports rely on, but it hasn't been compiled against the project. Things to preserve: <code>ReadPackage</code> must return a <em>complete</em> package or <code>null</code> (never time out with <code>null</code> unless the link really is dead, see <a class="iss sev-high" href="issues.html#I-09" title="Serial links are dropped after about 1 second of silence and never re-established">I-09</a>), and <code>EstablishInterconnect</code> must return <code>null</code> quickly for connection types that aren't yours, because every transport is asked.</p></div><h2 id="legacy-tcpclientconnection">Legacy: TCPClientConnection</h2><p><code>TCPClientConnection</code> is a standalone client from before the routing refactor. It predates <code>ICommsProtocol</code>, sends the unhandled <code>"DisconnectClient"</code> admin ID, and isn't used by the node. Treat it as dead code (<a class="iss sev-low" href="issues.html#I-29" title="Dead, legacy or placeholder code">I-29</a>).</p>
+    </article>
+    <nav class="pager"><a class="prev" href="drpc.html"><span>Previous</span>Distributed RPC (dRPC)</a><a class="next" href="wire-format.html"><span>Next</span>Wire format</a></nav>
+    <footer class="foot">Generated from the EVent source tree. Line references point at commit 67d35c7; code added by later commits (canonical order e2e550c, agreement recovery 7e35633, merge descriptors 6bbe9c2, type checks c0a0c42, merge cleanup 56bab8b, type graph 729bbe2, caps and optional fields c1f7363, collection definitions eca89fb, link faults c08d67b) is referenced by file.</footer>
+  </main>
+  <aside class="toc" aria-label="On this page"><div class="toc-title">On this page</div><ul id="toc"></ul></aside>
+</div>
+<script src="assets/search-index.js"></script>
+<script src="assets/site.js"></script>
+</body>
+</html>

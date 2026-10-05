@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NON dynamic objects &middot; EVent Wiki</title>
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem('evwiki-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+</head>
+<body>
+<header class="topbar">
+  <button class="menu-btn" aria-label="Toggle navigation" onclick="document.body.classList.toggle('nav-open')">&#9776;</button>
+  <a class="brand" href="index.html"><span class="logo">EV</span>EVent <span class="brand-sub">Wiki</span></a>
+  <div class="search">
+    <input id="search" type="search" placeholder="Search the wiki&hellip;  ( / )" autocomplete="off" aria-label="Search">
+    <div id="search-results" class="search-results" hidden></div>
+  </div>
+  <button id="theme-btn" class="theme-btn" aria-label="Toggle dark mode" title="Toggle light/dark">&#9680;</button>
+</header>
+<div class="layout">
+  <aside class="sidebar"><nav><div class="nav-sec"><div class="nav-sec-title">Overview</div><ul><li><a href="index.html">Home</a></li><li><a href="architecture.html">Architecture</a></li><li><a href="concepts.html">Core concepts</a></li><li><a href="glossary.html">Glossary</a></li></ul></div><div class="nav-sec"><div class="nav-sec-title">EVent core</div><ul><li><a href="routing.html">Links & interest routing</a></li><li><a href="drpc.html">Distributed RPC (dRPC)</a></li><li><a href="transports.html">Transports</a></li><li><a href="wire-format.html">Wire format</a></li>
+<li><a href="firewall.html">Firewall node</a></li>
+<li><a href="namespace.html">Namespace node</a></li></ul></div><div class="nav-sec"><div class="nav-sec-title">NOTES</div><ul><li><a href="notes.html">What is NOTES?</a></li><li><a href="notes-types.html">Defining NOTES types</a></li><li><a href="notes-protocol.html">Type agreement protocol</a></li><li><a href="notes-events.html">NOTES events reference</a></li>
+<li><a href="non.html" class="current" aria-current="page">NON dynamic objects</a></li></ul></div><div class="nav-sec"><div class="nav-sec-title">Putting it together</div><ul><li><a href="integration.html">How EVent and NOTES fit</a></li><li><a href="examples.html">Examples & cookbook</a></li>
+<li><a href="scripting.html">Scripting node</a></li>
+<li><a href="native.html">C++ leaves</a></li></ul></div><div class="nav-sec"><div class="nav-sec-title">API reference</div><ul><li><a href="api-typesafe-node.html">TypeSafeEVentNode</a></li><li><a href="api-eventnode.html">EVentNode</a></li><li><a href="api-clients.html">Clients & helpers</a></li><li><a href="api-serialization.html">Serialization types</a></li><li><a href="api-transports.html">Transport classes</a></li><li><a href="api-constants.html">Event ID constants</a></li></ul></div><div class="nav-sec"><div class="nav-sec-title">Review</div><ul><li><a href="issues.html">Issues & open questions</a></li><li><a href="harness.html">Test harness & results</a></li><li><a href="roadmap.html">Roadmap</a></li></ul></div></nav></aside>
+  <main class="content">
+    <div class="crumbs"><a href="index.html">EVent Wiki</a> <span>/</span> NOTES <span>/</span> NON dynamic objects</div>
+    <article>
+      <h1>NON dynamic objects</h1>
+      <p class="lead">Use any NOTES event or function without writing a C# class for it: read, build, send and even define types at run time.</p>
+      <p><strong>NON</strong> (NOTES Object Notation) is the name for NOTES' wire format and its type descriptions: the canonical signature, the byte layout it defines, and the JSON that describes it. A NON signature says everything needed to read and write a value (records are their fields in name order, lists are a count and the elements, optionals a presence byte and the value), so a schema compiled from it handles any agreed event with no C# type at all. The bytes are exactly those of the typed API, so dynamic and typed nodes exchange the same events in both directions. The code is in <code>EVent/NON/</code> and <code class="src" title="EVent/CoreFunctionality/TypeSafeEVentNode.NON.cs">TypeSafeEVentNode.NON.cs</code>.</p>
+      <h2 id="quick-tour">Quick tour</h2>
+      <div class="code"><pre><code class="lang-csharp">// Use an event someone else defined: no DTO.
+var ep = await node.GetEndpointAsync("House.Setpoint");        // the agreed type, fetched from the network
+var spot = ep.NewInputObject();                                  // a Spot, with zero values
+spot["Floor"] = 2;
+spot["Room"] = "attic";
+var answers = await node.CallFunctionDynamicAsync("House.Setpoint", spot);
+float target = answers[0]["Celsius"].AsFloat;
+string room = answers[0]["Where"]["Room"].AsString;
+
+// Subscribe and publish.
+await node.HookEventDynamicAsync("Reading", v =&gt; Console.WriteLine(v["Celsius"].AsFloat));
+var reading = (await node.GetEndpointAsync("Reading"))!.NewInputObject();
+reading["Celsius"] = 20.5f;
+reading.Object("Where")["Room"] = "den";                         // creates the optional record
+await node.FireEventDynamicAsync("Reading", reading);
+
+// Define a brand-new event type at run time; C# nodes may join it with a matching class.
+var order = NONType.Record("Order")
+    .Field("Item", NONType.String, f =&gt; f.Description("what was ordered"))
+    .Field("Qty", NONType.Int32, f =&gt; f.Description("how many").Range(1, 99))
+    .Optional("Note", NONType.String, f =&gt; f.Default("none"))
+    .Build();
+await node.HookEventDynamicAsync("Orders", v =&gt; Handle(v), define: order, description: "orders placed at the counter");
+</code></pre></div>
+      <h2 id="types">Types: NONType and NONSchema</h2>
+      <p>A <code>NONType</code> is a leaf (one of the 15 built-in ones in <code>NONType.Primitives</code>: <code>Void</code>, <code>bool</code>, <code>int8</code> &hellip; <code>UInt64</code>, <code>float</code>, <code>double</code>, <code>decimal</code>, <code>char16</code>, <code>string</code>; or an application's own leaf), a record (named, fields in canonical order, each field required or optional, with its documentation), or a list of a type with an optional cap. A <code>NONSchema</code> is a root type compiled for the wire: its signature, its documentation, and the reader and writer.</p>
+      <div class="table-wrap"><table class="wrap"><thead><tr><th>Where the type comes from</th><th>Call</th></tr></thead><tbody><tr><td>An agreed event or function</td><td><code>node.GetEndpointAsync(id)</code> &rarr; <code>NONEndpoint</code> with <code>Input</code> and <code>Returns</code> schemas</td></tr><tr><td>A NON signature (a descriptor's <code>Expected</code> / <code>Returns</code>)</td><td><code>NONSchema.FromSignature(signature, annotations)</code> (cached)</td></tr><tr><td>A C# NOTES class</td><td><code>NONSchema.For&lt;Thermo&gt;()</code>; its own leaf types are registered on the way</td></tr><tr><td>A type description in JSON (discovery's shape)</td><td><code>NONSchema.FromJson(json)</code>: what <code>$Describe</code> or <code>schema.ToJson()</code> prints reads back</td></tr><tr><td>Code</td><td><code>NONType.Record("Name").Field(...).Optional(...).Build()</code>, then <code>NONSchema.FromType(type)</code></td></tr></tbody></table></div>
+      <p>The builder takes fields in any order and puts them in canonical order. <code>NONType.ListOf(t, cap)</code> makes a list; <code>NONType.Self</code> refers to the record being defined, for a type that contains itself through an optional field or a list (<code>Record("TreeNode").Field("Value", NONType.Int32).Field("Children", NONType.ListOf(NONType.Self))</code> is exactly the C# <code>TreeNode</code>). Each field can be documented like a C# field (<a href="notes-types.html#documenting-fields">Documenting fields</a>): <code>.Description</code>, <code>.Range</code>, <code>.Default</code>. The builder refuses what NOTES refuses: a record without fields, a duplicate field, a reserved character in a name, a record that contains itself through a required field, two different records with one name, a range on a record, a default of the wrong type (harness D02).</p>
+      <p>An application's own leaf types can't be read without their C# class (NON can't know how many bytes they take), so they must be registered, <code>NONLeaves.Register&lt;Stamp&gt;()</code>; <code>NONSchema.For</code> does it for the leaves of the type it is given. A signature with an unknown leaf is refused with <code>NOTESTypeException</code>.</p>
+      <h2 id="values">Values: NONObject, NONList, NONValue</h2>
+      <div class="table-wrap"><table class="wrap"><thead><tr><th>Type</th><th>What it is</th></tr></thead><tbody><tr><td><code>NONValue</code></td><td>A small struct: a number (stored inline, never boxed), a string, a record, a list, a leaf, or <code>Null</code> (an absent optional; also <code>default</code>). Converts implicitly from <code>int</code>, <code>ulong</code>, <code>float</code>, <code>string</code>, records and lists; <code>AsInt32</code>, <code>AsUInt64</code>, <code>AsFloat</code>, <code>AsString</code>, <code>AsObject</code>, <code>AsList</code>, <code>AsLeaf</code> read it back. <code>value["Where"]["Floor"]</code> reads through records.</td></tr><tr><td><code>NONObject</code></td><td>A record: its type and a flat slot array in canonical order. <code>obj["Celsius"]</code> by name, or <code>obj[slot]</code> with <code>int slot = obj.Type.Slot("Celsius")</code> resolved once. <code>Has</code>, <code>Clear</code>, <code>Object(name)</code> and <code>List(name)</code> (they create an absent optional record or list), <code>Clone()</code> (deep), <code>ToJson()</code>, <code>FromJson</code>, <code>AsDynamic()</code>.</td></tr><tr><td><code>NONList</code></td><td>A list of one element type, <code>IList&lt;NONValue&gt;</code>; <code>AddObject()</code> appends a new record, <code>Object(i)</code> returns one to change.</td></tr></tbody></table></div>
+      <p>Setting a field checks the value against the field's type. Numbers convert where it makes sense: an integer into any integer field it fits (<code>300</code> into a <code>uint8</code> field is refused), any number into <code>float</code> and <code>double</code> (rounded, so C#'s <code>18.3</code> literal fits a float field) and into <code>decimal</code> (if in range), a one-character string into <code>char16</code>; never a fraction into an integer, never a number into <code>bool</code>; a record or a list must be of the same NON type (same structure, compared by signature); <code>Null</code> goes only into an optional field; a list refuses elements past its cap. A mismatch is a <code>NONTypeMismatchException</code> naming the field. A new record has its required fields at zero values (0, <code>""</code>, an empty list, a new nested record) and its optional fields absent.</p>
+      <div class="callout note"><div class="callout-title">Setting through a chain</div><p><code>NONValue</code> is a struct, so C# can't assign into one returned by an indexer: <code>obj["Where"]["Floor"] = 2</code> doesn't compile. Use <code>obj.Object("Where")["Floor"] = 2</code> and <code>list.Object(0)["Name"] = "Tom"</code>, or <code>AsDynamic()</code>. Reading through a chain works.</p></div>
+      <div class="code"><pre><code class="lang-csharp">dynamic d = schema.NewObject().AsDynamic();   // for scripts
+d.Celsius = 18.5;
+d.Where = spotSchema.NewObject();
+d.Where.Floor = 2;
+float c = d.Celsius;
+</code></pre></div>
+      <p><strong>JSON.</strong> <code>ToJson()</code> writes numbers as numbers, strings as strings, records as objects of their fields (absent optional fields as <code>null</code>), lists as arrays, the shape field defaults use. <code>NONObject.FromJson(type, json)</code> and <code>schema.ReadJson(json)</code> read it strictly: a missing required field, a field the type doesn't have, or a value of the wrong kind is a <code>FormatException</code> with its path (D03).</p>
+      <p><strong>Defaults.</strong> An optional field that arrives absent reads as its default, taken from the agreed documentation: a dynamic reader always uses the defaults the network agreed on.</p>
+      <h2 id="on-the-network">On the network</h2>
+      <p>The dynamic calls sit next to the typed ones on <code>TypeSafeEVentNode</code> and use the same agreement, routing, gate and timeouts; each has a blocking form without <code>Async</code>.</p>
+      <div class="member" id="getendpoint"><div class="sig">Task&lt;NONEndpoint?&gt; GetEndpointAsync(string eventID)</div><div class="mdesc"><p>The agreed type as schemas (fetched and adopted if this node doesn't know it yet), with <code>IsEvent</code>, <code>Description</code>, <code>NewInput()</code>, <code>NewInputObject()</code>, <code>NewAnswerObject()</code>. Null if no type is agreed anywhere, or it uses a leaf this node can't read.</p></div></div>
+      <div class="member" id="hookdynamic"><div class="sig">Task&lt;bool&gt; HookEventDynamicAsync(string eventID, Action&lt;NONValue&gt; callback, NONType? define = null, string? description = null)</div><div class="mdesc"><p>Also with <code>Func&lt;NONValue, Task&gt;</code>. Subscribes with the agreed type. If none is agreed, <code>define</code> is proposed as the event's type, like a typed <code>HookEvent</code> proposes its class; without it the call returns <code>false</code>. <code>false</code> too if <code>define</code> differs from what the network agreed, or the ID is a function. <code>UnhookEventDynamic(id, callback)</code> removes it.</p></div></div>
+      <div class="member" id="firedynamic"><div class="sig">Task&lt;bool&gt; FireEventDynamicAsync(string eventID, NONValue value, TimeSpan? timeout = null, CancellationToken cancellationToken = default)</div><div class="mdesc"><p>Like <code>FireEventAsync</code>: <code>true</code> once every subscriber has handled it (including nobody being interested); <code>false</code> if the ID has no agreed type, is a function, or the value isn't of the agreed type.</p></div></div>
+      <div class="member" id="registerdynamic"><div class="sig">Task&lt;bool&gt; RegisterFunctionDynamicAsync(string eventID, Func&lt;NONValue, NONValue&gt; handler, NONType? defineInput = null, NONType? defineOutput = null, string? description = null)</div><div class="mdesc"><p>Also with <code>Func&lt;NONValue, Task&lt;NONValue&gt;&gt;</code>. Provides a function; the handler's <code>Null</code> means no answer. Define both types to propose them when none is agreed. <code>UnregisterFunctionDynamic(id, handler)</code> removes it.</p></div></div>
+      <div class="member" id="calldynamic"><div class="sig">Task&lt;List&lt;NONValue&gt;?&gt; CallFunctionDynamicAsync(string eventID, NONValue input, TimeSpan? timeout = null, CancellationToken cancellationToken = default)</div><div class="mdesc"><p>Like <code>CallFunctionAsync</code>: every provider's answer as a value of the agreed return type; empty if nobody provides it; null if there is no agreed type, the ID is an event, or the input isn't of the agreed input type.</p></div></div>
+      <p>The harness checks both directions: a dynamic publisher reaches a typed subscriber and the other way round (D04); dynamic and typed callers and providers answer each other, and a wrong input type is refused before anything is sent (D05); a type defined dynamically becomes the network's type, a C# class with the same shape joins it and one with another shape is refused, and its documentation shows in discovery (D06); a function inside a namespace is called dynamically, with its type from <code>GetEndpointAsync</code> or read from the directory's JSON (D07).</p>
+      <h2 id="cost">Cost</h2>
+      <p>A schema is compiled once per signature (cached), fields are slots in an array, numbers are stored inline, and the writer goes straight into a pooled buffer. Harness D08 measures a documented <code>Thermo</code> (31 bytes) against the typed serializer; see the <a href="harness.html#d08">result</a>. Reading and writing cost about the same as the typed API; name lookups cost a dictionary lookup, which resolving a slot once avoids.</p>
+      <h2 id="limits">Limits</h2>
+      <ul><li>An application's own leaf types need their C# class (registered with <code>NONLeaves</code>).</li><li>The <code>dynamic</code> wrapper is for convenience; the indexers are faster.</li><li>Ranges are documentation: they are not checked on set or on send.</li><li>A dynamic definition proposes a type only when the ID has none; it never changes an agreed type.</li></ul>
+      <p>Harness scenarios D01&ndash;D08 cover this page: see <a href="harness.html#non">Test harness &amp; results</a>.</p>
+    </article>
+    <nav class="pager"><a class="prev" href="notes-events.html"><span>Previous</span>NOTES events reference</a><a class="next" href="integration.html"><span>Next</span>How EVent and NOTES fit</a></nav>
+    <footer class="foot">Generated from the EVent source tree. The NON code is in <code>EVent/NON/</code>.</footer>
+  </main>
+  <aside class="toc" aria-label="On this page"><div class="toc-title">On this page</div><ul id="toc"></ul></aside>
+</div>
+<script src="assets/search-index.js"></script>
+<script src="assets/site.js"></script>
+</body>
+</html>

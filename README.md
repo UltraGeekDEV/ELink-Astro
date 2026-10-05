@@ -97,7 +97,7 @@ still to set up.
 | `ELink.UI` / `ELink.App` | Avalonia UI and its stand-alone executable |
 | `ELink.Bridge` / `ELink.Station` | headless INDI bridge; all-in-one `elink` (bridge, services and UI on one node) |
 
-EVent is not on nuget.org; its packages are in `nuget/` (a local feed, see `nuget.config`).
+EVent is not on nuget.org; it lives in `EVent/` and its packages are in `EVent/nuget/` (a local feed, see `nuget.config`).
 
 ## Developing
 

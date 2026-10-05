@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transport classes &middot; EVent Wiki</title>
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem('evwiki-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+</head>
+<body>
+<header class="topbar">
+  <button class="menu-btn" aria-label="Toggle navigation" onclick="document.body.classList.toggle('nav-open')">&#9776;</button>
+  <a class="brand" href="index.html"><span class="logo">EV</span>EVent <span class="brand-sub">Wiki</span></a>
+  <div class="search">
+    <input id="search" type="search" placeholder="Search the wiki&hellip;  ( / )" autocomplete="off" aria-label="Search">
+    <div id="search-results" class="search-results" hidden></div>
+  </div>
+  <button id="theme-btn" class="theme-btn" aria-label="Toggle dark mode" title="Toggle light/dark">&#9680;</button>
+</header>
+<div class="layout">
+  <aside class="sidebar"><nav><div class="nav-sec"><div class="nav-sec-title">Overview</div><ul><li><a href="index.html">Home</a></li><li><a href="architecture.html">Architecture</a></li><li><a href="concepts.html">Core concepts</a></li><li><a href="glossary.html">Glossary</a></li></ul></div><div class="nav-sec"><div class="nav-sec-title">EVent core</div><ul><li><a href="routing.html">Links & interest routing</a></li><li><a href="drpc.html">Distributed RPC (dRPC)</a></li><li><a href="transports.html">Transports</a></li><li><a href="wire-format.html">Wire format</a></li>
+<li><a href="firewall.html">Firewall node</a></li>
+<li><a href="namespace.html">Namespace node</a></li></ul></div><div class="nav-sec"><div class="nav-sec-title">NOTES</div><ul><li><a href="notes.html">What is NOTES?</a></li><li><a href="notes-types.html">Defining NOTES types</a></li><li><a href="notes-protocol.html">Type agreement protocol</a></li><li><a href="notes-events.html">NOTES events reference</a></li>
+<li><a href="non.html">NON dynamic objects</a></li></ul></div><div class="nav-sec"><div class="nav-sec-title">Putting it together</div><ul><li><a href="integration.html">How EVent and NOTES fit</a></li><li><a href="examples.html">Examples & cookbook</a></li>
+<li><a href="scripting.html">Scripting node</a></li>
+<li><a href="native.html">C++ leaves</a></li></ul></div><div class="nav-sec"><div class="nav-sec-title">API reference</div><ul><li><a href="api-typesafe-node.html">TypeSafeEVentNode</a></li><li><a href="api-eventnode.html">EVentNode</a></li><li><a href="api-clients.html">Clients & helpers</a></li><li><a href="api-serialization.html">Serialization types</a></li><li><a href="api-transports.html" class="current" aria-current="page">Transport classes</a></li><li><a href="api-constants.html">Event ID constants</a></li></ul></div><div class="nav-sec"><div class="nav-sec-title">Review</div><ul><li><a href="issues.html">Issues & open questions</a></li><li><a href="harness.html">Test harness & results</a></li><li><a href="roadmap.html">Roadmap</a></li></ul></div></nav></aside>
+  <main class="content">
+    <div class="crumbs"><a href="index.html">EVent Wiki</a> <span>/</span> API reference <span>/</span> Transport classes</div>
+    <article>
+      <h1>Transport classes</h1>
+      <p class="lead">The ICommsProtocol and IStreamClient implementations, discovery, and utilities.</p>
+      <p>Conceptual overview: <a href="transports.html">Transports</a>.</p><h2 id="icommsprotocol">ICommsProtocol</h2><p class="api-meta"><span class="pill">namespace EVent.Connections</span> <span class="pill"><code class="src" title="EVent/Connections/ICommsProtocol.cs">ICommsProtocol.cs</code></span></p><div class="member" id="icp"><div class="sig">void OnClientAccepted(Action&lt;QueuedClient&gt; action)
+void Run()
+Task&lt;QueuedClient?&gt; EstablishInterconnect(Package package)
+void Stop()</div><div class="mdesc"><p><code>EstablishInterconnect</code> receives the whole <code>CreateInterconnect</code> admin package. Parse <code>package.Data</code> as the nested connection-info <code>Package</code>.</p></div></div><h2 id="istreamclient">IStreamClient</h2><p class="api-meta"><span class="pill">namespace EVent.Connections.Models</span> <span class="pill"><code class="src" title="EVent/Connections/Models/IStreamClient.cs">IStreamClient.cs</code></span></p><div class="member" id="isc"><div class="sig">Task Send(byte[] data)
+Task&lt;Package?&gt; ReadPackage()
+void Close()</div><div class="mdesc"><p><code>ReadPackage</code> returns <code>null</code> only when the link is finished. The node removes the client when it sees <code>null</code>.</p></div></div><h2 id="tcpserver">TCPServer</h2><p class="api-meta"><span class="pill">namespace EVent.Connections.TCP</span> <span class="pill"><code class="src" title="EVent/Connections/TCP/TCPServer.cs">TCPServer.cs</code></span></p><div class="member" id="tcps-ctor"><div class="sig">public TCPServer(IPAddress listeningAdress, int port)
+public TCPServer(IPAddress listeningAdress, int port, params string[] serverBroadcastedIDs)</div><div class="mdesc"><p>The second overload also answers multicast discovery for each ID once running.</p></div></div><div class="member" id="tcps-advertised"><div class="sig">public IPAddress? AdvertisedAddress { get; set; }</div><div class="mdesc"><p>The IPv4 address discovery replies advertise. By default the listening address when that's a specific IPv4 address, otherwise <a href="#iputils"><code>IPUtils.GetLocalIPv4()</code></a>. Set it before <code>Run</code> on a machine with several networks.</p></div></div><div class="member" id="tcps-port"><div class="sig">public int Port { get; }</div><div class="mdesc"><p>The port the server listens on: the one it was given, or for port 0 (any free port) the one the system assigned once <code>Run</code> has started it. Discovery advertises this port, and <code>SourcePort</code> is compared with it.</p></div></div><div class="member" id="tcps-run"><div class="sig">public void Run()</div><div class="mdesc"><p>Binds the port (throws if it's taken), starts accepting on a background task, and starts the discovery responders. Does nothing if already running; after <code>Stop</code> it starts again.</p></div></div><div class="member" id="tcps-eic"><div class="sig">public Task&lt;QueuedClient?&gt; EstablishInterconnect(Package package)</div><div class="mdesc"><p>Handles <code>"TCP"</code> (<code>TCPConnectionData</code>, when <code>SourcePort</code> is 0 or this server's port) and <code>"TCPAUTO"</code> (a server ID resolved through discovery). Returns <code>null</code> for other types or on failure.</p></div></div><div class="member" id="tcps-stop"><div class="sig">public void Stop()</div><div class="mdesc"><p>Stops accepting, releases the port and stops the discovery responders. Links already made belong to the node and are left alone.</p></div></div><h2 id="discovery">Discovery</h2><p class="api-meta"><span class="pill">namespace EVent.Connections.UDP</span> <span class="pill"><code class="src" title="EVent/Connections/UDP/ServerTCPBroadcast.cs">ServerTCPBroadcast.cs</code></span></p><div class="member" id="stb"><div class="sig">public class ServerTCPBroadcast
+  public static int EVentTCPConenctionBroadcastPort = 8563;
+  public static string EVentBroadcastGroup = "239.255.12.85";
+  public ServerTCPBroadcast(string serverID, string ip, string port)
+  public void Start()
+  public void Stop()</div><div class="mdesc"><p>Joins the group and answers requests whose EventID equals <code>serverID</code> until stopped. If the machine can't join the group, that's logged and the server just can't be discovered.</p></div></div><div class="member" id="ctd"><div class="sig">public class ClientTCPDiscovery
+  public static TimeSpan RetryInterval { get; set; }   // default 1 s
+  public static TimeSpan Timeout { get; set; }         // default 10 s
+  public static IPEndPoint? GetTCPServer(string ServerID)
+  public static IPEndPoint? GetTCPServer(string ServerID, TimeSpan timeout)</div><div class="mdesc"><p>Sends a request, again every <code>RetryInterval</code>, and returns the endpoint from the first valid reply for <code>ServerID</code> (replies carrying another ID are ignored). If nobody has answered within <code>timeout</code> (default <code>Timeout</code>; <code>System.Threading.Timeout.InfiniteTimeSpan</code> asks forever), it returns <code>null</code> (<a href="harness.html#t08">T08</a>). A merge stops waiting for it even sooner, after <a href="api-typesafe-node.html#mergesteptimeout"><code>MergeStepTimeout</code></a>.</p></div></div><h2 id="serial">Serial</h2><p class="api-meta"><span class="pill">namespace Event.Connections.Serial</span> <span class="pill"><code class="src" title="EVent/Connections/Serial/SerialServer.cs">SerialServer.cs</code></span></p><div class="member" id="ss"><div class="sig">public class SerialServer : ICommsProtocol
+  public SerialServer(string ServerID)</div><div class="mdesc"><p>Scans the serial ports every second and handshakes with each new port using <code>ServerID</code>. <code>EstablishInterconnect</code> always returns <code>null</code>.</p></div></div><div class="member" id="ssc"><div class="sig">public class SerialStreamClient : IStreamClient
+  public static SerialStreamClient? TryConnect(string port, string serverID)</div><div class="mdesc"><p>Opens the port at 9600&nbsp;baud with a 1&nbsp;s read timeout, performs the <a href="transports.html#serial">handshake</a>, and switches baud rate. See <a class="iss sev-high" href="issues.html#I-09" title="Serial links are dropped after about 1 second of silence and never re-established">I-09</a> and <a class="iss sev-medium" href="issues.html#I-16" title="The serial receive buffer is fixed at 250 bytes">I-16</a>.</p></div></div><h2 id="utilities-and-legacy">Utilities and legacy</h2><div class="member" id="iputils"><div class="sig">public static class IPUtils { public static IPAddress GetLocalIPv4(); }</div><div class="mdesc"><p>Namespace <code>EVent.Utils</code>. Returns the local address of a UDP socket &ldquo;connected&rdquo; to 8.8.8.8 (no packet is sent); without a default route, the first IPv4 address of an active non-loopback interface; failing that, loopback. Never throws.</p></div></div><div class="member" id="tcpcc"><div class="sig">public class TCPClientConnection</div><div class="mdesc"><p>Legacy standalone client from before <code>ICommsProtocol</code>. Not used by the node (<a class="iss sev-low" href="issues.html#I-29" title="Dead, legacy or placeholder code">I-29</a>).</p></div></div><div class="member" id="tcpsc"><div class="sig">internal class TCPStreamClient : IStreamClient</div><div class="mdesc"><p>Wraps a <code>TcpClient</code> stream and uses <code>Package.ReadPackage(Stream)</code>.</p></div></div>
+    </article>
+    <nav class="pager"><a class="prev" href="api-serialization.html"><span>Previous</span>Serialization types</a><a class="next" href="api-constants.html"><span>Next</span>Event ID constants</a></nav>
+    <footer class="foot">Generated from the EVent source tree. Line references point at commit 67d35c7; code added by later commits (canonical order e2e550c, agreement recovery 7e35633, merge descriptors 6bbe9c2, type checks c0a0c42, merge cleanup 56bab8b, type graph 729bbe2, caps and optional fields c1f7363, collection definitions eca89fb, link faults c08d67b) is referenced by file.</footer>
+  </main>
+  <aside class="toc" aria-label="On this page"><div class="toc-title">On this page</div><ul id="toc"></ul></aside>
+</div>
+<script src="assets/search-index.js"></script>
+<script src="assets/site.js"></script>
+</body>
+</html>
