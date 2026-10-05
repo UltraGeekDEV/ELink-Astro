@@ -187,6 +187,6 @@ focus triggers/offsets -> live-stack rejection/calibration -> the rest.
 - [ ] RealDataTests (ELINK_REAL_LIGHTS, ELINK_REAL_FLATS, ELINK_REAL_COUNT, ELINK_REAL_OUT): run them on your own frames
 - [x] Real data, nastier (M 42, 30 s subs, no guiding): the frame grader judges against the camera's own usual elongation, measures colour frames by their cells, and takes a stable change of star size as the new normal
 - [x] Stars-alignment handles frames of another pixel scale (same camera angle); header scale from the frame's own SCALE card
-- [ ] Star alignment for a camera turned by any angle (triangle / pair-distance matching), so two telescopes work without a plate solver
-- [ ] Layers from mixed telescopes on real data (M 42: 300 mm and 900 mm frames in one folder): needs the item above or a solver
+- [x] Star alignment for any turn and scale (triangle matching), against any placed frame; each frame carries its telescope's pixel scale and camera angle (ShotEvent), so two telescopes work without a plate solver
+- [x] Layers from mixed telescopes on real data (M 42: 300 mm and 900 mm frames in one folder, the camera turned 13.4°, scale ×0.338): wide and detail layers stacked, 68 stars matched across telescopes
 - [ ] Reject soft frames harder when the cause is the focus (a note on the Scopes page, and an autofocus when the scope can)

@@ -92,6 +92,11 @@ public class RealDataTests(ITestOutputHelper output)
         Assert.True(picture.Ok.Value, picture.Message.Text);
         File.WriteAllBytes(Path.Combine(outDir, "picture.png"), picture.Png.Data);
         output.WriteLine($"{picture.Width.Value}x{picture.Height.Value}: {picture.Note.Text}");
+        foreach (var source in (Environment.GetEnvironmentVariable("ELINK_REAL_SOURCES") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var one = Assert.Single((await node.CallFunctionAsync<ProcessRequest, ProcessedImage>(ProcessingIds.Process, new ProcessRequest { MaxWidth = 2400, MaxHeight = 1600, Source = source }, TimeSpan.FromMinutes(5)))!);
+            if (one.Ok.Value) File.WriteAllBytes(Path.Combine(outDir, $"picture-{source}.png"), one.Png.Data);
+        }
         var plain = Assert.Single((await node.CallFunctionAsync<ProcessRequest, ProcessedImage>(ProcessingIds.Process, new ProcessRequest
             { MaxWidth = 2400, MaxHeight = 1600, Settings = new ProcessingSettings { RemoveGradient = false, NeutralizeBackground = false } }, TimeSpan.FromMinutes(5)))!);
         File.WriteAllBytes(Path.Combine(outDir, "picture-no-processing.png"), plain.Png.Data);

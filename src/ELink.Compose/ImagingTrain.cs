@@ -177,7 +177,26 @@ public sealed class ImagingTrain : IAsyncDisposable
 
     private async Task RelayAsync(ShotEvent shot)
     {
+        // the telescope knows what the camera sees per pixel and how it is turned: the frame carries it, so it can be placed beside frames of other telescopes
+        if (double.IsNaN(shot.PixelScaleArcsec.Value) || double.IsNaN(shot.CameraAngleDegrees.Value))
+            if (_imaging.FirstOrDefault(m => m.ShooterId == shot.Shooter.Text) is { } member)
+            {
+                var (scale, _, _) = Optics(member);
+                if (double.IsNaN(shot.PixelScaleArcsec.Value) && scale > 0) shot.PixelScaleArcsec = scale;
+                lock (_angles) if (double.IsNaN(shot.CameraAngleDegrees.Value) && _angles.TryGetValue(member.Camera.CameraId.Text, out var angle)) shot.CameraAngleDegrees = angle;
+            }
         try { await _node.FireEventAsync(ShooterIds.Shot(_id), shot); } catch (ObjectDisposedException) { }
+    }
+
+    /// <summary>Arcseconds per pixel (with the camera's binning) and the sensor size in pixels, from the focal length and the camera's pixel size.</summary>
+    private (double Scale, int Width, int Height) Optics(Member m)
+    {
+        var c = m.State.Latest;
+        double pixel = m.Camera.PixelSizeUm.Value > 0 ? m.Camera.PixelSizeUm.Value : c?.PixelSizeUm.Value ?? 0;
+        int width = m.Camera.SensorWidth.Value > 0 ? m.Camera.SensorWidth.Value : c?.SensorWidth.Value ?? 0;
+        int height = m.Camera.SensorHeight.Value > 0 ? m.Camera.SensorHeight.Value : c?.SensorHeight.Value ?? 0;
+        int binX = Math.Max(1, c?.BinX.Value ?? 1);
+        return pixel > 0 && _def.FocalLengthMm.Value > 0 ? (206.265 * pixel * binX / _def.FocalLengthMm.Value, width, height) : (0, width, height);
     }
 
     private async Task<CommandResult> SetRampsAsync(string mode)

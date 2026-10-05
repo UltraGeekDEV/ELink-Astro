@@ -241,4 +241,75 @@ public class PictureServiceTests : IAsyncLifetime
         var after = await Where();
         Assert.InRange(Math.Abs(after.X - first.X), 0, 2); Assert.InRange(Math.Abs(after.Y - first.Y), 0, 2);   // the bright star is where it was, not smeared or shifted
     }
+
+    [Fact]
+    public async Task FramesOfTwoTelescopesAtOtherScalesAndAnglesAreStackedTogetherWithoutASolver()
+    {
+        // what the live pipeline gives: no WCS in the frames, each frame's pointing (a little off), the scale of its telescope and its camera angle (a little off)
+        await using var stack = new LiveStackService(_node); await stack.StartAsync();
+        const double Ra = 84.0, Dec = 10.0;
+        var request = new LiveStackRequest
+        {
+            Label = "Together", Center = new SkyTarget { RaHours = Ra / 15, DecDegrees = Dec, Epoch = "J2000" }, FovWidthDegrees = 1100 * 4 / 3600.0 * 1.3, FovHeightDegrees = 800 * 4 / 3600.0 * 1.3,
+            PixelScaleArcsec = 4, Interpolation = "Bilinear", Registration = "Auto", SolveTimeoutSeconds = 1,
+        };
+        request.ShooterIds.Add("a"); request.ShooterIds.Add("b");
+        Assert.True((await Commands.CallAsync(_node, LiveStackIds.Start, request)).Ok.Value);
+        var messages = new List<string>(); LiveStackState? state = null;
+        await _node.HookEventAsync(LiveStackIds.State, (LiveStackState st) => { state = st; lock (messages) messages.Add(st.Message.Text); });
+
+        var rnd = new Random(12);
+        // stars on the sky, in degrees from the field centre (a patch 0.9 x 0.6 degrees); one far brighter than the rest
+        var sky = Enumerable.Range(0, 400).Select(_ => (Ra: Ra + (rnd.NextDouble() - 0.5) * 0.9 / Math.Cos(Dec * Math.PI / 180), Dec: Dec + (rnd.NextDouble() - 0.5) * 0.6, F: 800 + Math.Pow(rnd.NextDouble(), 3) * 20000)).ToList();
+        sky.Add((Ra + 0.02, Dec - 0.015, 90000));
+        byte[] Render(TanWcs wcs, int w, int h, double fwhmArcsec, int seed)
+        {
+            var noise = new Random(seed); var px = new ushort[w * h];
+            for (int i = 0; i < px.Length; i++) px[i] = (ushort)(1200 + (noise.NextDouble() - 0.5) * 60);
+            double sigma = fwhmArcsec / wcs.PixelScaleArcsec / 2.355;
+            foreach (var st in sky)
+            {
+                var (x, y) = wcs.SkyToPixel(st.Ra, st.Dec);
+                int r = (int)Math.Ceiling(5 * sigma);
+                for (int yy = Math.Max(0, (int)y - r); yy <= Math.Min(h - 1, (int)y + r); yy++)
+                    for (int xx = Math.Max(0, (int)x - r); xx <= Math.Min(w - 1, (int)x + r); xx++)
+                        px[yy * w + xx] = (ushort)Math.Min(65535, px[yy * w + xx] + st.F * Math.Exp(-((xx - x) * (xx - x) + (yy - y) * (yy - y)) / (2 * sigma * sigma)));
+            }
+            return FitsImage.Write16(w, h, px, new Dictionary<string, string> { ["EXPTIME"] = "30" });
+        }
+        async Task Send(string shooter, byte[] fits, double scale, double trueAngle, double angleError, double raError, double decError, int n)
+        {
+            await _node.FireEventAsync(ShooterIds.Shot(shooter), new ShotEvent
+            {
+                Shooter = shooter, Format = ".fits", ExposureSeconds = 30, FrameType = "Light", Timestamp = "t" + n, Data = new RawBytes(fits),
+                PointingRaHours = (Ra + raError) / 15, PointingDecDegrees = Dec + decError, PixelScaleArcsec = scale, CameraAngleDegrees = trueAngle + angleError,
+            });
+            Assert.True(await Eventually(() => state is not null && state.FramesStacked.Value + state.FramesRejected.Value == n && state.FramesPending.Value == 0), state?.Message.Text);
+        }
+        (int X, int Y) Brightest(byte[] fits) { var f = FitsImage.Parse(fits); int best = 0; for (int i = 0; i < f.Width * f.Height; i++) if (f.Data[i] > f.Data[best]) best = i; return (best % f.Width, best / f.Width); }
+        async Task<(int X, int Y)> Where()
+        {
+            var img = Assert.Single((await _node.CallFunctionAsync<LiveStackImageRequest, LiveStackImage>(LiveStackIds.GetImage, new LiveStackImageRequest { Neutralize = false }, TimeSpan.FromSeconds(10)))!);
+            return Brightest(img.Image.Data);
+        }
+
+        // telescope A: 4"/px, camera not turned; telescope B: 1.5"/px, camera turned 35°, its pointing 12" and its angle 2.5° out
+        var wcsA = TanWcs.Centered(Ra, Dec, 0, 4, 1100, 800);
+        await Send("a", Render(wcsA, 1100, 800, 9, 1), 4, 0, 0, 0, 0, 1);
+        var first = await Where();
+        var wcsB = TanWcs.Centered(Ra, Dec, 35, 1.5, 1400, 1000);
+        await Send("b", Render(wcsB, 1400, 1000, 4.5, 2), 1.5, 35, 2.5, 12.0 / 3600, 0, 2);
+        await Send("b", Render(wcsB with { CrPix1 = wcsB.CrPix1 + 15, CrPix2 = wcsB.CrPix2 - 9 }, 1400, 1000, 4.5, 3), 1.5, 35, 2.5, 12.0 / 3600, 0, 3);   // dithered
+        await Send("a", Render(wcsA with { CrPix1 = wcsA.CrPix1 - 6, CrPix2 = wcsA.CrPix2 + 4 }, 1100, 800, 9, 4), 4, 0, 0, 0, 0, 4);
+        Assert.Equal(4, state!.FramesStacked.Value);
+        lock (messages)
+        {
+            Assert.Contains(messages, m => m.Contains("reference frame"));
+            Assert.Equal(3, messages.Distinct().Count(m => m.Contains("stars,") && m.Contains("matched")));            // every later frame was placed by its stars
+            Assert.DoesNotContain(messages, m => m.Contains("did not match"));
+        }
+        // the bright star stays where the first frame had it: the other telescope's frames landed on it
+        var after = await Where();
+        Assert.InRange(Math.Abs(after.X - first.X), 0, 2); Assert.InRange(Math.Abs(after.Y - first.Y), 0, 2);
+    }
 }

@@ -79,6 +79,8 @@ public class ShotEvent : IBinaryConvertible
     public BinaryConvertibleDouble Elongation { get; set; } = double.NaN;
     public BinaryConvertibleDouble Background { get; set; } = double.NaN;
     public BinaryConvertibleString PseudoChannel { get; set; } = "";
+    public BinaryConvertibleDouble PixelScaleArcsec { get; set; } = double.NaN;
+    public BinaryConvertibleDouble CameraAngleDegrees { get; set; } = double.NaN;
 
     public override string Name => "ShotEvent";
     private static readonly NOTESDescriptor d = new();
@@ -102,6 +104,8 @@ public class ShotEvent : IBinaryConvertible
         d.RegisterField("Hfr", (ShotEvent x) => x.Hfr).Description("median half-flux radius, pixels");
         d.RegisterField("Elongation", (ShotEvent x) => x.Elongation).Description("median star elongation, 1 = round");
         d.RegisterField("Background", (ShotEvent x) => x.Background).Description("sky level, ADU");
+        d.RegisterField("PixelScaleArcsec", (ShotEvent x) => x.PixelScaleArcsec).Description("what the camera sees per pixel, from its telescope; NaN = not known. Added by the telescope; lets frames of different telescopes be placed on each other");
+        d.RegisterField("CameraAngleDegrees", (ShotEvent x) => x.CameraAngleDegrees).Description("where the frame's up points on the sky, east of north, as last learned; NaN = not known");
         d.RegisterField("PseudoChannel", (ShotEvent x) => x.PseudoChannel).Description("pseudo mono: R, G or B, the channel of this colour frame that was in focus; empty = an ordinary frame");
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);

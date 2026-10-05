@@ -59,7 +59,7 @@ public sealed class LiveStackService : IAsyncDisposable
     private int _rejected, _pending, _generation;
     private double _exposure, _lastScale = double.NaN;
 
-    private sealed record Item(byte[] Fits, string Source, double RaHours, double DecDegrees, double Seconds, int Generation, string Filter, string Pseudo = "");
+    private sealed record Item(byte[] Fits, string Source, double RaHours, double DecDegrees, double Seconds, int Generation, string Filter, string Pseudo = "", double Scale = double.NaN, double Angle = double.NaN);
 
     private readonly string? _dataDir;
     private string? _sessionDir;
@@ -138,7 +138,7 @@ public sealed class LiveStackService : IAsyncDisposable
         }
         lock (_gate)
         {
-            _request = r; _stacks.Clear(); _reference = null; _scale = r.PixelScaleArcsec.Value > 0 ? r.PixelScaleArcsec.Value : double.NaN;
+            _request = r; _stacks.Clear(); _references.Clear(); _scale = r.PixelScaleArcsec.Value > 0 ? r.PixelScaleArcsec.Value : double.NaN;
             _rejected = 0; _pending = 0; _exposure = 0; _lastScale = double.NaN; _last = ""; _seen.Clear();
             _sessionDir = dir; _framesSaved = 0;
             if (restored is not null)
@@ -197,7 +197,7 @@ public sealed class LiveStackService : IAsyncDisposable
             if (!_seen.Add((shot.Shooter.Text, shot.Timestamp.Text, Fingerprint(shot.Data.Data)))) return;
             queue = _queue; gen = _generation; _pending++;
         }
-        var item = new Item(shot.Data.Data, shot.Shooter.Text, shot.PointingRaHours.Value, shot.PointingDecDegrees.Value, shot.ExposureSeconds.Value, gen, shot.Filter.Text, shot.PseudoChannel.Text);
+        var item = new Item(shot.Data.Data, shot.Shooter.Text, shot.PointingRaHours.Value, shot.PointingDecDegrees.Value, shot.ExposureSeconds.Value, gen, shot.Filter.Text, shot.PseudoChannel.Text, shot.PixelScaleArcsec.Value, shot.CameraAngleDegrees.Value);
         if (!queue.Writer.TryWrite(item)) { lock (_gate) _pending--; Reject($"{shot.Shooter.Text}: queue full, frame skipped"); }
         else _ = Publish();
     }
@@ -417,10 +417,13 @@ public sealed class LiveStackService : IAsyncDisposable
     }
 
     private sealed record StarReference(IReadOnlyList<Star> Stars, TanWcs Wcs);
-    private StarReference? _reference;
+    /// <summary>Frames already placed (the first, then the latest few): a new frame is matched against any of them, so a frame of another telescope
+    /// can be placed by a frame that is placed, whichever it is.</summary>
+    private readonly List<StarReference> _references = new();
 
-    /// <summary>The frame placed by its stars on the first frame of the stack. The first frame is the reference (and keeps the pointing's
-    /// placement); a frame whose stars do not match keeps the pointing's placement too, and says so.</summary>
+    /// <summary>The frame placed by its stars on frames already placed. The first frame is placed by where the mount said it pointed (and the scale
+    /// and angle it is known to have); every later frame is matched to the placed frames by its stars, with any turn and any scale (a camera turned
+    /// another way, another telescope). A frame that matches none keeps the pointing's placement and says so.</summary>
     private async Task<(TanWcs Wcs, string How)> AlignByStarsAsync(float[] data, int width, int height, int channels, FitsImage img, TanWcs byPointing, CancellationToken ct)
     {
         var stars = await Task.Run(() =>
@@ -430,27 +433,49 @@ public sealed class LiveStackService : IAsyncDisposable
             for (int c = 0; c < channels; c++) for (int i = 0; i < plane; i++) luma[i] += data[c * plane + i] / channels;
             return StarField.Detect(FitsImage.FromPlanar(width, height, 1, luma, img.Header, img.Range), sigma: 8, maxStars: 600).Stars;
         }, ct);
-        StarReference? reference;
+        List<StarReference> refs;
         lock (_gate)
         {
-            if (_reference is null && stars.Count >= 12) { _reference = new StarReference(stars, byPointing); return (byPointing, $"pointing, this is the reference frame ({stars.Count} stars)"); }
-            reference = _reference;
+            if (_references.Count == 0 && stars.Count >= 12) { _references.Add(new StarReference(stars, byPointing)); return (byPointing, $"pointing, this is the reference frame ({stars.Count} stars)"); }
+            refs = _references.ToList();
         }
-        if (reference is null) return (byPointing, "pointing (too few stars to align by)");
+        if (refs.Count == 0) return (byPointing, "pointing (too few stars to align by)");
         double size = stars.Count > 0 ? stars.Select(s => s.Hfr).Where(h => !double.IsNaN(h)).DefaultIfEmpty(2).Order().ElementAt(stars.Count / 2) : 2;
-        // frames of another scale (another telescope) are brought to the reference's scale first: the ratio of the two pointing WCSs'
-        double k = byPointing.PixelScaleArcsec / reference.Wcs.PixelScaleArcsec;
-        if (Math.Abs(k - 1) < 0.02) k = 1;
-        var scaled = k == 1 ? stars : stars.Select(s => s with { X = s.X * k, Y = s.Y * k, Hfr = s.Hfr * k }).ToList();
-        var t = StarAligner.Align(reference.Stars, scaled, maxShift: Math.Max(Math.Max(width, height) / 4.0, 1500), starSize: Math.Clamp(size * k, 1.5, 12));
-        if (t is not { } tr) return (byPointing, $"pointing (its {stars.Count} stars did not match the first frame's {reference.Stars.Count}; they are {size:0.0} px across)");
-        // the frame's pixels land on the reference's through the transform: its own WCS is the reference's composed with it
-        var w = reference.Wcs;
-        // frame pixel p → reference pixel R·(k·p) + t: the frame's WCS is the reference's composed with that
-        double c0 = tr.Cos, s0 = tr.Sin;
-        double p0x = (c0 * (w.CrPix1 - tr.Tx) + s0 * (w.CrPix2 - tr.Ty)) / k, p0y = (-s0 * (w.CrPix1 - tr.Tx) + c0 * (w.CrPix2 - tr.Ty)) / k;   // (R⁻¹ (crpix − t)) / k
-        var placed = w with { CrPix1 = p0x, CrPix2 = p0y, Cd11 = k * (w.Cd11 * c0 + w.Cd12 * s0), Cd12 = k * (-w.Cd11 * s0 + w.Cd12 * c0), Cd21 = k * (w.Cd21 * c0 + w.Cd22 * s0), Cd22 = k * (-w.Cd21 * s0 + w.Cd22 * c0) };
-        return (placed, FormattableString.Invariant($"stars, {tr.Matches} matched, shift {Math.Sqrt(tr.Tx * tr.Tx + tr.Ty * tr.Ty):0} px, turn {tr.RotationDegrees:0.###}°"));
+        // frames of a scale like this one first (the cheap, certain case), the latest first among them
+        var order = refs.Select((x, i) => (Ref: x, I: i)).OrderBy(x => Math.Abs(Math.Log(byPointing.PixelScaleArcsec / x.Ref.Wcs.PixelScaleArcsec))).ThenByDescending(x => x.I).Take(5).Select(x => x.Ref).ToList();
+        var attempts = new List<string>();
+        foreach (var reference in order)
+        {
+            ct.ThrowIfCancellationRequested();
+            // by pointing the frame is expected at this scale against that frame; the same camera angle then needs only a shift and a small turn
+            double k = byPointing.PixelScaleArcsec / reference.Wcs.PixelScaleArcsec;
+            if (Math.Abs(k - 1) < 0.02) k = 1;
+            var scaled = k == 1 ? stars : stars.Select(s => s with { X = s.X * k, Y = s.Y * k, Hfr = s.Hfr * k }).ToList();
+            Similarity? sim = null; string how = "";
+            var fast = await Task.Run(() => StarAligner.Align(reference.Stars, scaled, maxShift: Math.Max(Math.Max(width, height) / 4.0, 1500), starSize: Math.Clamp(size * k, 1.5, 12)), ct);
+            if (fast is { } ft) { sim = Similarity.From(ft, k); how = "shift"; }
+            else
+            {
+                sim = await Task.Run(() => TriangleAligner.Align(reference.Stars, stars, starSize: Math.Clamp(size, 1.5, 12)), ct);
+                how = "any turn and scale";
+            }
+            if (sim is not { } m) { attempts.Add($"{reference.Stars.Count}"); continue; }
+            // frame pixel p → that frame's pixel M·p + t, so its WCS is the reference's composed with that: CD' = CD·M, crpix' = M⁻¹ (crpix − t)
+            var w = reference.Wcs; double det = m.A * m.A + m.B * m.B;
+            double dx = w.CrPix1 - m.Tx, dy = w.CrPix2 - m.Ty;
+            var placed = w with
+            {
+                CrPix1 = (m.A * dx + m.B * dy) / det, CrPix2 = (-m.B * dx + m.A * dy) / det,
+                Cd11 = w.Cd11 * m.A + w.Cd12 * m.B, Cd12 = -w.Cd11 * m.B + w.Cd12 * m.A, Cd21 = w.Cd21 * m.A + w.Cd22 * m.B, Cd22 = -w.Cd21 * m.B + w.Cd22 * m.A,
+            };
+            lock (_gate)
+            {
+                _references.Add(new StarReference(stars, placed));
+                while (_references.Count > 8) _references.RemoveAt(1);          // the first frame stays
+            }
+            return (placed, FormattableString.Invariant($"stars, {m.Matches} matched ({how}), shift {Math.Sqrt(m.Tx * m.Tx + m.Ty * m.Ty):0} px, turn {m.RotationDegrees:0.###}°, scale ×{m.Scale:0.###}"));
+        }
+        return (byPointing, $"pointing (its {stars.Count} stars did not match any of the {refs.Count} placed frames'; they are {size:0.0} px across)");
     }
 
     private async Task<(TanWcs? Wcs, string How)> RegisterAsync(LiveStackRequest r, FitsImage img, Item item, CancellationToken ct)
@@ -459,12 +484,15 @@ public sealed class LiveStackService : IAsyncDisposable
         if (mode == "Auto" && TanWcs.FromHeader(img.Header) is { } own)
             // a WCS a plate solver wrote is the frame's place on the sky; one a capture program made up from the mount's position (INDI's:
             // CDELT and CROTA, no CD or PC matrix, no solver mark) is only a pointing, good for the first frame, not for lining frames up
-            return IsSolvedWcs(img.Header) ? (own, "frame WCS") : (NominalWcs(own, r.FramePixelScaleArcsec.Value, img), "pointing");
+            return IsSolvedWcs(img.Header) ? (own, "frame WCS") : (NominalWcs(own, item.Scale > 0 ? item.Scale : r.FramePixelScaleArcsec.Value, img), "pointing");
         double ra = item.RaHours, dec = item.DecDegrees;
         if (double.IsNaN(ra) || double.IsNaN(dec)) (ra, dec) = HeaderPointing(img);
+        // what the frame is known to see per pixel and how it is turned: its own (a telescope said so, or its SCALE card), else the request's single figure
+        double frameScale = item.Scale > 0 ? item.Scale : img.GetDouble("SCALE", double.NaN) is var card && card > 0 ? card : r.FramePixelScaleArcsec.Value;
+        double frameAngle = !double.IsNaN(item.Angle) ? item.Angle : r.FramePositionAngleDegrees.Value;
         if (mode is "Auto" or "Solve")
         {
-            double scale; lock (_gate) scale = !double.IsNaN(_lastScale) ? _lastScale : r.FramePixelScaleArcsec.Value;   // hint: what solved last
+            double scale; lock (_gate) scale = frameScale > 0 ? frameScale : !double.IsNaN(_lastScale) ? _lastScale : 0;   // hint: the frame's own scale, else what solved last
             var answers = await _node.CallFunctionAsync<SolveRequest, SolveResult>(SolveIds.Solve, new SolveRequest
             {
                 Image = new ELink.Contracts.RawBytes { Data = item.Fits }, HintRaHours = ra, HintDecDegrees = dec, HintRadiusDegrees = 5,
@@ -475,12 +503,12 @@ public sealed class LiveStackService : IAsyncDisposable
             var s = answers is { Count: > 0 } ? answers[0] : null;
             if (s is { Solved.Value: true })
                 return (FromSolve(s, img.Width, img.Height), "solved");
-            if (mode == "Solve" || !(r.FramePixelScaleArcsec.Value > 0))
+            if (mode == "Solve" || !(frameScale > 0))
                 return (null, s is null ? "no plate solver on the mesh" : "did not solve: " + s.Message.Text);
         }
         if (double.IsNaN(ra) || double.IsNaN(dec)) return (null, "the frame has no pointing to register it by");
-        if (!(r.FramePixelScaleArcsec.Value > 0)) return (null, "pointing registration needs the frames' pixel scale");
-        return (TanWcs.Centered(ra * 15, dec, r.FramePositionAngleDegrees.Value, r.FramePixelScaleArcsec.Value, img.Width, img.Height), "pointing");
+        if (!(frameScale > 0)) return (null, "pointing registration needs the frames' pixel scale");
+        return (TanWcs.Centered(ra * 15, dec, frameAngle, frameScale, img.Width, img.Height), "pointing");
     }
 
     /// <summary>Where capture software says the frame was taken: RA/DEC in degrees, or OBJCTRA/OBJCTDEC as "hh mm ss".</summary>
@@ -576,7 +604,7 @@ public sealed class LiveStackService : IAsyncDisposable
         lock (_gate)
         {
             if (_request is null) return CommandResult.Fail("no stack");
-            _stacks.Clear(); _reference = null; _scale = _request.PixelScaleArcsec.Value > 0 ? _request.PixelScaleArcsec.Value : double.NaN;
+            _stacks.Clear(); _references.Clear(); _scale = _request.PixelScaleArcsec.Value > 0 ? _request.PixelScaleArcsec.Value : double.NaN;
             _rejected = 0; _exposure = 0; _message = "emptied";
         }
         await Publish();
