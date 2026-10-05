@@ -97,6 +97,8 @@ await using var calibration = new CalibrationService(node, Path.GetDirectoryName
 await calibration.StartAsync();
 await using var storage = new StorageService(node, saveDir);
 await storage.StartAsync();
+await using var sessionLog = new SessionLogService(node, Path.Combine(saveDir, "logs"));
+await sessionLog.StartAsync();
 foreach (var id in save) await Commands.CallAsync(node, ELink.Contracts.Automation.StorageIds.Watch, new ELink.Contracts.Automation.StorageWatch { ShooterId = id });
 AtlasService? atlas = null;
 TonightService? tonight = null;

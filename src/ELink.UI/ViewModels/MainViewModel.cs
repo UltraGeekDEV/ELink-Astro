@@ -40,6 +40,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public ScopesViewModel Scopes { get; }
     public RigViewModel Rig { get; }
     public AdvancedViewModel Advanced { get; }
+    public SessionLogViewModel SessionLog { get; }
     public StatusBarViewModel StatusBar { get; }
 
     [ObservableProperty, NotifyPropertyChangedFor(nameof(Current), nameof(IsSky), nameof(IsScopes), nameof(IsPicture), nameof(IsRig), nameof(IsAdvanced))]
@@ -89,7 +90,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Tonight = new TonightViewModel(mesh, Image) { OpenSite = () => Navigate(AppView.Rig, "Site") };
         Sky.Tonight = Tonight;
         Rig = new RigViewModel(Composer, Site, Equipment, Profiles, Calibration);
-        Advanced = new AdvancedViewModel(IndiBrowser, Storage, LiveStack, new HelpViewModel());
+        SessionLog = new SessionLogViewModel(mesh);
+        Advanced = new AdvancedViewModel(IndiBrowser, Storage, LiveStack, new HelpViewModel(), SessionLog);
 
         mesh.Notices.Posted += OnNotice;
         Mesh.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(MeshSession.Status)) OnPropertyChanged(nameof(ConnectionStatus)); };
@@ -119,6 +121,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         await Schedule.StartAsync();
         await Profiles.StartAsync();
         await Calibration.StartAsync();
+        await SessionLog.StartAsync();
         await Storage.StartAsync();
         await Image.StartAsync();
         await Atlas.StartAsync();
@@ -180,6 +183,6 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Mesh.Notices.Posted -= OnNotice;
         Drawer?.Dispose();
         Scopes.Dispose(); StatusBar.Dispose();
-        Catalog.Dispose(); IndiBrowser.Dispose(); Autofocus.Dispose(); FocusAssist.Dispose(); Picture.Dispose(); Tonight.Dispose(); Schedule.Dispose(); Profiles.Dispose(); Calibration.Dispose(); Storage.Dispose(); Image.Dispose(); Atlas.Dispose(); Centering.Dispose(); LiveStack.Dispose(); Site.Dispose(); Mesh.Dispose();
+        Catalog.Dispose(); IndiBrowser.Dispose(); Autofocus.Dispose(); FocusAssist.Dispose(); Picture.Dispose(); Tonight.Dispose(); Schedule.Dispose(); Profiles.Dispose(); Calibration.Dispose(); SessionLog.Dispose(); Storage.Dispose(); Image.Dispose(); Atlas.Dispose(); Centering.Dispose(); LiveStack.Dispose(); Site.Dispose(); Mesh.Dispose();
     }
 }

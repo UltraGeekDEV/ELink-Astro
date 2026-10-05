@@ -196,3 +196,10 @@ focus triggers/offsets -> live-stack rejection/calibration -> the rest.
 - [x] Frame from a picture: solve it, show it on the chart, make the image exactly one frame of it
 - [ ] Tonight's best: remember what you imaged (kept images) and what is already deep; filters by kind; "add the top 3 to the queue"; targets from your own list; planets and comets
 - [ ] Frame from a picture: a live version from a scope's latest frame ("frame like what this telescope sees now"); a few pictures on the chart at once
+
+## Session log and the web (EVent 0.2: PublishEvent, file endpoint, web endpoint, JS leaf)
+- [x] Session log: LogEntry events (`SessionLog.Info/Warn/Error/Note`), a service that writes one file per night through an EVent file endpoint (append over the mesh allowed, replace not), follows scopes/autofocus/centring/stack frames, Advanced › Session log page with notes and a copy-for-bug-report button
+- [ ] Services should write their own important lines (errors, device lost, flips, guiding lost) with `SessionLog`, not only phase changes
+- [ ] Log: filter by source/level, open the folder, attach the log to a saved night's folder
+- [ ] Web interface: the station serves a page with the JS leaf (WebSocketServer + WebEndpoint/FileEndpoint), live stack, scope states, log, stop button; mesh only, same contracts as the desktop UI
+- [ ] Stream-style events (live previews, property streams) moved to `PublishEvent`

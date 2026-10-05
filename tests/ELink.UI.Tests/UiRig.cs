@@ -77,6 +77,7 @@ public sealed class UiRig : IAsyncDisposable
         if (withSolver && PlateSolver.Locate() is { } sf) await rig.Add(new PlateSolveService(hostNode, new PlateSolver(sf))).StartAsync();
         await rig.Add(new StorageService(hostNode, rig._saveDir)).StartAsync();
         await rig.Add(new CalibrationService(hostNode, rig._saveDir)).StartAsync();
+        await rig.Add(new SessionLogService(hostNode, Path.Combine(rig._saveDir, "logs"))).StartAsync();
 
         // the UI: a separate node that joins the mesh
         rig.Session = await MeshSession.CreateAsync(null, "UI-Test");

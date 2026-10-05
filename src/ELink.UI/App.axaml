@@ -27,6 +27,7 @@
     <DataTemplate DataType="vm:FocusAssistViewModel"><v:FocusAssistView/></DataTemplate>
     <DataTemplate DataType="vm:ProfilesViewModel"><v:ProfilesView/></DataTemplate>
     <DataTemplate DataType="vm:CalibrationViewModel"><v:CalibrationView/></DataTemplate>
+    <DataTemplate DataType="vm:SessionLogViewModel"><v:SessionLogView/></DataTemplate>
     <DataTemplate DataType="vm:StorageViewModel"><v:StorageView/></DataTemplate>
     <DataTemplate DataType="vm:CenteringViewModel"><v:CenteringView/></DataTemplate>
     <DataTemplate DataType="vm:LiveStackViewModel"><v:LiveStackView/></DataTemplate>

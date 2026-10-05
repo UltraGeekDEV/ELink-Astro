@@ -245,6 +245,31 @@ public class EdgeCaseTests : IClassFixture<IndiServerFixture>
     }
 
     [AvaloniaFact]
+    public async Task TheSessionLogShowsWhatTheScopesDoAndTakesYourNotes()
+    {
+        await using var rig = await RigAsync(_server, withSolver: false);
+        var log = rig.Vm.SessionLog;
+        Assert.True(await UiRig.Eventually(() => log.Lines.Any(l => l.Contains("session log open"))), "the log did not open");
+        Assert.True(await UiRig.Eventually(() => log.Lines.Any(l => l.Contains("main:") && l.Contains("Idle"))), string.Join("\n", log.Lines));
+
+        log.Note = "clouds drifting in from the west";
+        Assert.True(log.AddNoteCommand.CanExecute(null));
+        log.AddNoteCommand.Execute(null);
+        Assert.Equal("", log.Note);
+        Assert.True(await UiRig.Eventually(() => log.Lines.Any(l => l.Contains("note  you: clouds drifting in from the west"))), string.Join("\n", log.Lines));
+
+        string copied = "";
+        log.CopyToClipboard = t => { copied = t; return Task.CompletedTask; };
+        await log.CopyCommand.ExecuteAsync(null);
+        Assert.Contains("clouds drifting", copied);
+        Assert.Contains(".NET", copied);
+        Assert.Contains(log.File, copied);
+
+        rig.Vm.Navigate(AppView.Advanced, "Session log");
+        rig.Shot("session-log");
+    }
+
+    [AvaloniaFact]
     public async Task TonightsBestNeedsASiteThenSuggestsAndFramesWithOneClick()
     {
         Assert.True(_server.Available);
@@ -359,4 +384,5 @@ internal static class AsyncExt
         while (DateTime.UtcNow < until) { if (await cond()) return true; await Task.Delay(50); }
         return await cond();
     }
+
 }

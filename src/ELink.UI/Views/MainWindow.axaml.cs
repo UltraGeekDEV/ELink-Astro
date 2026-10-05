@@ -14,6 +14,8 @@ public partial class MainWindow : Window
         base.OnDataContextChanged(e);
         // the window is what can ask for a file: the view models only ask the window
         if (DataContext is MainViewModel vm)
+        {
+            vm.SessionLog.CopyToClipboard = async text => { if (Clipboard is { } c) await c.SetTextAsync(text); };
             vm.Sky.Framing.PickFile = async () =>
             {
                 var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
@@ -23,5 +25,6 @@ public partial class MainWindow : Window
                 });
                 return files.FirstOrDefault()?.TryGetLocalPath();
             };
+        }
     }
 }

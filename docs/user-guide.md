@@ -356,6 +356,9 @@ it. The station prints which it found.
 - **Saving frames**: pick a directory (**Use**), then tick *Save its frames* for each camera or scope. Frames go to one folder
   per night, with FITS headers filled in (object, pointing, filter, exposure) and a session log.
 - **Custom stack**: stack the frames of cameras you choose into a field you choose (an image run already builds its own).
+- **Session log**: the story of the night, one plain-text file per night (the night keeps its date until noon, in a `logs` folder next to your pictures).
+  Scopes, focusing, centring and the stacks write to it when they change phase, report a problem or add a frame. Type a note whenever you notice
+  something odd; it is stamped with the time and goes in the same file. **Copy for a bug report** puts the whole log on the clipboard.
 
 ### How the live stack works
 

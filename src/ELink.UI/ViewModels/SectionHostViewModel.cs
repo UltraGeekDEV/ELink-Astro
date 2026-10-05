@@ -56,12 +56,13 @@ public sealed class RigViewModel : SectionHostViewModel
 /// <summary>The rarely needed: raw INDI properties, where frames are saved, and the older stand-alone tools.</summary>
 public sealed class AdvancedViewModel : SectionHostViewModel
 {
-    public AdvancedViewModel(IndiBrowserViewModel indi, StorageViewModel storage, LiveStackViewModel liveStack, HelpViewModel help)
+    public AdvancedViewModel(IndiBrowserViewModel indi, StorageViewModel storage, LiveStackViewModel liveStack, HelpViewModel help, SessionLogViewModel log)
     {
         Add("Help", "What the words mean, and the keys", help);
         Add("INDI properties", "For experts: every property of every INDI device, editable. Changing them can upset the equipment", indi);
         Add("Saving frames", "Where frames are saved, and for which cameras and scopes (images started from Sky are saved by default)", storage);
         Add("Custom stack", "For experts: stack frames from chosen cameras into a field of your choice (images made from Sky stack themselves)", liveStack);
+        Add("Session log", "What happened tonight, your own notes, and a copy button for bug reports", log);
         Show("Help");
     }
     public override string Heading => "Advanced";

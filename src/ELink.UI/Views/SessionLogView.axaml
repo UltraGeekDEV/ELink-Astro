@@ -1,0 +1,27 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="ELink.UI.Views.SessionLogView">
+  <StackPanel Spacing="0">
+    <Border Classes="card">
+      <StackPanel Spacing="6">
+        <TextBlock Classes="hint" TextWrapping="Wrap" Text="Everything the scopes, focusing, centring and the stacks report is written down here, one file for each night. Add a line yourself whenever you notice something odd (&quot;clouds, lost the guide star&quot;); it is stamped with the time and goes in the same file. If something goes wrong, copy the log into your bug report."/>
+        <TextBlock Classes="hint" Text="{Binding File}"/>
+      </StackPanel>
+    </Border>
+    <Border Classes="card">
+      <StackPanel Spacing="10">
+        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+          <TextBox Text="{Binding Note}" Watermark="Add a note to the log" AcceptsReturn="False">
+            <TextBox.KeyBindings><KeyBinding Gesture="Enter" Command="{Binding AddNoteCommand}"/></TextBox.KeyBindings>
+          </TextBox>
+          <Button Grid.Column="1" Content="Add note" Classes="primary" Command="{Binding AddNoteCommand}"/>
+          <Button Grid.Column="2" Content="Copy for a bug report" Command="{Binding CopyCommand}"/>
+        </Grid>
+        <TextBlock Classes="hint" Text="{Binding Copied}" IsVisible="{Binding Copied.Length}"/>
+        <ListBox ItemsSource="{Binding Lines}" MaxHeight="520" Background="Transparent">
+          <ListBox.Styles><Style Selector="ListBoxItem"><Setter Property="Padding" Value="4,1"/><Setter Property="MinHeight" Value="0"/></Style></ListBox.Styles>
+          <ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" FontFamily="Menlo,Consolas,monospace" FontSize="12" TextWrapping="Wrap"/></DataTemplate></ListBox.ItemTemplate>
+        </ListBox>
+      </StackPanel>
+    </Border>
+  </StackPanel>
+</UserControl>
