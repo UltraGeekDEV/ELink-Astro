@@ -188,7 +188,7 @@ public sealed partial class ComposerViewModel : ObservableObject
             RefillItems(Trains, c.Trains.Select(t => new SetupItem(t.Id.Text, t.Label.Text != "" ? t.Label.Text : t.Id.Text, TrainDetail(t))));
             RefillItems(Scopes, c.Scopes.Select(s => new SetupItem(s.Id.Text, s.DisplayName.Text != "" ? s.DisplayName.Text : s.Id.Text, ScopeDetail(s))));
             RefillItems(Pointers, c.MountPointers.Select(p => new SetupItem(p.Id.Text, p.Id.Text, $"points the mount {NameOf(DeviceKinds.Mount, p.MountId.Text)}")));
-            foreach (var n in new[] { nameof(HasTrains), nameof(HasScopes), nameof(HasPointers), nameof(NoTrains), nameof(NoScopes) }) OnPropertyChanged(n);
+            foreach (var n in new[] { nameof(HasTrains), nameof(HasScopes), nameof(HasPointers), nameof(NoTrains), nameof(NoScopes), nameof(CanQuickSetup), nameof(ScopeNextHint) }) OnPropertyChanged(n);
 
             // mounts a scope can be built on: ones with a pointer already, ones without (one is made when the scope is saved)
             var mountChoices = new List<(string Id, string Title, string Origin, bool IsNew)>();
@@ -288,6 +288,36 @@ public sealed partial class ComposerViewModel : ObservableObject
         Span<byte> bytes = value.ToBytes();
         copy.FromBytes(ref bytes);
         return copy;
+    }
+
+    // ---- quick set up: one mount, one telescope, one scope ---------------------------------------------------------------
+
+    [ObservableProperty] private string _quickName = "My scope";
+    [ObservableProperty] private double _quickFocalLength = 400;
+    /// <summary>Nothing is set up yet and there is a mount and a camera: the whole thing can be made in one go.</summary>
+    public bool CanQuickSetup => NoTrains && NoScopes && TrainCameras.Count > 0 && PointerChoices.Count > 0;
+    /// <summary>What to do next, once a telescope exists and no scope does.</summary>
+    public string ScopeNextHint => HasTrains && NoScopes ? "Next: add a scope. It is the mount that carries the telescope you just made." : "";
+
+    /// <summary>One mount and the first camera, made into a telescope and a scope that go by the one name.</summary>
+    [RelayCommand]
+    private async Task QuickSetupAsync()
+    {
+        if (!CanQuickSetup) return;
+        NewTrain();
+        string name = QuickName.Trim() == "" ? "My scope" : QuickName.Trim();
+        TrainName = name + " telescope";
+        FocalLength = QuickFocalLength;
+        TrainCameras[0].Role = "Imaging";
+        await SaveTrainAsync();
+        if (TrainFormOpen) return;             // it said what was wrong
+        string? id = IdFromName(TrainName);
+        for (int i = 0; i < 60 && !ShooterChoices.Any(c => c.Id == id) ; i++) await Task.Delay(50);
+        NewScope();
+        ScopeName = name;
+        foreach (var c in ShooterChoices) c.IsSelected = c.Id == id;
+        if (PointerChoices.Count > 0) PointerChoices[0].IsSelected = true;
+        await SaveScopeAsync();
     }
 
     // ---- telescopes ----------------------------------------------------------------------------------------------------

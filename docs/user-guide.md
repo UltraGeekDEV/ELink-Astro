@@ -26,6 +26,18 @@ flowchart LR
 - An **image** is an area of sky (a single target is just a small area: one frame), how deep it should get, and which scopes
   may work on it.
 
+## The words
+
+| Word | Means |
+|---|---|
+| **Mount** | The motorised base that points at the sky. |
+| **Telescope** | One optical path: the tube or lens, the cameras behind it, and the filter wheel, focuser and rotator. A guide telescope is a telescope. |
+| **Scope** | A mount with the telescopes on it, and what it does by itself (guide, centre, focus, flip, dither, cool). It is what you ask for images. |
+| **Image** | An area of sky you want, to a depth: the yellow frame on the chart. One frame of your telescope is a small image; a mosaic is a big one. |
+| **Panel** | One pointing of a mosaic: a place the telescope is aimed. |
+| **Shot** | One exposure of the camera. |
+| **Exposure goal** | How long *every part of the image* (every point inside the yellow frame) should be exposed in total, all shots added up. It is not a target and not a panel: a point near the edge of the frame gets its share from the panels that cover it. |
+
 ## Starting
 
 You need `indiserver` with your drivers (or the simulators), and the EVent packages in `nuget/` (they are in the repository).
@@ -220,7 +232,7 @@ where you want it. The frame is the image:
   stacked picture laid in tiles so it follows the curvature of the sky. An area reaching a celestial pole is refused (its
   tiling is undefined there).
 
-Then choose how deep (*Total exposure per spot*: how long every part should be exposed in total; 0 = until you stop it), the shot
+Then choose the *Exposure goal* (how long every part of the image should be exposed in total; 0 = until you stop it), the shot
 length, which scopes share the work, and press **Start**. *More options*: filter, ISO, dither, panel spacing, a shot limit,
 the output scale, a weather device that pauses it, *Start afresh* and *Check the plan*. Each scope takes the next spot for its
 own frames as soon as it is free (spots another scope already covered are skipped, scopes are never kept in step, a slow
@@ -294,7 +306,7 @@ it. The station prints which it found.
 - **INDI properties**: every property of every INDI device, raw: browse and edit anything the typed panels do not cover.
 - **Saving frames**: pick a directory (**Use**), then tick *Save its frames* for each camera or scope. Frames go to one folder
   per night, with FITS headers filled in (object, pointing, filter, exposure) and a session log.
-- **Manual live stack**: stack the frames of cameras you choose into a field you choose (an image run already builds its own).
+- **Custom stack**: stack the frames of cameras you choose into a field you choose (an image run already builds its own).
 
 ### How the live stack works
 

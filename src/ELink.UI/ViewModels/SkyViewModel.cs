@@ -48,7 +48,7 @@ public sealed partial class SkyViewModel : ObservableObject
 
     // the side panel can be folded away to give the chart the whole width
     [ObservableProperty, NotifyPropertyChangedFor(nameof(PanelToggleText))] private bool _panelOpen = true;
-    public string PanelToggleText => PanelOpen ? "Hide panel ▸" : "◂ Panel";
+    public string PanelToggleText => PanelOpen ? "Image panel ▸" : "◂ Image panel";
     [RelayCommand] private void TogglePanel() => PanelOpen = !PanelOpen;
 
     // a short list of what is still to do, over the chart, until it is done or put away

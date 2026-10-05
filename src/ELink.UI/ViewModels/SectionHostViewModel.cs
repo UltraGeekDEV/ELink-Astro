@@ -42,11 +42,12 @@ public sealed class RigViewModel : SectionHostViewModel
 {
     public RigViewModel(ComposerViewModel setup, SiteViewModel site, EquipmentViewModel equipment, ProfilesViewModel drivers, CalibrationViewModel calibration)
     {
-        Add("Set up", "Mount, telescopes, cameras and your scopes", setup);
-        Add("Equipment", "What is plugged in, and whether it is connected", equipment);
-        Add("Site", "Where you are, your horizon, and the night", site);
-        Add("Drivers", "Which INDI drivers make up the rig", drivers);
-        Add("Calibration", "Darks, biases and flats", calibration);
+        // in the order a first set-up goes
+        Add("Drivers", "1 · Start the INDI drivers of your equipment (skip it if they are already running)", drivers);
+        Add("Equipment", "2 · What is plugged in, and whether it is connected", equipment);
+        Add("Set up", "3 · Telescopes (the optics and cameras) and scopes (a mount with its telescopes)", setup);
+        Add("Site", "4 · Where you are and your horizon (optional: it lets ELink plan around the night)", site);
+        Add("Calibration", "Darks, biases and flats (once per camera, whenever you like)", calibration);
         Show("Set up");
     }
     public override string Heading => "Rig";
@@ -58,9 +59,9 @@ public sealed class AdvancedViewModel : SectionHostViewModel
     public AdvancedViewModel(IndiBrowserViewModel indi, StorageViewModel storage, LiveStackViewModel liveStack, HelpViewModel help)
     {
         Add("Help", "What the words mean, and the keys", help);
-        Add("INDI properties", "Every property of every INDI device, editable", indi);
-        Add("Saving frames", "Where frames are saved, and from which scope", storage);
-        Add("Manual live stack", "Stack frames from chosen cameras into a field of your choice", liveStack);
+        Add("INDI properties", "For experts: every property of every INDI device, editable. Changing them can upset the equipment", indi);
+        Add("Saving frames", "Where frames are saved, and for which cameras and scopes (images started from Sky are saved by default)", storage);
+        Add("Custom stack", "For experts: stack frames from chosen cameras into a field of your choice (images made from Sky stack themselves)", liveStack);
         Show("Help");
     }
     public override string Heading => "Advanced";

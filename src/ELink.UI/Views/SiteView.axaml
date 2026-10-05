@@ -4,7 +4,7 @@
   <StackPanel Spacing="0">
     <Border Classes="card">
       <StackPanel>
-        <TextBlock Classes="hint" Text="Where the observatory stands: from these numbers or a GPS. It gives sidereal time, twilight, the Moon and planets, and when targets are above your horizon, and it hands the location and time to the mounts."/>
+        <TextBlock Classes="hint" Text="Optional, but it lets ELink plan around the night: twilight, the Moon, when a target is above your horizon, and meridian flips. Type your latitude and longitude, or choose a GPS and leave them empty."/>
       </StackPanel>
     </Border>
 
@@ -19,12 +19,13 @@
           <StackPanel><TextBlock Classes="label" Text="GPS"/><ComboBox ItemsSource="{Binding GpsDevices}" SelectedItem="{Binding Gps}" Width="190"/></StackPanel>
         </WrapPanel>
         <TextBlock Classes="section" Text="HORIZON" Margin="0,6,0,0"/>
+        <TextBlock Classes="hint" Text="Nothing below the lowest altitude is imaged. Obstructions are what stands above it (a house, trees): give a few points round the compass, for example 180:15, 200:35, 260:35, 280:15 is a wall to the south-west. The picture under Tonight shows the result."/>
         <WrapPanel Classes="row">
           <StackPanel><TextBlock Classes="label" Text="Lowest altitude °"/><NumericUpDown Value="{Binding MinAltitude}" Minimum="-5" Maximum="80" FormatString="0.#" Width="130"/></StackPanel>
-          <StackPanel><TextBlock Classes="label" Text="Obstructions: azimuth:altitude pairs, e.g. a house to the south-west"/><TextBox Text="{Binding HorizonText}" Width="520" Watermark="180:10, 200:35, 260:35, 280:10"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Obstructions: azimuth:altitude points (north is 0, east 90, south 180, west 270)"/><TextBox Text="{Binding HorizonText}" Width="520" Watermark="180:10, 200:35, 260:35, 280:10"/></StackPanel>
         </WrapPanel>
         <WrapPanel Classes="row">
-          <CheckBox IsChecked="{Binding PushToMounts}" Content="Give the mounts this location and the time"/>
+          <CheckBox IsChecked="{Binding PushToMounts}" Content="Also send the location and time to the mounts"/>
           <Button Content="Apply" Classes="primary" Command="{Binding ApplyCommand}"/>
         </WrapPanel>
         <c:Notice Text="{Binding Message}" Kind="{Binding MessageKind}"/>

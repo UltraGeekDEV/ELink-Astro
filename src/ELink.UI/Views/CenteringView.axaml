@@ -33,7 +33,7 @@
     </Border>
     <Border Classes="card">
       <StackPanel Spacing="8">
-        <TextBlock Classes="section" Text="GUIDE SCOPE TO PRIMARY OFFSET"/>
+        <TextBlock Classes="section" Text="OFFSET BETWEEN THE GUIDE CAMERA AND THE IMAGING CAMERA"/>
         <TextBlock Text="{Binding OffsetText}" TextWrapping="Wrap"/>
         <TextBlock Classes="label" TextWrapping="Wrap" Text="Point anywhere with stars, then learn: both cameras are solved at the same pointing. It is kept per pier side and turned over after a meridian flip."/>
         <WrapPanel Classes="row">

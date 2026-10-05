@@ -42,6 +42,7 @@ public sealed partial class ProfilesViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string? _selectedChosen;
     [ObservableProperty] private string _status = "";
     [ObservableProperty] private string _message = "";
+    [ObservableProperty] private string _messageKind = "ok";
     private List<EquipmentProfile> _profiles = new();
 
     public async Task StartAsync()
@@ -85,7 +86,7 @@ public sealed partial class ProfilesViewModel : ObservableObject, IDisposable
     [RelayCommand] private void AddDriver() { if (SelectedMatch is { } m && !Chosen.Contains(m.Executable)) Chosen.Add(m.Executable); }
     [RelayCommand] private void RemoveDriver() { if (SelectedChosen is { } c) Chosen.Remove(c); }
 
-    private async Task Run(Task<CommandResult> call, string ok) { var r = await call; Message = r.Ok.Value ? ok : r.Error.Text; await ReloadAsync(); }
+    private async Task Run(Task<CommandResult> call, string ok) { var r = await call; MessageKind = r.Ok.Value ? "ok" : "error"; Message = r.Ok.Value ? ok : r.Error.Text; await ReloadAsync(); }
 
     [RelayCommand(CanExecute = nameof(CanSave))]
     private Task SaveAsync()

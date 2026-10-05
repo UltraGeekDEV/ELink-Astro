@@ -5,13 +5,12 @@
         <Border Classes="card">
       <StackPanel>
         <TextBlock Classes="section" Text="POSITION"/>
-        <Grid ColumnDefinitions="*,*,*,*" RowDefinitions="Auto,Auto">
-          <TextBlock Classes="label" Text="RA"/><TextBlock Grid.Row="1" Classes="value" Text="{Binding RaText}"/>
-          <TextBlock Grid.Column="1" Classes="label" Text="DEC"/><TextBlock Grid.Column="1" Grid.Row="1" Classes="value" Text="{Binding DecText}"/>
-          <TextBlock Grid.Column="2" Classes="label" Text="STATE"/><TextBlock Grid.Column="2" Grid.Row="1" Classes="value" Text="{Binding Phase}"/>
-          <TextBlock Grid.Column="3" Classes="label" Text="PIER / EPOCH"/>
-          <TextBlock Grid.Column="3" Grid.Row="1" FontSize="16" VerticalAlignment="Bottom"><Run Text="{Binding PierSide}"/> · <Run Text="{Binding Epoch}"/></TextBlock>
-        </Grid>
+        <WrapPanel>
+          <StackPanel Margin="0,0,24,6"><TextBlock Classes="label" Text="RA"/><TextBlock Classes="value" Text="{Binding RaText}"/></StackPanel>
+          <StackPanel Margin="0,0,24,6"><TextBlock Classes="label" Text="DEC"/><TextBlock Classes="value" Text="{Binding DecText}"/></StackPanel>
+          <StackPanel Margin="0,0,24,6"><TextBlock Classes="label" Text="STATE"/><TextBlock Classes="value" Text="{Binding Phase}"/></StackPanel>
+          <StackPanel Margin="0,0,24,6"><TextBlock Classes="label" Text="PIER SIDE · EPOCH"/><TextBlock FontSize="16"><Run Text="{Binding PierSide}"/> · <Run Text="{Binding Epoch}"/></TextBlock></StackPanel>
+        </WrapPanel>
       </StackPanel>
     </Border>
     <Border Classes="card">

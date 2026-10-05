@@ -4,7 +4,7 @@
     <Border Classes="card">
       <Grid ColumnDefinitions="*,Auto">
         <StackPanel>
-          <TextBlock Classes="hint" Text="Saves every frame of the shooters you pick: one folder per night, FITS headers filled in, plus a session log."/>
+          <TextBlock Classes="hint" Text="Saves every frame of the cameras and scopes you pick: one folder per night, FITS headers filled in, plus a session log."/>
         </StackPanel>
         <StackPanel Grid.Column="1" HorizontalAlignment="Right">
           <TextBlock Classes="value" Text="{Binding FramesSaved}" HorizontalAlignment="Right"/>
@@ -20,9 +20,9 @@
           <Button Content="Use" Classes="primary" Command="{Binding SetDirectoryCommand}"/>
         </WrapPanel>
         <TextBlock Classes="label" Text="{Binding Directory}"/>
-        <TextBlock Classes="section" Text="SAVED SHOOTERS" Margin="0,8,0,0"/>
+        <TextBlock Classes="section" Text="FRAMES ARE BEING SAVED FOR" Margin="0,8,0,0"/>
         <WrapPanel Classes="row">
-          <ComboBox ItemsSource="{Binding Shooters}" SelectedItem="{Binding SelectedShooter}" Width="220"/>
+          <ComboBox ItemsSource="{Binding Shooters}" SelectedItem="{Binding SelectedShooter}" Width="220" PlaceholderText="Choose a camera or scope"/>
           <Button Content="Save its frames" Command="{Binding WatchCommand}"/>
         </WrapPanel>
         <ItemsControl ItemsSource="{Binding Watching}">

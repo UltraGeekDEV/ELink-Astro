@@ -50,11 +50,15 @@ public sealed partial class CalibrationViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _message = "";
     public string Hint => Kind switch
     {
-        "Dark" => "Cap the scope. Same exposure, gain and sensor temperature as the lights they are for.",
-        "Bias" => "Cap the scope. The shortest exposure the camera takes; stands in for darks that are missing.",
-        _ => "Even light over the aperture (a panel or the twilight sky). Exposure 0 finds the one that fills the camera to the level below.",
+        "Dark" => "Cover the telescope so no light gets in, then press Capture. Use the same exposure, gain and sensor temperature as the pictures the darks are for.",
+        "Bias" => "Cover the telescope so no light gets in, then press Capture. A bias is the shortest exposure the camera can take; it stands in for darks you do not have.",
+        _ => "Put an even light over the telescope's opening (a flat panel, or the twilight sky), then press Capture. Exposure 0 lets ELink find the exposure that fills the picture to the level you set.",
     };
-    partial void OnKindChanged(string value) { OnPropertyChanged(nameof(Hint)); if (value is "Flat" or "Bias") ExposureSeconds = 0; }
+    public string ExposureLabel => Kind == "Flat" ? "Exposure (s, 0 = find it)" : "Exposure (s)";
+    /// <summary>Which fields matter for the kind being made.</summary>
+    public bool ShowExposure => Kind != "Bias";
+    public bool ShowFlatFields => Kind == "Flat";
+    partial void OnKindChanged(string value) { OnPropertyChanged(nameof(Hint)); OnPropertyChanged(nameof(ShowExposure)); OnPropertyChanged(nameof(ExposureLabel)); OnPropertyChanged(nameof(ShowFlatFields)); if (value is "Flat" or "Bias") ExposureSeconds = 0; }
 
     /// <summary>Each camera on its own: imaging cameras of trains, then single-camera shooters.</summary>
     private void RebuildChoices()

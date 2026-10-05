@@ -28,7 +28,7 @@ public sealed partial class DeviceItem : ObservableObject
 
 public sealed record ScopeItem(string Id, string DisplayName, int Pointers, int Shooters)
 {
-    public string Detail => $"{Pointers} pointer{(Pointers == 1 ? "" : "s")}, {Shooters} shooter{(Shooters == 1 ? "" : "s")}";
+    public string Detail => $"{Pointers} mount{(Pointers == 1 ? "" : "s")} linked, {Shooters} camera{(Shooters == 1 ? "" : "s")}";
 }
 
 /// <summary>What is out there on the mesh: equipment announced by backends and scopes composed by composition hosts.

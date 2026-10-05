@@ -15,7 +15,7 @@
     <Border Classes="card">
       <StackPanel Spacing="10">
         <WrapPanel Classes="row">
-          <StackPanel><TextBlock Classes="label" Text="Shooter"/><ComboBox ItemsSource="{Binding Shooters}" SelectedItem="{Binding SelectedShooter}" Width="200"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Camera"/><ComboBox ItemsSource="{Binding Shooters}" SelectedItem="{Binding SelectedShooter}" Width="200"/></StackPanel>
           <StackPanel><TextBlock Classes="label" Text="Focuser"/><ComboBox ItemsSource="{Binding Focusers}" SelectedItem="{Binding SelectedFocuser}" Width="220"/></StackPanel>
           <StackPanel><TextBlock Classes="label" Text="Filter (optional)"/><TextBox Text="{Binding Filter}" Width="120"/></StackPanel>
         </WrapPanel>

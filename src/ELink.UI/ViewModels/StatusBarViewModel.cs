@@ -16,7 +16,9 @@ public enum AppView { Sky, Scopes, Rig, Advanced }
 /// <summary>One thing that has to be in place before a night's imaging can start, and where to fix it.</summary>
 public sealed partial class ReadinessItem : ObservableObject
 {
-    public ReadinessItem(string title, string todo, AppView view, string section) { Title = title; Todo = todo; View = view; Section = section; }
+    public ReadinessItem(string title, string todo, AppView view, string section, bool optional = false) { Title = title; Todo = todo; View = view; Section = section; Optional = optional; }
+    /// <summary>Imaging works without it.</summary>
+    public bool Optional { get; }
     public string Title { get; }
     /// <summary>What to do when it is not done.</summary>
     public string Todo { get; }
@@ -25,7 +27,7 @@ public sealed partial class ReadinessItem : ObservableObject
     [ObservableProperty, NotifyPropertyChangedFor(nameof(Text)), NotifyPropertyChangedFor(nameof(Mark))] private bool _done;
     [ObservableProperty, NotifyPropertyChangedFor(nameof(Text))] private string _detail = "";
     public string Mark => Done ? "✓" : "○";
-    public string Text => Done ? (Detail != "" ? $"{Title}: {Detail}" : Title) : $"{Title}: {Todo}";
+    public string Text => Done ? (Detail != "" ? $"{Title}: {Detail}" : Title) : Optional ? $"{Title} (optional): {Todo}" : $"{Title}: {Todo}";
 }
 
 /// <summary>The strip along the top of the window that is always there: how dark it is, what each scope is doing, and
@@ -43,8 +45,8 @@ public sealed partial class StatusBarViewModel : ObservableObject, IDisposable
         {
             new("Equipment connected", "connect your mount and camera (Rig › Equipment)", AppView.Rig, "Equipment"),
             new("Scope set up", "define a scope (Rig › Set up)", AppView.Rig, "Set up"),
-            new("Site known", "enter your location (Rig › Site)", AppView.Rig, "Site"),
-            new("Plate solver", "install ASTAP or astrometry.net", AppView.Rig, "Drivers"),
+            new("Site known", "enter your location so ELink can plan around the night (Rig › Site)", AppView.Rig, "Site", optional: true),
+            new("Plate solver", "install ASTAP or astrometry.net for centring and stacking", AppView.Rig, "Drivers", optional: true),
         };
         mesh.PropertyChanged += (_, e) => { if (e.PropertyName is nameof(MeshSession.IsConnected) or nameof(MeshSession.Status)) UiThread.Post(() => { OnPropertyChanged(nameof(NotConnected)); OnPropertyChanged(nameof(MeshText)); }); };
         _equipmentWatch = (_, _) => UiThread.Post(Recompute);
@@ -131,7 +133,7 @@ public sealed partial class StatusBarViewModel : ObservableObject, IDisposable
         Readiness[3].Done = _solver;
         int missing = Readiness.Count(r => !r.Done);
         NeedsSetup = missing > 0;
-        SetupText = missing == 0 ? "Ready" : $"{missing} thing{(missing == 1 ? "" : "s")} to set up";
+        SetupText = missing == 0 ? "Ready" : $"Set up: {missing} left";
         SetupClass = missing == 0 ? "ok" : "warn";
     }
 

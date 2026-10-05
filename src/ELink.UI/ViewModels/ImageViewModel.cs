@@ -70,6 +70,8 @@ public sealed partial class ImageViewModel : ObservableObject, IDisposable
     [ObservableProperty] private double _ditherArcsec = 30;
     [ObservableProperty] private int _maxVisits;
     [ObservableProperty] private bool _liveStack = true;
+    /// <summary>Save the frames of the scopes that take the image (to the folder under Advanced › Saving frames).</summary>
+    [ObservableProperty] private bool _saveFrames = true;
     /// <summary>The stack is a pseudo mono one: red, green and blue from the frames where each was in focus, plus out-of-focus luminance.</summary>
     [ObservableProperty] private bool _pseudoMono;
     /// <summary>How much of the out-of-focus luminance goes into the image (0 = none).</summary>
@@ -366,9 +368,30 @@ public sealed partial class ImageViewModel : ObservableObject, IDisposable
         if (!TryRequest(out var req)) return;
         Say("");
         _shownVisits = -1;
+        string saving = await EnsureSavingAsync(req);
         var r = await Commands.CallAsync(_mesh.Node, ImagingIds.Start, req, TimeSpan.FromSeconds(240));   // (it may first learn the cameras' angles)
         if (!r.Ok.Value) Say(r.Error.Text);
+        else if (saving != "") Say(saving, saving.StartsWith("Frames are NOT") ? "warn" : "info");
         await RefreshSavedAsync();
+    }
+
+    /// <summary>Frames are saved unless the person said not to: the scopes that take the image are watched by the storage service.
+    /// What happened, in words ("" = nothing to say).</summary>
+    private async Task<string> EnsureSavingAsync(ImagingRequest req)
+    {
+        if (!SaveFrames) return "Frames are NOT being saved (you turned that off in More options).";
+        try
+        {
+            var state = (await _mesh.Node.CallFunctionAsync<NOTESVoid, ELink.Contracts.Automation.StorageState>(ELink.Contracts.Automation.StorageIds.GetState, NOTESVoid.Void, TimeSpan.FromSeconds(5)))?.FirstOrDefault();
+            if (state is null) return "Frames are NOT being saved: there is no frame storage on the mesh.";
+            foreach (var s in req.ScopeIds)
+            {
+                var w = await Commands.CallAsync(_mesh.Node, ELink.Contracts.Automation.StorageIds.Watch, new ELink.Contracts.Automation.StorageWatch { ShooterId = s.Text, Enabled = true });
+                if (!w.Ok.Value) return $"Frames are NOT being saved: {w.Error.Text}";
+            }
+            return $"Saving the frames to {state.Directory.Text}";
+        }
+        catch (Exception ex) { return "Frames are NOT being saved: " + ex.Message; }
     }
 
     private async Task Void(string id) { var r = await Commands.CallAsync(_mesh.Node, id, NOTESVoid.Void); Say(r.Ok.Value ? "" : r.Error.Text); }
@@ -384,7 +407,9 @@ public sealed partial class ImageViewModel : ObservableObject, IDisposable
     private async Task AddToScheduleAsync()
     {
         if (Scheduler?.Invoke() is not { } schedule || !TryRequest(out var req)) return;
+        string saving = await EnsureSavingAsync(req);
         await schedule.AddAsync(req);
+        if (saving.StartsWith("Frames are NOT")) { Say(saving, "warn"); return; }
         if (schedule.Message != "") Say(schedule.Message); else Say($"{req.Label.Text} is in the queue", "ok");
     }
 

@@ -223,6 +223,26 @@ public class EdgeCaseTests : IClassFixture<IndiServerFixture>
         await helper.StopCommand.ExecuteAsync(null);
         Assert.True(await UiRig.Eventually(() => !helper.IsRunning));
     }
+
+    [AvaloniaFact]
+    public async Task QuickSetupMakesTheTelescopeAndTheScopeInOneGo()
+    {
+        Assert.True(_server.Available);
+        await using var rig = await UiRig.StartAsync(_server);
+        var vm = rig.Vm;
+        await vm.Equipment.ConnectAllCommand.ExecuteAsync(null);
+        Assert.True(await UiRig.Eventually(() => vm.Catalog.Equipment.All(d => d.Connected)));
+        var setup = vm.Composer;
+        Assert.True(await UiRig.Eventually(() => setup.CanQuickSetup), "quick set up should be offered when a mount and a camera are there and nothing else is");
+        setup.QuickName = "Garden"; setup.QuickFocalLength = 600;
+        await setup.QuickSetupCommand.ExecuteAsync(null);
+        Assert.True(await UiRig.Eventually(() => vm.Catalog.Composition.Scopes.Any(s => s.Id.Text == "Garden")), setup.TrainMessage + setup.ScopeMessage);
+        var train = Assert.Single(vm.Catalog.Composition.Trains);
+        Assert.Equal(600, train.FocalLengthMm.Value);
+        Assert.Single(train.Cameras);
+        Assert.False(setup.CanQuickSetup);                               // done: not offered again
+        Assert.Equal("", setup.ScopeNextHint);
+    }
 }
 
 internal static class AsyncExt

@@ -74,15 +74,15 @@
       </Border>
 
       <!-- the sky laid out flat: altitude against azimuth, with the paths of the target, the image and the scopes -->
-      <Border IsVisible="{Binding ShowFlatHorizon}" VerticalAlignment="Bottom" Margin="12,0,140,30" Padding="8,6,8,2" CornerRadius="10" Background="#E6131822" BorderBrush="#2B3548" BorderThickness="1" Height="206">
+      <Border IsVisible="{Binding ShowFlatHorizon}" VerticalAlignment="Bottom" Margin="12,0,12,30" Padding="8,6,8,2" CornerRadius="10" Background="#E6131822" BorderBrush="#2B3548" BorderThickness="1" Height="206">
         <DockPanel>
           <TextBlock DockPanel.Dock="Top" Classes="hint" Text="The sky laid out flat: up is altitude, across is azimuth. Paths run from an hour ago to twelve hours on, dots mark the hours, the bright dot is now." TextTrimming="CharacterEllipsis"/>
           <c:HorizonPlot Data="{Binding Atlas.Flat}"/>
         </DockPanel>
       </Border>
 
-      <Button Content="{Binding PanelToggleText}" Command="{Binding TogglePanelCommand}" VerticalAlignment="Bottom" HorizontalAlignment="Right" Margin="0,0,12,34"
-              ToolTip.Tip="Fold the panel away to see more sky"/>
+      <Button Content="{Binding PanelToggleText}" Command="{Binding TogglePanelCommand}" VerticalAlignment="Top" HorizontalAlignment="Right" Margin="0,12,12,0"
+              ToolTip.Tip="Fold the image panel away to see more sky"/>
 
       <!-- what is still to set up, until it is done -->
       <Border IsVisible="{Binding ShowGettingStarted}" VerticalAlignment="Bottom" HorizontalAlignment="Left" Margin="12,0,0,34" Padding="14" MaxWidth="420"
@@ -90,7 +90,7 @@
         <StackPanel Spacing="6">
           <Grid ColumnDefinitions="*,Auto">
             <TextBlock Classes="section" Text="BEFORE YOU IMAGE" VerticalAlignment="Center" Margin="0"/>
-            <Button Grid.Column="1" Content="Not now" Classes="ghost" Padding="8,2" Command="{Binding DismissGettingStartedCommand}"/>
+            <Button Grid.Column="1" Content="Hide" Classes="ghost" Padding="8,2" Command="{Binding DismissGettingStartedCommand}"/>
           </Grid>
           <ItemsControl ItemsSource="{Binding Status.Readiness}">
             <ItemsControl.ItemTemplate>
@@ -99,7 +99,8 @@
                         Command="{Binding $parent[UserControl].DataContext.Status.FixCommand}" CommandParameter="{Binding}">
                   <StackPanel Classes="row" Spacing="8">
                     <TextBlock Text="{Binding Mark}" FontWeight="Bold" Foreground="#8AA0C8" Width="14"/>
-                    <TextBlock Text="{Binding Text}" TextWrapping="Wrap" MaxWidth="360"/>
+                    <TextBlock Text="{Binding Text}" TextWrapping="Wrap" MaxWidth="340"/>
+                    <TextBlock Text="›" FontWeight="Bold" Foreground="#8AA0C8" IsVisible="{Binding !Done}"/>
                   </StackPanel>
                 </Button>
               </DataTemplate>
@@ -124,7 +125,8 @@
               <StackPanel Classes="row">
                 <Button Content="Frame this" Classes="primary" Command="{Binding FrameSelectionCommand}" ToolTip.Tip="Make the selected object the image to take"/>
                 <Button Content="Go there" Command="{Binding Atlas.GotoCommand}" ToolTip.Tip="Send the chosen scope to the selection, without imaging"/>
-                <ComboBox ItemsSource="{Binding Atlas.Pointers}" SelectedItem="{Binding Atlas.SelectedPointer}" MinWidth="110" ToolTip.Tip="Which scope or mount"/>
+                <TextBlock Text="with" VerticalAlignment="Center" Classes="hint"/>
+                <ComboBox ItemsSource="{Binding Atlas.Pointers}" SelectedItem="{Binding Atlas.SelectedPointer}" MinWidth="110" ToolTip.Tip="The mount that Go there sends to the selection"/>
               </StackPanel>
               <c:Notice Text="{Binding Atlas.Message}" Kind="{Binding Atlas.MessageKind}"/>
             </StackPanel>
@@ -141,6 +143,7 @@
                 <c:Notice Text="{Binding PlanText}" Kind="{Binding PlanClass}"/>
                 <TextBlock Classes="hint" Text="Drag the frame on the chart to move it, a corner to resize it, the round handle to turn it. Or type the numbers."/>
 
+                <TextBlock Classes="hint" Text="Width and height 0 mean one frame of your smallest telescope; the yellow frame on the chart shows the real size. Anything bigger is taken as a mosaic of panels (a panel is one pointing)."/>
                 <Grid ColumnDefinitions="*,8,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="8">
                   <StackPanel><TextBlock Classes="label" Text="Centre RA"/><TextBox Text="{Binding Image.CenterRa}"/></StackPanel>
                   <StackPanel Grid.Column="2"><TextBlock Classes="label" Text="Centre Dec"/><TextBox Text="{Binding Image.CenterDec}"/></StackPanel>
@@ -148,7 +151,7 @@
                   <StackPanel Grid.Row="1" Grid.Column="2"><TextBlock Classes="label" Text="Height (°)"/><NumericUpDown Value="{Binding Image.Height}" Minimum="0" Maximum="60" Increment="0.1" FormatString="0.###"/></StackPanel>
                   <StackPanel Grid.Row="2"><TextBlock Classes="label" Text="Turn (°)"/><NumericUpDown Value="{Binding Image.PositionAngle}" Minimum="-180" Maximum="180" FormatString="0.#" ToolTip.Tip="Where the top of the image points, east of north"/></StackPanel>
                   <Button Grid.Row="2" Grid.Column="2" Content="Just one frame" Command="{Binding OneFrameCommand}" VerticalAlignment="Bottom" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"/>
-                  <StackPanel Grid.Row="3"><TextBlock Classes="label" Text="Each shot (s)"/><NumericUpDown Value="{Binding Image.ExposureSeconds}" Minimum="0.01" FormatString="0.##"/></StackPanel>
+                  <StackPanel Grid.Row="3"><TextBlock Classes="label" Text="Exposure of each shot (s)"/><NumericUpDown Value="{Binding Image.ExposureSeconds}" Minimum="0.01" FormatString="0.##"/></StackPanel>
                 </Grid>
 
                 <StackPanel IsVisible="{Binding Image.Scopes.Count}" Spacing="4">
@@ -161,7 +164,7 @@
                 <TextBlock Classes="hint" IsVisible="{Binding !Image.Scopes.Count}" Text="No scope yet: set one up in Rig › Set up."/>
               </StackPanel>
               <Grid ColumnDefinitions="*,8,*">
-                <StackPanel><TextBlock Classes="label" Text="Total exposure per spot (min)"/><NumericUpDown Value="{Binding Image.TargetMinutes}" Minimum="0" Increment="10" FormatString="0.##" ToolTip.Tip="How long every part of the image should be exposed in total. 0 = keep going until stopped. It can be changed while the image is being taken."/></StackPanel>
+                <StackPanel><TextBlock Classes="label" Text="Exposure goal (min)"/><NumericUpDown Value="{Binding Image.TargetMinutes}" Minimum="0" Increment="10" FormatString="0.##" ToolTip.Tip="How long every part of the image (every point inside the frame) should be exposed in total, all shots added up. 0 = keep going until stopped. It can be changed while the image is being taken."/></StackPanel>
                 <Button Grid.Column="2" Content="Apply to the running image" Command="{Binding Image.ApplyTargetCommand}" IsVisible="{Binding Image.IsActive}" VerticalAlignment="Bottom" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
                         ToolTip.Tip="Change the depth of the image that is being taken"/>
               </Grid>
@@ -190,6 +193,7 @@
                     <TextBlock Classes="label" Text="Data layers (optional, advanced): name, filter, finest ″/px, coarsest ″/px, minutes"/>
                     <TextBox Text="{Binding Image.Layers}" AcceptsReturn="True" MinHeight="54" Watermark="base, L, 4, 10, 30&#x0a;detail, L, 0, 2, 120" ToolTip.Tip="Kinds of data the image is made of. A frame feeds a layer when it was shot through its filter and its pixel scale is in the layer's range, so a fast wide scope can build a deep, coarse base while a long focal length one adds detail, each to its own depth. Empty = everything is one layer."/>
                   </StackPanel>
+                  <CheckBox IsChecked="{Binding Image.SaveFrames}" Content="Save the frames (folder: Advanced › Saving frames)"/>
                   <CheckBox IsChecked="{Binding Image.LiveStack}" Content="Build the picture while shooting"/>
                   <CheckBox IsChecked="{Binding Image.StartAfresh}" Content="Start afresh: forget what this name already has"/>
                   <StackPanel Classes="row">

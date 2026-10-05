@@ -159,3 +159,12 @@ focus triggers/offsets -> live-stack rejection/calibration -> the rest.
 - INDI simulators available: ccd, telescope, focus, wheel, rotator, dome, weather, gps, guide, sqm, io, lightpanel, dustcover, receiver.
 - Typed events in EVent are acknowledged synchronously: a slow subscriber stalls the publisher, so high-rate
   data (BLOBs, position streams) needs care (separate IDs / raw events / throttling).
+
+## From the fresh-eyes review (docs/ux-fresh-review.md)
+- [x] One vocabulary (mount / telescope / scope / image / panel / shot / exposure goal), no pointer / train / shooter in the UI
+- [x] Quick set up (one mount, one camera: telescope and scope in one go); "next: add a scope" hint
+- [x] Rig pages in the order of a first set-up; Site and the plate solver marked optional; readiness rows with an arrow; "Set up: N left"
+- [x] Frames saved by default when an image starts (switchable), with a warning when they are not
+- [x] Calibration shows only the fields of the chosen kind and says to cover the telescope; Site explains its horizon format; profile messages not red when they succeed
+- [x] Manual tools grouped on Scopes; guiding test buttons folded away; mount drawer wraps instead of clipping; Yes/No instead of True/False
+- [ ] Still open: Equipment + Drivers as one page; mount as a single choice instead of checkboxes; a drawer scrim; filling the Site from a GPS; per-filter focus offset table instead of "L=0, R=30"; layers as an editable list; the INDI page's duplicated card; tooltips on the status chips

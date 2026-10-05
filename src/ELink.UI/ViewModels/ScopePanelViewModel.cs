@@ -154,7 +154,7 @@ public partial class ScopePanelViewModel : ObservableObject, IDisposable
     public string PointerLine => PointerPhase switch
     {
         "--" or "Disconnected" => "mount not connected", "Slewing" => "slewing…", "Tracking" when OnTarget => "on target, tracking", "Tracking" => "tracking",
-        "Parked" => "parked", var other => OnTarget ? $"{other}, on target" : other,
+        "Parked" => "parked", "OnTarget" => "on target, tracking", var other => OnTarget ? $"{other.ToLowerInvariant()}, on target" : other.ToLowerInvariant(),
     };
     private void ScopeChanged()
     {

@@ -3,13 +3,26 @@
              x:Class="ELink.UI.Views.ComposerView">
   <StackPanel Spacing="0">
 
+    <!-- the quick way, when nothing is set up yet -->
+    <Border Classes="card" IsVisible="{Binding CanQuickSetup}">
+      <StackPanel Spacing="10">
+        <TextBlock Classes="h2" Text="Quick set up"/>
+        <TextBlock Classes="hint" Text="One mount and one camera on one telescope, the usual case: ELink makes the telescope and the scope for you. You can change everything afterwards, or set it up step by step below."/>
+        <WrapPanel Classes="row">
+          <StackPanel><TextBlock Classes="label" Text="Name"/><TextBox Text="{Binding QuickName}" Width="200"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Focal length (mm)"/><NumericUpDown Value="{Binding QuickFocalLength}" Minimum="0" Increment="10" FormatString="0.#" Width="140" ToolTip.Tip="With any reducer or flattener. 0 = unknown."/></StackPanel>
+          <Button Content="Create my scope" Classes="primary" Command="{Binding QuickSetupCommand}" VerticalAlignment="Bottom"/>
+        </WrapPanel>
+      </StackPanel>
+    </Border>
+
     <!-- 1. telescopes -->
     <Border Classes="card">
       <StackPanel Spacing="12">
         <Grid ColumnDefinitions="*,Auto">
           <StackPanel>
             <TextBlock Classes="h2" Text="1 · Your telescopes"/>
-            <TextBlock Classes="hint" Text="A telescope here is one optical path: the telescope or lens, the cameras behind it, and the filter wheel, focuser and rotator in between. A guide scope is a telescope too."/>
+            <TextBlock Classes="hint" Text="One optical path: the tube or lens, the cameras behind it, and the filter wheel, focuser and rotator in between. A guide telescope is a telescope too. (A mount is not a telescope: it carries them.)"/>
           </StackPanel>
           <Button Grid.Column="1" Content="Add a telescope" Classes.primary="{Binding NoTrains}" Command="{Binding NewTrainCommand}" VerticalAlignment="Top"
                   IsVisible="{Binding !TrainFormOpen}"/>
@@ -104,7 +117,7 @@
         <Grid ColumnDefinitions="*,Auto">
           <StackPanel>
             <TextBlock Classes="h2" Text="2 · Your scopes"/>
-            <TextBlock Classes="hint" Text="A scope is a mount carrying one or more telescopes. It guides, centres, focuses and flips by itself; you only ask it for images. Several telescopes on one mount are one scope."/>
+            <TextBlock Classes="hint" Text="A scope is a mount carrying one or more telescopes, and what it does by itself: guide, centre, focus and flip. You only ask it for images. Several telescopes on one mount are one scope."/>
           </StackPanel>
           <Button Grid.Column="1" Content="Add a scope" Classes.primary="{Binding HasTrains}" Command="{Binding NewScopeCommand}" VerticalAlignment="Top"
                   IsVisible="{Binding !ScopeFormOpen}" IsEnabled="{Binding HasTrains}" ToolTip.Tip="Add a telescope first"/>
@@ -123,7 +136,8 @@
             </DataTemplate>
           </ItemsControl.ItemTemplate>
         </ItemsControl>
-        <TextBlock Classes="hint" IsVisible="{Binding !HasTrains}" Text="Set up a telescope first."/>
+        <TextBlock Classes="hint" IsVisible="{Binding !HasTrains}" Text="Add a telescope first (step 1), then come back here."/>
+        <c:Notice Text="{Binding ScopeNextHint}" Kind="info"/>
 
         <Border IsVisible="{Binding ScopeFormOpen}" Background="#151B26" BorderBrush="#2B3548" BorderThickness="1" CornerRadius="8" Padding="14">
           <StackPanel Spacing="12">
@@ -161,7 +175,7 @@
 
             <StackPanel Spacing="6">
               <TextBlock Classes="section" Text="GUIDING"/>
-              <ComboBox ItemsSource="{Binding GuideWith}" SelectedValueBinding="{Binding Id}" SelectedValue="{Binding SelectedGuideWith}" HorizontalAlignment="Stretch">
+              <ComboBox ItemsSource="{Binding GuideWith}" SelectedValueBinding="{Binding Id}" SelectedValue="{Binding SelectedGuideWith}" HorizontalAlignment="Stretch" PlaceholderText="No guiding">
                 <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Label}"/></DataTemplate></ComboBox.ItemTemplate>
               </ComboBox>
               <Expander Header="Guiding settings" IsVisible="{Binding Guided}">
@@ -222,9 +236,9 @@
 
     <!-- mount pointers: made automatically, listed for the curious -->
     <Border Classes="card">
-      <Expander Header="Advanced: mount pointers">
+      <Expander Header="Advanced: how mounts are linked (made automatically)">
         <StackPanel Spacing="10" Margin="0,8,0,0">
-          <TextBlock Classes="hint" Text="A mount is pointed through a pointer. Saving a scope makes the pointer for its mount, so you rarely need these."/>
+          <TextBlock Classes="hint" Text="Saving a scope links its mount for you, so you rarely need this list."/>
           <ItemsControl ItemsSource="{Binding Pointers}">
             <ItemsControl.ItemTemplate>
               <DataTemplate>

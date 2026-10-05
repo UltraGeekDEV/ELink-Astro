@@ -3,7 +3,7 @@
   <StackPanel Spacing="0">
     <Border Classes="card">
       <StackPanel>
-        <TextBlock Classes="hint" Text="Darks, biases and flats for each camera, combined into masters (each pixel's highest and lowest value left out). The live stack takes off the dark that suits every frame (same camera, exposure, gain and temperature; else a bias) and divides by the flat of its filter."/>
+        <TextBlock Classes="hint" Text="Take dark, bias and flat frames once for each camera. ELink combines them into masters and uses them by itself when it stacks your pictures. Choose the kind first: only the fields that matter for it are shown."/>
         <TextBlock Text="{Binding Status}" TextWrapping="Wrap" Margin="0,6,0,0"/>
       </StackPanel>
     </Border>
@@ -12,18 +12,18 @@
         <WrapPanel Classes="row">
           <StackPanel><TextBlock Classes="label" Text="Camera"/><ComboBox ItemsSource="{Binding Cameras}" SelectedItem="{Binding SelectedCamera}" Width="240"/></StackPanel>
           <StackPanel><TextBlock Classes="label" Text="Kind"/><ComboBox ItemsSource="{Binding Kinds}" SelectedItem="{Binding Kind}" Width="110"/></StackPanel>
-          <StackPanel><TextBlock Classes="label" Text="Exposure s"/><NumericUpDown Value="{Binding ExposureSeconds}" Minimum="0" FormatString="0.###" Width="130"/></StackPanel>
+          <StackPanel IsVisible="{Binding ShowExposure}"><TextBlock Classes="label" Text="{Binding ExposureLabel}"/><NumericUpDown Value="{Binding ExposureSeconds}" Minimum="0" FormatString="0.###" Width="130"/></StackPanel>
           <StackPanel><TextBlock Classes="label" Text="Frames"/><NumericUpDown Value="{Binding Count}" Minimum="3" Maximum="500" FormatString="0" Width="110"/></StackPanel>
         </WrapPanel>
         <WrapPanel Classes="row">
-          <StackPanel><TextBlock Classes="label" Text="Filter (flats)"/><TextBox Text="{Binding Filter}" Width="110"/></StackPanel>
+          <StackPanel IsVisible="{Binding ShowFlatFields}"><TextBlock Classes="label" Text="Filter (flats)"/><TextBox Text="{Binding Filter}" Width="110"/></StackPanel>
           <StackPanel><TextBlock Classes="label" Text="Gain (empty = as set)"/><TextBox Text="{Binding Gain}" Width="110"/></StackPanel>
           <StackPanel><TextBlock Classes="label" Text="ISO (DSLR)"/><TextBox Text="{Binding Iso}" Width="90"/></StackPanel>
-          <StackPanel><TextBlock Classes="label" Text="Flat level %"/><NumericUpDown Value="{Binding FlatLevelPercent}" Minimum="10" Maximum="90" FormatString="0" Width="110"/></StackPanel>
+          <StackPanel IsVisible="{Binding ShowFlatFields}"><TextBlock Classes="label" Text="Fill the picture to (% of full)"/><NumericUpDown Value="{Binding FlatLevelPercent}" Minimum="10" Maximum="90" FormatString="0" Width="110"/></StackPanel>
           <Button Content="Capture" Classes="primary" Command="{Binding CaptureCommand}" VerticalAlignment="Bottom"/>
           <Button Content="Abort" Classes="danger" Command="{Binding AbortCommand}" VerticalAlignment="Bottom"/>
         </WrapPanel>
-        <TextBlock Classes="label" Text="{Binding Hint}" TextWrapping="Wrap"/>
+        <TextBlock Text="{Binding Hint}" TextWrapping="Wrap"/>
         <TextBlock Classes="error" Text="{Binding Message}" IsVisible="{Binding Message.Length}" TextWrapping="Wrap"/>
       </StackPanel>
     </Border>

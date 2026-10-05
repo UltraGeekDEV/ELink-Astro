@@ -189,7 +189,7 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         Assert.Contains("main:", image.Summary);
         await image.StartRunCommand.ExecuteAsync(null);
         // accepted (it may say it is learning the camera's angle first: an information, not an error)
-        Assert.True(image.Message == "" || image.Message.StartsWith("learning"), image.Message);
+        Assert.True(image.Message == "" || image.Message.StartsWith("learning") || image.Message.StartsWith("Saving the frames"), image.Message);
         Assert.True(await Eventually(() => image.Phase is "Done" or "Error", 400000), $"{image.Phase} {image.Message}");
         Assert.Equal("Done", image.Phase);
         Assert.True(await Eventually(() => image.CoverageText.Contains("100% complete")), image.CoverageText);
@@ -306,7 +306,7 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         Assert.True(await Eventually(() => live.Preview.Image is not null, 30000), live.Preview.Info);
         await live.StopCommand.ExecuteAsync(null);
         Assert.True(await Eventually(() => live.Phase == "Stopped"));
-        vm.Navigate(AppView.Advanced, "Manual live stack");
+        vm.Navigate(AppView.Advanced, "Custom stack");
         Shot(window, "07g-live-stack");
 
         // guiding: a guide camera and the mount's guide port make a guider; a scope that owns it guides by itself

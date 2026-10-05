@@ -18,10 +18,10 @@
     <Border Grid.Row="0" Background="#171C27" Padding="14,8" IsVisible="{Binding ShowConnectionBar}" BorderBrush="#2B3548" BorderThickness="0,0,0,1">
       <Grid ColumnDefinitions="Auto,*,Auto">
         <StackPanel Classes="row" VerticalAlignment="Center">
-          <TextBlock Classes="label" Text="Join the mesh at" VerticalAlignment="Center"/>
+          <TextBlock Classes="label" Text="ELink station at" VerticalAlignment="Center"/>
           <TextBox Text="{Binding Host}" Width="140" Watermark="host"/>
           <NumericUpDown Value="{Binding Port}" Minimum="1" Maximum="65535" FormatString="0" Width="100"/>
-          <Button Content="Connect" Classes="primary" Command="{Binding ConnectCommand}"/>
+          <Button Content="Connect" Classes.primary="{Binding !Mesh.IsConnected}" Command="{Binding ConnectCommand}"/>
         </StackPanel>
         <TextBlock Grid.Column="2" Text="{Binding ConnectionStatus}" VerticalAlignment="Center" Classes="label"/>
       </Grid>

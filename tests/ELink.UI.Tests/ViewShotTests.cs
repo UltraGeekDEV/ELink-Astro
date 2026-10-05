@@ -30,7 +30,7 @@ public class ViewShotTests : IClassFixture<IndiServerFixture>
         {
             (AppView.Sky, null, "sky"), (AppView.Scopes, null, "scopes"), (AppView.Rig, "Set up", "rig-setup"), (AppView.Rig, "Equipment", "rig-equipment"),
             (AppView.Rig, "Site", "rig-site"), (AppView.Rig, "Drivers", "rig-drivers"), (AppView.Rig, "Calibration", "rig-calibration"),
-            (AppView.Advanced, "Help", "adv-help"), (AppView.Advanced, "INDI properties", "adv-indi"), (AppView.Advanced, "Saving frames", "adv-saving"), (AppView.Advanced, "Manual live stack", "adv-stack"),
+            (AppView.Advanced, "Help", "adv-help"), (AppView.Advanced, "INDI properties", "adv-indi"), (AppView.Advanced, "Saving frames", "adv-saving"), (AppView.Advanced, "Custom stack", "adv-stack"),
         })
         {
             vm.Navigate(view, section);
@@ -62,7 +62,7 @@ public class ViewShotTests : IClassFixture<IndiServerFixture>
         {
             (AppView.Sky, null, "sky"), (AppView.Scopes, null, "scopes"), (AppView.Rig, "Set up", "rig-setup"), (AppView.Rig, "Equipment", "rig-equipment"),
             (AppView.Rig, "Site", "rig-site"), (AppView.Rig, "Drivers", "rig-drivers"), (AppView.Rig, "Calibration", "rig-calibration"),
-            (AppView.Advanced, "Help", "adv-help"), (AppView.Advanced, "INDI properties", "adv-indi"), (AppView.Advanced, "Saving frames", "adv-saving"), (AppView.Advanced, "Manual live stack", "adv-stack"),
+            (AppView.Advanced, "Help", "adv-help"), (AppView.Advanced, "INDI properties", "adv-indi"), (AppView.Advanced, "Saving frames", "adv-saving"), (AppView.Advanced, "Custom stack", "adv-stack"),
         })
         {
             vm.Navigate(view, section);

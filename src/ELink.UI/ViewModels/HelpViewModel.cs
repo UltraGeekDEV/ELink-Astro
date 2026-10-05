@@ -7,15 +7,17 @@ public sealed class HelpViewModel
 
     public IReadOnlyList<Entry> Terms { get; } = new Entry[]
     {
-        new("Telescope", "One optical path: the telescope or lens, the cameras behind it (imaging, or an off-axis guider), and the filter wheel, focuser and rotator in between. A guide scope is a telescope too."),
-        new("Scope", "A mount carrying one or more telescopes, with everything it does by itself: pointing, centring after a slew, focusing, guiding, dithering, flipping at the meridian, cooling, throwing away bad frames. You ask a scope for images; you do not drive it."),
+        new("Mount", "The motorised base that points at the sky (an equatorial or alt-az mount). It carries one or more telescopes."),
+        new("Telescope", "One optical path: the tube or lens, the cameras behind it (imaging, or an off-axis guider), and the filter wheel, focuser and rotator in between. A guide telescope is a telescope too."),
+        new("Scope", "A mount together with the telescopes on it, and everything it does by itself: pointing, centring after a slew, focusing, guiding, dithering, flipping at the meridian, cooling, throwing away bad frames. You ask a scope for images; you do not drive it. (In this program a telescope is only the optics; the scope is the whole working unit.)"),
         new("Image", "An area of sky, how deep it should get and which scopes may work on it. One frame of your scope is just a small area; a mosaic is a bigger one."),
         new("Frame", "The yellow rectangle on the sky chart: the image you are planning. Drag it to move it, a corner to resize it, the round handle to turn it."),
-        new("Panel", "One of the pointings a mosaic is made of. The chart draws them inside the frame and says how many there are."),
-        new("Total exposure per spot", "How long every part of the image should be exposed in total (all shots added up). 0 means keep going until you stop it."),
+        new("Panel", "One of the pointings a mosaic is made of (one place the telescope is aimed; a shot there covers one frame of the telescope). The chart draws them inside the frame and says how many there are."),
+        new("Exposure goal", "How long every part of the image should be exposed in total, all shots added up. \"Every part\" means every point inside the yellow frame: it is not a target and not a panel. 0 means keep going until you stop it. The progress map shows how far each point has got."),
+        new("Shot", "One exposure of the camera. An image is made of many shots; the shot length is set by Exposure of each shot."),
         new("Turn", "Where the top of the image points, in degrees east of north."),
         new("Dither", "A small random shift between shots, so that hot pixels and noise do not line up. Scopes that guide dither through the guider; others shift the pointing."),
-        new("Rejected frame", "A frame the scope judged bad (clouds, trailing, soft focus, bright sky). It is filed apart, not stacked, and the spot is shot again."),
+        new("Rejected frame", "A frame the scope judged bad (clouds, trailing, soft focus, bright sky). It is filed apart, not stacked, and that part of the image is shot again."),
         new("Live stack", "The picture built from all the frames as they arrive, placed on the sky. It is drawn on the chart where the image is."),
         new("Queue", "Images waiting for the right conditions (dark, high enough, away from the Moon). It takes the best one that is possible now and carries on night after night."),
         new("Plate solving", "Working out where a frame is on the sky from its stars. Needed for centring and for stacking frames that carry no sky position. ASTAP or astrometry.net."),
@@ -28,7 +30,6 @@ public sealed class HelpViewModel
         new("Layer", "One kind of data an image is made of, with its own filter, range of pixel scales and depth. A frame feeds every layer whose filter it was shot through and whose scale range holds its pixel scale. With layers a wide, fast scope can build a deep coarse base while a long focal length scope adds the detail, each by itself, and each layer gets its own stack."),
         new("Combined image", "With layers, the coarse base (the most light) with each finer layer's detail laid over it: what the finer layer resolves that the base cannot, scaled so both agree on how much light there is. It is what the stack shows when you do not pick a layer."),
         new("Focus helper", "For focusing by hand: it takes short pictures over and over and shows how sharp the stars are (HFR, smaller is sharper), whether it is getting sharper or softer, and for colour cameras each colour's, so you can watch the numbers while you turn the knob. Under Scopes."),
-        new("Pointer", "What the software points: a mount. You rarely meet it: saving a scope makes the pointer for its mount."),
     };
 
     public IReadOnlyList<Entry> Keys { get; } = new Entry[]

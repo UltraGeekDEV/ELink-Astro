@@ -1,9 +1,9 @@
-<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:c="using:ELink.UI.Controls"
              x:Class="ELink.UI.Views.ProfilesView">
   <StackPanel Spacing="0">
     <Border Classes="card">
       <StackPanel>
-        <TextBlock Classes="hint" Text="Which INDI drivers make up your rig. Start a profile and ELink runs the drivers itself (its own indiserver), puts the devices on the mesh, connects them, and starts the server again if it dies. The station can start one at launch: elink --profile NAME."/>
+        <TextBlock Classes="hint" Text="Skip this page if your INDI drivers are already running elsewhere. Otherwise: choose the drivers your equipment needs, save them as a profile and press Start. ELink runs them for you, connects the devices, and starts them again if they stop. (Advanced: the station can start a profile at launch with elink --profile NAME.)"/>
         <TextBlock Text="{Binding Status}" TextWrapping="Wrap" Margin="0,6,0,0"/>
       </StackPanel>
     </Border>
@@ -15,9 +15,9 @@
           <Button Content="Stop" Command="{Binding StopProfileCommand}" VerticalAlignment="Bottom"/>
         </WrapPanel>
         <WrapPanel Classes="row">
-          <StackPanel><TextBlock Classes="label" Text="Name"/><TextBox Text="{Binding Label}" Width="220"/></StackPanel>
-          <StackPanel><TextBlock Classes="label" Text="indiserver port"/><NumericUpDown Value="{Binding Port}" Minimum="1" Maximum="65535" FormatString="0" Width="130"/></StackPanel>
-          <CheckBox IsChecked="{Binding AutoConnect}" Content="Connect the devices" VerticalAlignment="Bottom"/>
+          <StackPanel><TextBlock Classes="label" Text="Name"/><TextBox Text="{Binding Label}" Width="220" Watermark="Name this rig, e.g. Backyard"/></StackPanel>
+          <StackPanel><TextBlock Classes="label" Text="Driver server port (advanced)"/><NumericUpDown Value="{Binding Port}" Minimum="1" Maximum="65535" FormatString="0" Width="130"/></StackPanel>
+          <CheckBox IsChecked="{Binding AutoConnect}" Content="Connect the devices when started" VerticalAlignment="Bottom"/>
         </WrapPanel>
         <Grid ColumnDefinitions="*,16,300">
           <StackPanel Spacing="4">
@@ -39,7 +39,7 @@
           <Button Content="Save profile" Classes="primary" Command="{Binding SaveCommand}"/>
           <Button Content="Delete profile" Classes="danger" Command="{Binding DeleteCommand}"/>
         </WrapPanel>
-        <TextBlock Classes="error" Text="{Binding Message}" IsVisible="{Binding Message.Length}" TextWrapping="Wrap"/>
+        <c:Notice Text="{Binding Message}" Kind="{Binding MessageKind}"/>
       </StackPanel>
     </Border>
   </StackPanel>

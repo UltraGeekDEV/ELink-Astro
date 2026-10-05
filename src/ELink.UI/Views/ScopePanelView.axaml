@@ -37,7 +37,7 @@
     </Border>
 
     <Border Classes="card" IsVisible="{Binding Activity.Count}">
-      <Expander Header="What it did" IsExpanded="True">
+      <Expander Header="Activity log" IsExpanded="True">
         <ItemsControl ItemsSource="{Binding Activity}" Margin="0,6,0,0">
           <ItemsControl.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" Classes="mono" Foreground="#B7C2D8" TextWrapping="Wrap"/></DataTemplate></ItemsControl.ItemTemplate>
         </ItemsControl>
@@ -61,13 +61,15 @@
             </Canvas>
           </Border>
         </Viewbox>
-        <TextBlock Classes="hint" Text="RA (blue) and Dec (red) error, ±4&quot; full height, last 100 guide frames. The scope guides, settles and dithers by itself; these are for testing."/>
-        <StackPanel Classes="row">
-          <Button Content="Start guiding" Command="{Binding StartGuidingCommand}"/>
-          <Button Content="Stop" Command="{Binding StopGuidingCommand}"/>
-          <Button Content="Recalibrate" Command="{Binding RecalibrateCommand}"/>
-          <Button Content="Dither now" Command="{Binding DitherNowCommand}"/>
-        </StackPanel>
+        <TextBlock Classes="hint" Text="RA (blue) and Dec (red) error, ±4&quot; full height, last 100 guide frames. The scope guides, settles and dithers by itself."/>
+        <Expander Header="Try guiding by hand (the scope normally does this itself)">
+          <StackPanel Classes="row" Margin="0,8,0,0">
+            <Button Content="Start guiding" Command="{Binding StartGuidingCommand}"/>
+            <Button Content="Stop" Command="{Binding StopGuidingCommand}"/>
+            <Button Content="Recalibrate" Command="{Binding RecalibrateCommand}"/>
+            <Button Content="Dither now" Command="{Binding DitherNowCommand}"/>
+          </StackPanel>
+        </Expander>
       </StackPanel>
     </Border>
 
@@ -83,7 +85,7 @@
       <StackPanel Spacing="6">
         <TextBlock Classes="section" Text="COOLING"/>
         <TextBlock Text="{Binding CoolerText}" TextWrapping="Wrap"/>
-        <TextBlock Classes="hint" Text="The train ramps the sensor slowly, and the scope waits until it is cold before it exposes."/>
+        <TextBlock Classes="hint" Text="The telescope cools and warms the sensor slowly, and the scope waits until it is cold before it exposes."/>
         <StackPanel Classes="row">
           <Button Content="Cool" Command="{Binding CoolCommand}"/>
           <Button Content="Warm up" Command="{Binding WarmCommand}" ToolTip.Tip="Ramp up slowly, then switch the coolers off (end of the night)"/>
@@ -92,7 +94,7 @@
     </Border>
 
     <Border Classes="card">
-      <Expander Header="Manual control: point and take frames">
+      <Expander Header="Point the scope and take frames by hand">
         <StackPanel Spacing="10" Margin="0,10,0,0">
           <StackPanel Classes="row">
             <StackPanel><TextBlock Classes="label" Text="RA (h:m:s)"/><TextBox Text="{Binding TargetRa}" Width="130"/></StackPanel>

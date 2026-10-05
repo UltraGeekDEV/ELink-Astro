@@ -8,7 +8,7 @@
         <StackPanel Spacing="8">
           <TextBlock Classes="section" Text="YOUR SCOPES"/>
           <StackPanel IsVisible="{Binding HasNoScopes}" Spacing="8">
-            <TextBlock Classes="hint" Text="No scope is set up yet. A scope is a mount with one or more telescopes and cameras that guides, focuses and flips by itself."/>
+            <TextBlock Classes="hint" Text="No scope yet."/>
             <Button Content="Set up a scope" Classes="primary" Command="{Binding GoToRigCommand}"/>
           </StackPanel>
           <ListBox ItemsSource="{Binding Cards}" SelectedItem="{Binding Selected}" Background="Transparent" BorderThickness="0">
@@ -41,19 +41,19 @@
         </Border>
         <ContentControl Content="{Binding Selected}"/>
         <Border Classes="card">
-          <Expander Header="Focus helper (for focusing by hand)">
-            <ContentControl Content="{Binding FocusAssist}" Margin="0,10,0,0"/>
-          </Expander>
-        </Border>
-        <Border Classes="card" IsVisible="{Binding HasScopes}">
-          <Expander Header="Autofocus">
-            <ContentControl Content="{Binding Autofocus}" Margin="0,10,0,0"/>
-          </Expander>
-        </Border>
-        <Border Classes="card" IsVisible="{Binding HasScopes}">
-          <Expander Header="Centring after hand-controller slews (mount-level service)">
-            <ContentControl Content="{Binding Centering}" Margin="0,10,0,0"/>
-          </Expander>
+          <StackPanel Spacing="4">
+            <TextBlock Classes="section" Text="TOOLS FOR DOING THINGS BY HAND"/>
+            <TextBlock Classes="hint" Text="A scope focuses and centres itself when you set that up (Rig › Set up). These are for working without that, or for trying things out."/>
+            <Expander Header="Focus helper: watch the focus while you turn the knob">
+              <ContentControl Content="{Binding FocusAssist}" Margin="0,10,0,0"/>
+            </Expander>
+            <Expander Header="Autofocus now" IsVisible="{Binding HasScopes}">
+              <ContentControl Content="{Binding Autofocus}" Margin="0,10,0,0"/>
+            </Expander>
+            <Expander Header="Re-centre after slews made outside ELink (hand controller, other software)" IsVisible="{Binding HasScopes}">
+              <ContentControl Content="{Binding Centering}" Margin="0,10,0,0"/>
+            </Expander>
+          </StackPanel>
         </Border>
       </StackPanel>
     </ScrollViewer>
