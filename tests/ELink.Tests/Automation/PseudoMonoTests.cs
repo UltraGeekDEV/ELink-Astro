@@ -108,6 +108,20 @@ public class PseudoMonoTests : IAsyncLifetime
         float r8 = At(mixed, 0, 8), g8 = At(mixed, 1, 8), b8 = At(mixed, 2, 8);
         Assert.True(g8 > At(sharp, 1, 8) + 20, $"{g8} vs {At(sharp, 1, 8)}");
         Assert.True(Math.Abs(r8 - b8) < 0.15 * (g8 - 500) + 5, $"r {r8} b {b8} g {g8}");
+        // the same light as one mono image: all the out-of-focus light, or the in-focus colours added up
+        async Task<(FitsImage Img, LiveStackImage Reply)> Mono(string output)
+        {
+            var a = Assert.Single((await _node.CallFunctionAsync<LiveStackImageRequest, LiveStackImage>(LiveStackIds.GetImage,
+                new LiveStackImageRequest { Neutralize = false, PseudoOutput = output }, TimeSpan.FromSeconds(10)))!);
+            Assert.True(a.Ok.Value, a.Message.Text);
+            return (FitsImage.Parse(a.Image.Data), a);
+        }
+        var (lum, lumReply) = await Mono("Luminance"); var (sharpMono, sharpReply) = await Mono("Sharp");
+        Assert.Equal((1, 1), (lumReply.Channels.Value, sharpReply.Channels.Value));
+        Assert.Equal("pseudo mono luminance", lumReply.Filter.Text);
+        float lumPeak = lum.Data[(H / 2) * W + W / 2] - 500, sharpPeak = sharpMono.Data[(H / 2) * W + W / 2] - 500;
+        Assert.True(sharpPeak > 2 * lumPeak, $"sharp {sharpPeak}, luminance {lumPeak}");                 // the soft light is spread out
+        Assert.True(lum.Data[(H / 2) * W + W / 2 + 8] > sharpMono.Data[(H / 2) * W + W / 2 + 8] + 20);    // and has wings
         // and a weight in between is in between
         var half = await Composite(0.5);
         Assert.InRange(At(half, 1, 8), At(sharp, 1, 8), g8);

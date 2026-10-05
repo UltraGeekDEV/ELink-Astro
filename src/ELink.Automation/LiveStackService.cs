@@ -39,6 +39,8 @@ public sealed class LiveStackService : IAsyncDisposable
         public bool Counted = true;
         /// <summary>The filter written in the image's header, when the stack's key is something else (a layer's name).</summary>
         public string? FitsFilter;
+        /// <summary>The coarsest pixel scale of the frames in it (arcsec/px): how sharp the stack can be.</summary>
+        public double InputScale;
     }
 
     /// <summary>The first layer a frame feeds: shot through its filter (a layer with none takes any) and within its scale range.</summary>
@@ -308,6 +310,7 @@ public sealed class LiveStackService : IAsyncDisposable
                 _scale = wcs.PixelScaleArcsec;
             }
             if (!_stacks.TryGetValue(key, out fs!)) _stacks[key] = fs = new FilterStack { Stack = Create(r, _scale), Filter = key, FitsFilter = fitsFilter };
+            fs.InputScale = Math.Max(fs.InputScale, rawWcs.PixelScaleArcsec);
             stack = fs.Stack;
             int plane = width * height;
             var bg = Enumerable.Range(0, channels).Select(c => LiveStacker.Background(data.AsSpan(c * plane, plane).ToArray())).ToArray();
@@ -505,6 +508,9 @@ public sealed class LiveStackService : IAsyncDisposable
         {
             label = _request?.Label.Text ?? "";
             if (q.Filter.Text == "" && _stacks.Count > 0 && _stacks.Keys.All(k => k.StartsWith("pm:"))) return PseudoImage(q, label);
+            bool combined = string.Equals(q.Filter.Text, "Combined", StringComparison.OrdinalIgnoreCase)
+                            || q.Filter.Text == "" && _request is { Layers.Count: > 1 } && _stacks.Count > 1;
+            if (combined) return CombinedImage(q, label);
             fs = q.Filter.Text != "" ? _stacks.GetValueOrDefault(q.Filter.Text.Trim()) : Primary;
         }
         if (fs is null || fs.Stack.Frames == 0) return new LiveStackImage { Message = q.Filter.Text != "" ? $"nothing stacked through {q.Filter.Text} yet" : "nothing stacked yet" };
@@ -535,6 +541,136 @@ public sealed class LiveStackService : IAsyncDisposable
         };
     }
 
+    private LiveStackImage MonoImage(FilterStack fs, LiveStackImageRequest q, string label, string name)
+    {
+        var (data, w, h, wcs) = fs.Stack.Reduced(q.MaxWidth.Value > 0 ? q.MaxWidth.Value : int.MaxValue, q.MaxHeight.Value > 0 ? q.MaxHeight.Value : int.MaxValue);
+        return MonoImage(data, w, h, wcs, fs.Pedestal is { Length: > 0 } p ? p[0] : 0f, fs.Stack.Frames, fs.Exposure, label, name);
+    }
+
+    private static LiveStackImage MonoImage(float[] data, int w, int h, TanWcs wcs, float sky, int frames, double exposure, string label, string name)
+    {
+        for (int i = 0; i < data.Length; i++) data[i] = float.IsNaN(data[i]) ? sky : data[i] + sky;
+        var cards = wcs.Cards().ToList();
+        string Q(string t) => "'" + t.Replace("'", "''") + "'";
+        cards.Add(("OBJECT", Q(label))); cards.Add(("FILTER", Q(name)));
+        cards.Add(("NCOMBINE", frames.ToString(CultureInfo.InvariantCulture)));
+        cards.Add(("EXPTIME", exposure.ToString("0.###", CultureInfo.InvariantCulture)));
+        cards.Add(("CREATOR", Q("ELink live stack")));
+        return new LiveStackImage
+        {
+            Ok = true, Width = w, Height = h, Channels = 1, PixelScaleArcsec = wcs.PixelScaleArcsec, Frames = frames, Filter = name,
+            Image = new ELink.Contracts.RawBytes { Data = FitsImage.WriteFloat32(w, h, data, cards, channels: 1) },
+        };
+    }
+
+    /// <summary>Layers laid over each other: the coarsest stack (the strongest signal) is the base, and each finer one adds what it
+    /// resolves that the coarser one cannot, its detail (itself less a blur to the coarser one's resolution), scaled so that the
+    /// two agree on how much light there is. Where a finer layer has no data (yet) the base shows as it is.</summary>
+    private LiveStackImage CombinedImage(LiveStackImageRequest q, string label)
+    {
+        // (called with the gate held)
+        var layers = _stacks.Values.Where(s => s.Stack.Frames > 0).OrderByDescending(s => s.InputScale > 0 ? s.InputScale : 1e9).ThenByDescending(s => s.Stack.Frames).ToList();
+        if (layers.Count == 0) return new LiveStackImage { Message = "nothing stacked yet" };
+        int mw = q.MaxWidth.Value > 0 ? q.MaxWidth.Value : int.MaxValue, mh = q.MaxHeight.Value > 0 ? q.MaxHeight.Value : int.MaxValue;
+        var (data, w, h, wcs) = layers[0].Stack.Reduced(mw, mh);
+        int channels = data.Length / (w * h), plane = w * h;
+        var pedestal = layers[0].Pedestal ?? [0f, 0f, 0f];
+        if (q.Neutralize.Value && channels == 3) Neutralize(data, plane);
+        var used = new List<string> { layers[0].Filter };
+        double previous = layers[0].InputScale;
+        foreach (var layer in layers.Skip(1))
+        {
+            var (fine, fw, fh, _) = layer.Stack.Reduced(mw, mh);
+            if (fw != w || fh != h) continue;
+            int fc = fine.Length / plane;
+            // the fine layer as one plane (mono: its channels' mean)
+            var detail = new float[plane];
+            for (int i = 0; i < plane; i++)
+            {
+                float sum = 0; int n = 0;
+                for (int c = 0; c < fc; c++) { float v = fine[c * plane + i]; if (!float.IsNaN(v)) { sum += v; n++; } }
+                detail[i] = n == fc ? sum / fc : float.NaN;
+            }
+            // blur it to the coarser layer's resolution: what is left is what only the finer layer sees
+            double sigma = previous > 0 && wcs.PixelScaleArcsec > 0 ? previous / wcs.PixelScaleArcsec / 2.355 : 0;
+            var soft = Blur(detail, w, h, sigma);
+            // the same light in both: the base's total against the finer layer's, over where the latter has data
+            double sumBase = 0, sumSoft = 0;
+            for (int i = 0; i < plane; i++)
+            {
+                if (float.IsNaN(soft[i])) continue;
+                float b = 0; int n = 0;
+                for (int c = 0; c < channels; c++) { float v = data[c * plane + i]; if (!float.IsNaN(v)) { b += v; n++; } }
+                if (n < channels) continue;
+                sumBase += Math.Max(0, b / channels); sumSoft += Math.Max(0, soft[i]);
+            }
+            float k = sumSoft > 0 && sumBase > 0 ? (float)(sumBase / sumSoft) : 1f;
+            for (int i = 0; i < plane; i++)
+            {
+                if (float.IsNaN(soft[i]) || float.IsNaN(detail[i])) continue;
+                float add = k * (detail[i] - soft[i]);
+                for (int c = 0; c < channels; c++) if (!float.IsNaN(data[c * plane + i])) data[c * plane + i] += add;
+            }
+            used.Add(layer.Filter);
+            if (layer.InputScale > 0) previous = layer.InputScale;
+        }
+        float common = (pedestal[0] + pedestal[Math.Min(1, pedestal.Length - 1)] + pedestal[Math.Min(2, pedestal.Length - 1)]) / 3;
+        for (int c = 0; c < channels; c++)
+        {
+            float sky = q.Neutralize.Value && channels == 3 ? common : pedestal[channels == 3 ? c : 0];
+            for (int i = c * plane; i < (c + 1) * plane; i++) data[i] = float.IsNaN(data[i]) ? sky : data[i] + sky;
+        }
+        int frames = layers.Sum(s => s.Stack.Frames);
+        var cards = wcs.Cards().ToList();
+        string Q(string t) => "'" + t.Replace("'", "''") + "'";
+        cards.Add(("OBJECT", Q(label)));
+        if ((layers[0].FitsFilter ?? "") != "") cards.Add(("FILTER", Q(layers[0].FitsFilter!)));
+        cards.Add(("LAYERS", Q(string.Join("+", used))));
+        cards.Add(("NCOMBINE", frames.ToString(CultureInfo.InvariantCulture)));
+        cards.Add(("EXPTIME", layers.Sum(s => s.Exposure).ToString("0.###", CultureInfo.InvariantCulture)));
+        cards.Add(("CREATOR", Q("ELink live stack")));
+        return new LiveStackImage
+        {
+            Ok = true, Width = w, Height = h, Channels = channels, PixelScaleArcsec = wcs.PixelScaleArcsec, Frames = frames, Filter = "Combined",
+            Image = new ELink.Contracts.RawBytes { Data = FitsImage.WriteFloat32(w, h, data, cards, channels: channels) },
+        };
+    }
+
+    /// <summary>Gaussian blur of one plane, where pixels without data (NaN) count for nothing (and stay NaN if they were).</summary>
+    public static float[] Blur(float[] src, int w, int h, double sigma)
+    {
+        if (sigma < 0.4) return (float[])src.Clone();
+        int r = Math.Max(1, (int)Math.Ceiling(3 * sigma));
+        var kernel = new float[2 * r + 1];
+        for (int i = -r; i <= r; i++) kernel[i + r] = (float)Math.Exp(-i * i / (2 * sigma * sigma));
+        var tmpV = new float[w * h]; var tmpW = new float[w * h];
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+            {
+                float s = 0, ws = 0;
+                for (int i = Math.Max(0, x - r); i <= Math.Min(w - 1, x + r); i++)
+                {
+                    float v = src[y * w + i];
+                    if (float.IsNaN(v)) continue;
+                    float k = kernel[i - x + r]; s += v * k; ws += k;
+                }
+                tmpV[y * w + x] = s; tmpW[y * w + x] = ws;
+            }
+        var result = new float[w * h];
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+            {
+                if (float.IsNaN(src[y * w + x])) { result[y * w + x] = float.NaN; continue; }
+                float s = 0, ws = 0;
+                for (int j = Math.Max(0, y - r); j <= Math.Min(h - 1, y + r); j++)
+                {
+                    float k = kernel[j - y + r]; s += tmpV[j * w + x] * k; ws += tmpW[j * w + x] * k;
+                }
+                result[y * w + x] = ws > 0 ? s / ws : float.NaN;
+            }
+        return result;
+    }
+
     /// <summary>The pseudo mono colour image: red, green and blue from the frames in which that channel was in focus, optionally with
     /// the out-of-focus luminance mixed in (its weight 0 leaves that data out; 1 puts in all of it).</summary>
     private LiveStackImage PseudoImage(LiveStackImageRequest q, string label)
@@ -551,6 +687,19 @@ public sealed class LiveStackService : IAsyncDisposable
         for (int c = 0; c < 3; c++) Array.Copy(reduced[c].Data, 0, data, c * plane, plane);
         var wcs = reduced[0].Wcs;
         var pedestal = parts.Select(p => p!.Pedestal is { Length: > 0 } ped ? ped[0] : 0f).ToArray();
+        if (string.Equals(q.PseudoOutput.Text, "Luminance", StringComparison.OrdinalIgnoreCase))
+        {
+            // all the out-of-focus light, as one mono image
+            if (_stacks.GetValueOrDefault(PseudoLuminance) is not { Stack.Frames: > 0 } l) return new LiveStackImage { Message = "no out-of-focus light stacked yet" };
+            return MonoImage(l, q, label, "pseudo mono luminance");
+        }
+        if (string.Equals(q.PseudoOutput.Text, "Sharp", StringComparison.OrdinalIgnoreCase))
+        {
+            // the in-focus colours added up: sharp, with a third of the light of each frame
+            var mono = new float[plane];
+            for (int i = 0; i < plane; i++) mono[i] = (data[i] + data[plane + i] + data[2 * plane + i]) / 3;
+            return MonoImage(mono, w, h, wcs, pedestal.Average(), parts.Sum(p => p!.Stack.Frames), parts.Sum(p => p!.Exposure), label, "pseudo mono sharp");
+        }
         if (q.Neutralize.Value) Neutralize(data, plane);
 
         double weight = Math.Clamp(q.OutOfFocusWeight.Value, 0, 1);
@@ -654,7 +803,7 @@ public sealed class LiveStackService : IAsyncDisposable
 
     private static string Safe(string key) => new(key.Trim().Select(c => char.IsLetterOrDigit(c) || c is '-' or '_' ? c : '_').ToArray());
 
-    private sealed record SavedFilter(string Filter, string File, float[]? Pedestal, double Exposure);
+    private sealed record SavedFilter(string Filter, string File, float[]? Pedestal, double Exposure, double InputScale = 0);
     private sealed record SavedSession(double CenterRaHours, double CenterDecDegrees, double Width, double Height, double PositionAngle, double Scale, double Exposure, List<SavedFilter> Filters);
 
     private static (Dictionary<string, FilterStack>, double Scale, double Exposure) LoadSession(string dir, LiveStackRequest r)
@@ -671,7 +820,7 @@ public sealed class LiveStackService : IAsyncDisposable
             using var fs = File.OpenRead(Path.Combine(dir, f.File));
             var stack = LiveStacker.ReadFrom(fs);
             stack.Interpolation = Enum.Parse<Interpolation>(r.Interpolation.Text); stack.MatchFlux = r.MatchFlux.Value; stack.RejectSigma = Math.Max(0, r.RejectSigma.Value);
-            stacks[f.Filter] = new FilterStack { Stack = stack, Filter = f.Filter, Pedestal = f.Pedestal, Exposure = f.Exposure, Counted = f.Filter != PseudoLuminance, FitsFilter = r.Layers.FirstOrDefault(l => l.Label.Text == f.Filter)?.Filter.Text };
+            stacks[f.Filter] = new FilterStack { Stack = stack, Filter = f.Filter, Pedestal = f.Pedestal, Exposure = f.Exposure, Counted = f.Filter != PseudoLuminance, FitsFilter = r.Layers.FirstOrDefault(l => l.Label.Text == f.Filter)?.Filter.Text, InputScale = f.InputScale };
         }
         return (stacks, meta.Scale, meta.Exposure);
     }
@@ -696,7 +845,7 @@ public sealed class LiveStackService : IAsyncDisposable
             {
                 string file = "filter-" + (x.Filter == "" ? "all" : Safe(x.Filter)) + ".stack", path = Path.Combine(dir, file);
                 await Task.Run(() => { using (var fs = File.Create(path + ".part")) x.Stack.WriteTo(fs); File.Move(path + ".part", path, true); });
-                files.Add(new SavedFilter(x.Filter, file, x.Pedestal, x.Exposure));
+                files.Add(new SavedFilter(x.Filter, file, x.Pedestal, x.Exposure, x.InputScale));
             }
             var meta = new SavedSession(r.Center.RaHours.Value, r.Center.DecDegrees.Value, r.FovWidthDegrees.Value, r.FovHeightDegrees.Value, r.PositionAngleDegrees.Value, scale, exposure, files);
             string metaPath = Path.Combine(dir, "session.json");

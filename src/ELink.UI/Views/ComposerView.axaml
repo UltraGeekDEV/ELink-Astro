@@ -200,9 +200,9 @@
                   </WrapPanel>
                 </StackPanel>
               </Expander>
-              <Expander Header="Combine with other scopes" IsVisible="{Binding NestedChoices.Count}">
+              <Expander Header="Combined scopes (this scope is built from other scopes)" IsVisible="{Binding ShowNested}">
                 <StackPanel Spacing="4" Margin="0,6,0,0">
-                  <TextBlock Classes="hint" Text="A scope can be built from other scopes: it points all their mounts and shoots with all their telescopes."/>
+                  <TextBlock Classes="hint" Text="This scope is built from other scopes: it points all their mounts and shoots with all their telescopes. Untick them to make it an ordinary scope."/>
                   <ItemsControl ItemsSource="{Binding NestedChoices}">
                     <ItemsControl.ItemTemplate><DataTemplate><CheckBox IsChecked="{Binding IsSelected}" Content="{Binding Label}"/></DataTemplate></ItemsControl.ItemTemplate>
                   </ItemsControl>

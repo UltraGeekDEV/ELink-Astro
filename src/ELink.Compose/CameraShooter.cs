@@ -21,6 +21,10 @@ public sealed class CameraShooter : IAsyncDisposable
     private readonly CameraShooterOptions _options;
     /// <summary>A colour camera taking turns to focus red, green and blue.</summary>
     public bool IsPseudoMono => _options.PseudoMono;
+    /// <summary>A pseudo mono camera whose focus is set by hand (the train has no focuser): it cannot take turns, it says which colour is in focus.</summary>
+    public bool IsManualPseudoMono => _options.PseudoMono && _focuser is null;
+    /// <summary>For a pseudo mono camera focused by hand: the colour that is in focus (R, G or B).</summary>
+    public string ManualChannel { get; set; } = "G";
     private readonly RemoteState<FocuserState>? _focuser;
     private readonly TypeSafeEVentNode _node;
     private readonly string _id, _cameraId, _wheelId;
@@ -74,10 +78,17 @@ public sealed class CameraShooter : IAsyncDisposable
                 // R, G or B asked for, or taking turns when nothing is: every frame has one channel in focus
                 string? channel = PseudoChannels.FirstOrDefault(c => string.Equals(c, filter, StringComparison.OrdinalIgnoreCase));
                 if (filter != "" && channel is null) return CommandResult.Fail($"{_id} is a pseudo mono camera: its filters are R, G and B, not {filter}");
-                channel ??= PseudoChannels[_pseudoNext++ % 3];
-                if (_focuser is null) return CommandResult.Fail($"{_id} is a pseudo mono camera: it needs the train's focuser and focus offsets named R, G and B");
-                var moved = await MovePseudoAsync(channel);
-                if (!moved.Ok.Value) return moved;
+                if (_focuser is null)
+                {
+                    // focused by hand: no moves and no taking turns, the frames are tagged with the colour the person focused
+                    channel ??= ManualChannel;
+                }
+                else
+                {
+                    channel ??= PseudoChannels[_pseudoNext++ % 3];
+                    var moved = await MovePseudoAsync(channel);
+                    if (!moved.Ok.Value) return moved;
+                }
                 _pseudoUsed = channel;
                 filter = "";
             }

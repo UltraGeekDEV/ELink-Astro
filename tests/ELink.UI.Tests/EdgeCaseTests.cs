@@ -208,6 +208,21 @@ public class EdgeCaseTests : IClassFixture<IndiServerFixture>
         image.Layers = "";
         Assert.True(await UiRig.Eventually(() => image.PlanProblem == ""));
     }
+
+    [AvaloniaFact]
+    public async Task TheFocusHelperMeasuresFramesUntilItIsStopped()
+    {
+        Assert.True(_server.Available);
+        await using var rig = await RigAsync(_server);
+        var helper = rig.Vm.FocusAssist;
+        Assert.True(await UiRig.Eventually(() => helper.Shooters.Count > 0 && helper.SelectedShooter is not null));
+        helper.ExposureSeconds = 0.5;
+        await helper.BeginCommand.ExecuteAsync(null);
+        Assert.True(await UiRig.Eventually(() => helper.IsRunning && helper.DetailText.Contains("frames")), helper.Message + helper.Phase);
+        Assert.False(helper.BeginCommand.CanExecute(null));
+        await helper.StopCommand.ExecuteAsync(null);
+        Assert.True(await UiRig.Eventually(() => !helper.IsRunning));
+    }
 }
 
 internal static class AsyncExt

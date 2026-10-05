@@ -67,6 +67,9 @@ public sealed partial class LiveStackViewModel : ObservableObject, IDisposable
     partial void OnNeutralizeChanged(bool value) => _ = RefreshAsync();
     [ObservableProperty] private double _outOfFocusWeight;
     partial void OnOutOfFocusWeightChanged(double value) => _ = RefreshAsync();
+    public string[] PseudoOutputs => ImageViewModel.PseudoOutputsList;
+    [ObservableProperty] private string _pseudoOutput = "Colour";
+    partial void OnPseudoOutputChanged(string value) => _ = RefreshAsync();
     [ObservableProperty] private string _bayerPattern = "From frame";
 
     [ObservableProperty] private string _phase = "Idle";
@@ -155,7 +158,7 @@ public sealed partial class LiveStackViewModel : ObservableObject, IDisposable
             {
                 _dirty = false;
                 var answers = await _mesh.Node.CallFunctionAsync<LiveStackImageRequest, LiveStackImage>(LiveStackIds.GetImage,
-                    new LiveStackImageRequest { MaxWidth = 1600, MaxHeight = 1200, Neutralize = Neutralize, OutOfFocusWeight = OutOfFocusWeight, Filter = ShownFilter is null or "(none)" ? "" : ShownFilter }, TimeSpan.FromSeconds(30));
+                    new LiveStackImageRequest { MaxWidth = 1600, MaxHeight = 1200, Neutralize = Neutralize, OutOfFocusWeight = OutOfFocusWeight, PseudoOutput = ImageViewModel.PseudoOutputName(PseudoOutput), Filter = ShownFilter is null or "(none)" ? "" : ShownFilter }, TimeSpan.FromSeconds(30));
                 if (answers?.FirstOrDefault() is { Ok.Value: true } img)
                     UiThread.Post(() => Preview.Show(img.Image.Data, ".fits", $"{(img.Filter.Text != "" ? img.Filter.Text + ": " : "")}{img.Frames.Value} frames  ·  shown at {img.PixelScaleArcsec.Value:0.##}\"/px"));
             } while (_dirty);

@@ -147,9 +147,12 @@ focus triggers/offsets -> live-stack rejection/calibration -> the rest.
 - [x] Plate solves of a camera's angle get the camera's pixel scale as a hint
 - [x] Pseudo mono: a colour camera takes turns to focus R, G, B (focus offsets); the in-focus channel of each frame is stacked as colour, the other two as luminance (weight 0 = left out); storage writes `infocus/` and `oof/`
 - [x] Pseudo mono: autofocus per channel (G, then R and B from green's focus; the offsets R and B are measured and kept with the telescope)
-- [ ] Pseudo mono: a luminance-only output option
+- [x] Pseudo mono: mono outputs: the out-of-focus luminance alone, or the in-focus colours added up (the picture selector)
 - [x] Layers: the coverage map has N channels; each layer has a filter, a pixel-scale range and a depth; scopes plan for the layers their cameras feed; one live stack per layer
-- [ ] Layers: a combined output (a coarse base with the fine detail laid over it)
+- [x] Layers: a combined output (the coarse base with each finer layer's detail laid over it); it is the default picture when there are layers
+- [ ] Manual mode: most things should work without the automation (no mount control, no focuser, no filter wheel, no solver). Done: pseudo mono with a hand-focused camera (say which colour is in focus), the focus helper. To do: a walk through every feature for what it needs and how it behaves without it (stacking and layers from frames of a hand-guided mount, a manual filter wheel that asks for the filter, a scheduler that only advises)
+- [x] Focus helper: statistics for hand focusing (HFR, roundness, per-colour for colour cameras, trend, best, history graph)
+- [x] Set up: scopes are not offered as things to put on a mount (only a scope that already combines others shows them)
 
 ## Notes / decisions
 - EVent package in `~/ELink/package` has no nuget/ folder; real feed is `~/Desktop/EVent/EVent/dist/EVent/nuget`.

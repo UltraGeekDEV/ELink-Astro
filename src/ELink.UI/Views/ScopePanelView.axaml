@@ -71,6 +71,14 @@
       </StackPanel>
     </Border>
 
+    <Border Classes="card" IsVisible="{Binding HasManualColour}">
+      <StackPanel Spacing="6">
+        <TextBlock Classes="section" Text="PSEUDO MONO, FOCUSED BY HAND"/>
+        <TextBlock Classes="hint" TextWrapping="Wrap" Text="This colour camera has no focuser to take turns with. Focus it by hand for one colour, say which, and the frames are tagged so that colour is stacked as colour and the other two as luminance. Change it when you refocus."/>
+        <StackPanel Classes="row"><TextBlock Classes="label" Text="Colour in focus" VerticalAlignment="Center"/><ComboBox ItemsSource="{Binding ManualChannels}" SelectedItem="{Binding ManualChannel}" Width="80"/></StackPanel>
+      </StackPanel>
+    </Border>
+
     <Border Classes="card" IsVisible="{Binding HasCoolers}">
       <StackPanel Spacing="6">
         <TextBlock Classes="section" Text="COOLING"/>

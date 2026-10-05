@@ -60,6 +60,7 @@ public sealed class UiRig : IAsyncDisposable
         await ElinkNode.JoinAsync(hostNode, "127.0.0.1", bridgePort);
         var host = rig.Add(new CompositionHost(hostNode)); await host.StartAsync();
         await rig.Add(new AutofocusService(hostNode)).StartAsync();
+        await rig.Add(new FocusAssistService(hostNode)).StartAsync();
         await rig.Add(new SchedulerService(hostNode)).StartAsync();
         await rig.Add(new ProfileService(hostNode, new DeviceDirectory(hostNode))).StartAsync();
         await rig.Add(new ImagingService(hostNode)).StartAsync();

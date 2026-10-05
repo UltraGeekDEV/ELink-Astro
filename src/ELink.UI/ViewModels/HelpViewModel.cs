@@ -26,6 +26,8 @@ public sealed class HelpViewModel
         new("Out-of-focus light", "In pseudo mono, the light of the two colours that were not in focus. Leaving it out gives the sharpest colours (but throws away about two thirds of the light); adding it gives more signal with a soft, white halo around the stars. Set how much with the slider under Layers."),
         new("Debayer / super pixel", "A colour camera's pixels each see one colour. Debayering fills in the other two from the neighbours; super pixel instead joins each 2×2 cell into one colour pixel (half the size, nothing guessed)."),
         new("Layer", "One kind of data an image is made of, with its own filter, range of pixel scales and depth. A frame feeds every layer whose filter it was shot through and whose scale range holds its pixel scale. With layers a wide, fast scope can build a deep coarse base while a long focal length scope adds the detail, each by itself, and each layer gets its own stack."),
+        new("Combined image", "With layers, the coarse base (the most light) with each finer layer's detail laid over it: what the finer layer resolves that the base cannot, scaled so both agree on how much light there is. It is what the stack shows when you do not pick a layer."),
+        new("Focus helper", "For focusing by hand: it takes short pictures over and over and shows how sharp the stars are (HFR, smaller is sharper), whether it is getting sharper or softer, and for colour cameras each colour's, so you can watch the numbers while you turn the knob. Under Scopes."),
         new("Pointer", "What the software points: a mount. You rarely meet it: saving a scope makes the pointer for its mount."),
     };
 

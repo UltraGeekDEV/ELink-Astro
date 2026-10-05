@@ -13,13 +13,14 @@ public sealed partial class ScopesViewModel : ObservableObject, IDisposable
     private readonly CatalogViewModel _catalog;
     private readonly SemaphoreSlim _rebuild = new(1, 1);
 
-    public ScopesViewModel(MeshSession mesh, CatalogViewModel catalog, AutofocusViewModel autofocus, CenteringViewModel centering)
+    public ScopesViewModel(MeshSession mesh, CatalogViewModel catalog, AutofocusViewModel autofocus, CenteringViewModel centering, FocusAssistViewModel focusAssist)
     {
-        _mesh = mesh; _catalog = catalog; Autofocus = autofocus; Centering = centering;
+        _mesh = mesh; _catalog = catalog; Autofocus = autofocus; Centering = centering; FocusAssist = focusAssist;
         catalog.CompositionChanged += () => UiThread.Post(() => _ = RebuildAsync());
     }
 
     public AutofocusViewModel Autofocus { get; }
+    public FocusAssistViewModel FocusAssist { get; }
     public CenteringViewModel Centering { get; }
     public ObservableCollection<ScopePanelViewModel> Cards { get; } = new();
     [ObservableProperty] private ScopePanelViewModel? _selected;

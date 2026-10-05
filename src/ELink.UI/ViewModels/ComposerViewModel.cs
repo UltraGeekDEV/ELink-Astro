@@ -99,6 +99,8 @@ public sealed partial class ComposerViewModel : ObservableObject
     public ObservableCollection<ComposeChoice> PointerChoices { get; } = new();     // mounts
     public ObservableCollection<ComposeChoice> ShooterChoices { get; } = new();     // telescopes
     public ObservableCollection<ComposeChoice> NestedChoices { get; } = new();      // other scopes, to combine
+    /// <summary>Scopes are not offered as things to put on a mount: only a scope that already combines others shows them (to change it).</summary>
+    [ObservableProperty] private bool _showNested;
     public ObservableCollection<GuideOption> GuideWith { get; } = new();
     public ObservableCollection<string> GuidePorts { get; } = new();
 
@@ -367,6 +369,7 @@ public sealed partial class ComposerViewModel : ObservableObject
     {
         ScopeEditingId = null; ScopeName = "";
         foreach (var c in PointerChoices.Concat(ShooterChoices).Concat(NestedChoices)) { c.IsSelected = false; c.EastArcmin = c.NorthArcmin = 0; }
+        ShowNested = false;
         // the obvious first scope: the one mount and the one telescope, when there is just one of each
         if (PointerChoices.Count == 1) PointerChoices[0].IsSelected = true;
         if (ShooterChoices.Count == 1) ShooterChoices[0].IsSelected = true;
@@ -385,6 +388,7 @@ public sealed partial class ComposerViewModel : ObservableObject
         ScopeEditingId = s.Id.Text; ScopeName = s.DisplayName.Text != "" ? s.DisplayName.Text : s.Id.Text;
         foreach (var c in PointerChoices.Concat(NestedChoices)) c.IsSelected = s.Pointers.Any(p => p.Text == c.Id);
         foreach (var c in ShooterChoices.Concat(NestedChoices)) if (s.Shooters.FirstOrDefault(x => x.Id.Text == c.Id) is { } r) { c.IsSelected = true; c.EastArcmin = r.OffsetEastArcmin.Value; c.NorthArcmin = r.OffsetNorthArcmin.Value; }
+        ShowNested = NestedChoices.Any(c => c.IsSelected);
         SelectedGuideWith = s.GuideShooterId.Text != "" ? s.GuideShooterId.Text : NoGuiding;
         SelectedGuideOutput = s.GuideOutput.Text; SelectedGuidePort = s.GuidePortId.Text == "" ? MountPort : s.GuidePortId.Text; GuideTargetId = s.GuideTargetId.Text; GuideExposure = s.GuideExposureSeconds.Value;
         DitherEvery = s.DitherEvery.Value; DitherPixels = s.DitherPixels.Value; SettlePixels = s.SettlePixels.Value;

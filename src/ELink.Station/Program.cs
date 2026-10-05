@@ -69,6 +69,8 @@ await using var host = new CompositionHost(node, compose);
 await host.StartAsync();
 await using var autofocus = new AutofocusService(node);
 await autofocus.StartAsync();
+await using var focusAssist = new FocusAssistService(node);
+await focusAssist.StartAsync();
 await using var scheduler = new SchedulerService(node, Path.Combine(Path.GetDirectoryName(compose)!, "schedule.bin"));
 await scheduler.StartAsync();
 PlateSolveService? solver = null;

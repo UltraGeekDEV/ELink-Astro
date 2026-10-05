@@ -201,23 +201,10 @@ public sealed class AutofocusService : IAsyncDisposable
         if (!shot.Format.Text.StartsWith(".fit", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException($"autofocus needs FITS frames, the shooter delivered {shot.Format.Text}");
         var image = FitsImage.Parse(shot.Data.Data);
-        if (req.Channel.Text != "") image = ColourPlane(image, req.Channel.Text);
+        if (req.Channel.Text != "") image = FocusMeasure.ColourPlane(image, req.Channel.Text);
         var result = await Task.Run(() => StarField.Detect(image), ct);
         point.Hfr = result.MedianHfr; point.Stars = result.Count;
         return point;
-    }
-
-    /// <summary>One colour of a raw colour frame, with nothing interpolated across colours (each 2x2 cell is a pixel): what a
-    /// per-colour focus measures. Frames that are already RGB give their plane.</summary>
-    private static FitsImage ColourPlane(FitsImage img, string channel)
-    {
-        int c = "RGB".IndexOf(channel, StringComparison.OrdinalIgnoreCase);
-        if (c < 0 || channel.Length != 1) throw new InvalidOperationException($"channel {channel} is not R, G or B");
-        if (img.Channels == 3)
-            return FitsImage.FromPlanar(img.Width, img.Height, 1, img.Data.AsSpan(c * img.Width * img.Height, img.Width * img.Height).ToArray(), img.Header, img.Range);
-        string pattern = Debayer.PatternOf(img) ?? throw new InvalidOperationException("focusing one colour needs a colour camera's frames (no Bayer pattern in them)");
-        var s = Debayer.SuperPixel(img.Data, img.Width, img.Height, pattern);
-        return FitsImage.FromPlanar(s.Width, s.Height, 1, s.Data.AsSpan(c * s.Width * s.Height, s.Width * s.Height).ToArray(), img.Header, img.Range);
     }
 
     private static AutofocusState Clone(AutofocusState s)

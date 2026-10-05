@@ -88,6 +88,7 @@ public class TrainCameraInfo : IBinaryConvertible
     public BinaryConvertibleDouble Temperature { get; set; } = double.NaN;
     public BinaryConvertibleDouble CoolerSetPoint { get; set; } = double.NaN;
     public BinaryConvertibleBool PseudoMono { get; set; } = false;
+    public BinaryConvertibleString PseudoChannel { get; set; } = "";
 
     public override string Name => "TrainCameraInfo";
     private static readonly NOTESDescriptor d = new();
@@ -106,6 +107,7 @@ public class TrainCameraInfo : IBinaryConvertible
         d.RegisterField("Temperature", (TrainCameraInfo x) => x.Temperature);
         d.RegisterField("CoolerSetPoint", (TrainCameraInfo x) => x.CoolerSetPoint).Description("where the ramp has got to");
         d.RegisterField("PseudoMono", (TrainCameraInfo x) => x.PseudoMono).Description("this colour camera takes turns to focus R, G and B (it needs a focuser and the offsets named R, G, B)");
+        d.RegisterField("PseudoChannel", (TrainCameraInfo x) => x.PseudoChannel).Description("a pseudo mono camera without a focuser (focused by hand): the colour that is in focus, R, G or B; empty otherwise");
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();
@@ -208,6 +210,8 @@ public static class TrainIds
     public static string Cool(string trainId) => EquipmentIds.Command(Kind, trainId, "Cool");
     /// <summary>Void in: ramp the cooled cameras up to their WarmTo, then switch the coolers off.</summary>
     public static string Warm(string trainId) => EquipmentIds.Command(Kind, trainId, "Warm");
+    /// <summary>BinaryConvertibleString (R, G or B) in, CommandResult out: a pseudo mono camera focused by hand says which colour it was focused for.</summary>
+    public static string SetPseudoChannel(string trainId) => EquipmentIds.Command(Kind, trainId, "SetPseudoChannel");
     /// <summary>FocusOffsetList in, CommandResult out: replace the train's focus offsets (kept with the composition).</summary>
     public static string SetFocusOffsets(string trainId) => EquipmentIds.Command(Kind, trainId, "SetFocusOffsets");
     /// <summary>Camera command taking CameraOptics.</summary>

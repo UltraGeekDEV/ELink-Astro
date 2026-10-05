@@ -22,6 +22,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public ComposerViewModel Composer { get; }
     public IndiBrowserViewModel IndiBrowser { get; }
     public AutofocusViewModel Autofocus { get; }
+    public FocusAssistViewModel FocusAssist { get; }
     public ScheduleViewModel Schedule { get; }
     public ProfilesViewModel Profiles { get; }
     public CalibrationViewModel Calibration { get; }
@@ -65,6 +66,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Composer = new ComposerViewModel(mesh, Catalog);
         IndiBrowser = new IndiBrowserViewModel(mesh);
         Autofocus = new AutofocusViewModel(mesh, Catalog);
+        FocusAssist = new FocusAssistViewModel(mesh, Catalog);
         Schedule = new ScheduleViewModel(mesh);
         Profiles = new ProfilesViewModel(mesh);
         Calibration = new CalibrationViewModel(mesh, Catalog);
@@ -77,7 +79,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Site = new SiteViewModel(mesh, Catalog);
         Equipment = new EquipmentViewModel(mesh, Catalog, OpenDeviceAsync);
 
-        Scopes = new ScopesViewModel(mesh, Catalog, Autofocus, Centering) { OpenRig = () => Navigate(AppView.Rig, "Set up") };
+        Scopes = new ScopesViewModel(mesh, Catalog, Autofocus, Centering, FocusAssist) { OpenRig = () => Navigate(AppView.Rig, "Set up") };
         StatusBar = new StatusBarViewModel(mesh, Catalog, Scopes) { Navigate = Navigate };
         Sky = new SkyViewModel(mesh, Catalog, Atlas, Image, Schedule, LiveStack, StatusBar);
         Rig = new RigViewModel(Composer, Site, Equipment, Profiles, Calibration);
@@ -104,6 +106,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         await Catalog.StartAsync();
         await Autofocus.StartAsync();
+        await FocusAssist.StartAsync();
         await Schedule.StartAsync();
         await Profiles.StartAsync();
         await Calibration.StartAsync();
@@ -168,6 +171,6 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Mesh.Notices.Posted -= OnNotice;
         Drawer?.Dispose();
         Scopes.Dispose(); StatusBar.Dispose();
-        Catalog.Dispose(); IndiBrowser.Dispose(); Autofocus.Dispose(); Schedule.Dispose(); Profiles.Dispose(); Calibration.Dispose(); Storage.Dispose(); Image.Dispose(); Atlas.Dispose(); Centering.Dispose(); LiveStack.Dispose(); Site.Dispose(); Mesh.Dispose();
+        Catalog.Dispose(); IndiBrowser.Dispose(); Autofocus.Dispose(); FocusAssist.Dispose(); Schedule.Dispose(); Profiles.Dispose(); Calibration.Dispose(); Storage.Dispose(); Image.Dispose(); Atlas.Dispose(); Centering.Dispose(); LiveStack.Dispose(); Site.Dispose(); Mesh.Dispose();
     }
 }

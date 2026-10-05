@@ -137,6 +137,7 @@ public class LiveStackImageRequest : IBinaryConvertible
     public BinaryConvertibleString Filter { get; set; } = "";
     public BinaryConvertibleBool Neutralize { get; set; } = true;
     public BinaryConvertibleDouble OutOfFocusWeight { get; set; } = 0.0;
+    public BinaryConvertibleString PseudoOutput { get; set; } = "";
 
     public override string Name => "LiveStackImageRequest";
     private static readonly NOTESDescriptor d = new();
@@ -145,9 +146,10 @@ public class LiveStackImageRequest : IBinaryConvertible
     {
         d.RegisterField("MaxWidth", (LiveStackImageRequest x) => x.MaxWidth).Description("area-average the stack down to fit; 0 = full size");
         d.RegisterField("MaxHeight", (LiveStackImageRequest x) => x.MaxHeight);
-        d.RegisterField("Filter", (LiveStackImageRequest x) => x.Filter).Description("which filter's stack; empty = the one with the most frames");
+        d.RegisterField("Filter", (LiveStackImageRequest x) => x.Filter).Description("which filter's (or layer's) stack; \"Combined\" = the layers laid over each other, the finest detail over the coarse base; empty = the combined image when there are several layers, else the stack with the most frames");
         d.RegisterField("Neutralize", (LiveStackImageRequest x) => x.Neutralize).Description("colour stacks: even, neutral background and white-balanced stars");
         d.RegisterField("OutOfFocusWeight", (LiveStackImageRequest x) => x.OutOfFocusWeight).Description("pseudo mono: how much of the out-of-focus luminance goes into the colour image, 0 (none: the sharpest colours, the data is left out) to 1 (all: the most signal, with a soft halo)").Range(0m, 1m);
+        d.RegisterField("PseudoOutput", (LiveStackImageRequest x) => x.PseudoOutput).Description("pseudo mono: Colour (default) | Luminance (all the out-of-focus light, mono) | Sharp (the in-focus colours added up, mono)");
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();

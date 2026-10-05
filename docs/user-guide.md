@@ -145,7 +145,9 @@ plate solver is installed. Each line takes you to the place. *Not now* puts it a
      **Autofocus** knows about it: when a trigger fires the scope focuses green, then red and blue (each from green's focus,
      measuring only that colour's stars in the super-pixel frame), puts the measured differences into the telescope's focus
      offsets `R` and `B` (kept with the composition) and leaves the focuser at green. So the offsets do not need to be
-     typed or kept up to date by hand.
+     typed or kept up to date by hand. Without a focuser the camera cannot take turns: focus it by hand for one colour and say which
+     (see *Focusing by hand*). The *Pseudo mono picture* selector shows the **colour** picture, the **luminance** (all the
+     out-of-focus light as one mono picture) or the **sharp** mono picture (the in-focus colours added up).
 
 Everything that is set up can be **edited** (the form loads what is there) or removed. It is saved and comes back on the next
 start. The *Advanced: mount pointers* list is for the curious.
@@ -238,7 +240,9 @@ both layers above; one at 6″/px only the base). Each layer is its own channel 
 on what its cameras can feed, the shot goes through the layer's filter, and a layer is finished when every spot has its
 depth. Scopes stay on a filter for a while rather than changing at every shot. The progress map shows the least advanced
 layer at each spot, the progress card each layer. The live stack keeps one stack per layer (pick it in the stack's filter
-list); frames no layer takes are left out. A layer that no camera of the chosen scopes can feed is refused, with the scales
+list); frames no layer takes are left out. With several layers the picture is the **combined** one: the coarsest layer is the base, and each finer layer adds what it
+resolves that the base cannot (itself less a blur to the coarser layer's resolution, scaled so both agree on how much light there
+is); where a finer layer has no data yet the base shows as it is. Pick one layer's own stack to see it alone. A layer that no camera of the chosen scopes can feed is refused, with the scales
 there are. Leave the box empty for one layer of everything.
 
 While it works the picture builds **on the sky** where the image is, with the progress map over it (blue not yet, yellow deep
@@ -265,6 +269,16 @@ frame, **What it did** (each change of what it was doing, with the time), the gu
 *Manual control* is for testing: go to coordinates and take frames. *Autofocus* (sweep a focuser, measure star size, fit the
 curve, move to the best position) and *Centring* (the older mount-level service, which also catches slews made from a hand
 controller) are here too.
+
+### Focusing by hand
+
+Most things also work without the automation. **Focus helper** (Scopes › *Focus helper*) is for a system you focus by hand: pick a
+camera and press Start, and it takes short pictures over and over and shows the star size (HFR, smaller is sharper), the
+roundness, how many stars, whether the last few pictures are *getting sharper* or *softer*, the sharpest so far and a graph of
+the history. For colour cameras each colour is measured on its own (a colour in the graph each), which is how you see which colour
+you have focused. It warns when the stars are saturated or missing, moves nothing, and can be left running while you work.
+A **pseudo mono** camera without a focuser works too: focus it by hand for one colour and say which in its scope's panel
+(*Pseudo mono, focused by hand*); its frames are tagged with that colour and stacked as described above.
 
 ### Plate solving
 

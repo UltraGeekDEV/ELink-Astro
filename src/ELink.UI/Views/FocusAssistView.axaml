@@ -1,0 +1,33 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:ELink.UI.Controls"
+             x:Class="ELink.UI.Views.FocusAssistView">
+  <StackPanel Spacing="10">
+    <TextBlock Classes="hint" TextWrapping="Wrap" Text="Takes short pictures over and over and shows how sharp the stars are, so you can watch the numbers while you turn the focus knob: smaller is sharper. Colour cameras are measured colour by colour (to see which colour is in focus). It moves nothing; leave it running while you work."/>
+    <WrapPanel Classes="row">
+      <StackPanel><TextBlock Classes="label" Text="Camera"/><ComboBox ItemsSource="{Binding Shooters}" SelectedItem="{Binding SelectedShooter}" Width="200"/></StackPanel>
+      <StackPanel><TextBlock Classes="label" Text="Exposure (s)"/><NumericUpDown Value="{Binding ExposureSeconds}" Minimum="0.05" Increment="0.5" FormatString="0.##" Width="120"/></StackPanel>
+      <StackPanel><TextBlock Classes="label" Text="Filter (optional)"/><TextBox Text="{Binding Filter}" Width="110" ToolTip.Tip="Empty = as the camera is. A pseudo mono camera with a focuser: Raw."/></StackPanel>
+      <Button Content="Start" Classes="primary" Command="{Binding BeginCommand}" VerticalAlignment="Bottom"/>
+      <Button Content="Stop" Command="{Binding StopCommand}" VerticalAlignment="Bottom"/>
+      <Button Content="Forget the history" Command="{Binding ResetCommand}" VerticalAlignment="Bottom"/>
+    </WrapPanel>
+    <c:Notice Text="{Binding Message}" Kind="warn"/>
+    <StackPanel Classes="row" Spacing="16" IsVisible="{Binding IsRunning}">
+      <StackPanel><TextBlock Classes="label" Text="STAR SIZE (HFR, px)"/><TextBlock Text="{Binding HfrText}" FontSize="38" FontWeight="SemiBold"/></StackPanel>
+      <StackPanel VerticalAlignment="Center" Spacing="2">
+        <TextBlock Text="{Binding TrendText}" FontWeight="SemiBold"/>
+        <TextBlock Classes="hint" Text="{Binding DetailText}"/>
+        <TextBlock Classes="hint" Text="{Binding ColourText}" IsVisible="{Binding HasColour}"/>
+        <TextBlock Classes="hint" Text="{Binding BestText}"/>
+      </StackPanel>
+    </StackPanel>
+    <Border Background="#171B23" CornerRadius="6" Width="640" Height="170" HorizontalAlignment="Left" IsVisible="{Binding IsRunning}">
+      <Canvas Width="640" Height="170">
+        <Polyline Points="{Binding HfrLine}" Stroke="#4FA3FF" StrokeThickness="2.5"/>
+        <Polyline Points="{Binding RedLine}" Stroke="#FF6B6B" StrokeThickness="1.2" IsVisible="{Binding HasColour}"/>
+        <Polyline Points="{Binding GreenLine}" Stroke="#6BE08A" StrokeThickness="1.2" IsVisible="{Binding HasColour}"/>
+        <Polyline Points="{Binding BlueLine}" Stroke="#6B9BFF" StrokeThickness="1.2" IsVisible="{Binding HasColour}"/>
+      </Canvas>
+    </Border>
+  </StackPanel>
+</UserControl>

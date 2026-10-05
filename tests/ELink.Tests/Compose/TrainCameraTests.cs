@@ -225,4 +225,30 @@ public class TrainCameraTests : IAsyncLifetime
         Assert.True(state.Cameras[0].PseudoMono.Value);
         Assert.True(await Eventually(() => Math.Abs(focuser.Position - 1000) <= 3 || Math.Abs(focuser.Position - 1000 - offsets["R"]) <= 3), $"{focuser.Position}");
     }
+
+    [Fact]
+    public async Task APseudoMonoCameraFocusedByHandTagsFramesWithTheColourSaidToBeInFocus()
+    {
+        await using var train = new ImagingTrain(_node, Train(c => c.PseudoMono = true));   // no focuser: focused by hand
+        await train.StartAsync();
+        var tags = new List<string>();
+        await _node.HookEventAsync(ShooterIds.Shot("t"), (ShotEvent s) => { lock (tags) tags.Add(s.PseudoChannel.Text); });
+        async Task Shoot(string filter = "")
+        {
+            int n = _cam.Exposures.Count;
+            var r = await Commands.CallAsync(_node, ShooterIds.Expose("t"), new ShooterExposure { Seconds = 0.01, Filter = filter });
+            Assert.True(r.Ok.Value, r.Error.Text);
+            Assert.True(await Eventually(() => _cam.Exposures.Count == n + 1));
+            await Task.Delay(80);
+        }
+        Assert.Equal("G", (await Info()).PseudoChannel.Text);
+        await Shoot(); await Shoot();
+        Assert.True((await Commands.CallAsync(_node, TrainIds.SetPseudoChannel("t"), (BinaryConvertibleString)"r")).Ok.Value);
+        Assert.Equal("R", (await Info()).PseudoChannel.Text);
+        await Shoot();
+        await Shoot("B");                                  // asked for outright
+        Assert.False((await Commands.CallAsync(_node, TrainIds.SetPseudoChannel("t"), (BinaryConvertibleString)"X")).Ok.Value);
+        Assert.True(await Eventually(() => { lock (tags) return tags.Count == 4; }));
+        lock (tags) Assert.Equal(["G", "G", "R", "B"], tags);
+    }
 }

@@ -104,9 +104,20 @@ public sealed class ImagingTrain : IAsyncDisposable
             await _commands.AddAsync<NOTESVoid, CommandResult>(TrainIds.Warm(_id), _ => SetRampsAsync("Warm"), $"warm the cameras of train {_id} up slowly and switch the coolers off");
             _cooling = Task.Run(() => CoolLoopAsync(_stop.Token));
         }
+        if (_imaging.Any(m => m.Shooter.IsManualPseudoMono))
+            await _commands.AddAsync<BinaryConvertibleString, CommandResult>(TrainIds.SetPseudoChannel(_id), SetPseudoChannelAsync, $"say which colour of train {_id}'s hand-focused colour camera is in focus");
         await _commands.AddAsync<FocusOffsetList, CommandResult>(TrainIds.SetFocusOffsets(_id), SetFocusOffsetsAsync, $"replace the focus offsets of train {_id}");
         await _shooterPub.StartAsync();
         await _trainPub.StartAsync();
+    }
+
+    private async Task<CommandResult> SetPseudoChannelAsync(BinaryConvertibleString channel)
+    {
+        string c = channel.Text.Trim().ToUpperInvariant();
+        if (c is not ("R" or "G" or "B")) return CommandResult.Fail("the colour in focus is R, G or B");
+        foreach (var m in _imaging.Where(m => m.Shooter.IsManualPseudoMono)) m.Shooter.ManualChannel = c;
+        await _trainPub.PublishAsync();
+        return CommandResult.Success();
     }
 
     private async Task<CommandResult> SetFocusOffsetsAsync(FocusOffsetList list)
@@ -261,7 +272,7 @@ public sealed class ImagingTrain : IAsyncDisposable
         foreach (var m in All)
         {
             var c = m.State.Latest;
-            var info = new TrainCameraInfo { CameraId = m.Camera.CameraId.Text, Role = m.Camera.Role.Text, ShooterId = m.ShooterId, Connected = c?.Connected.Value ?? false, PseudoMono = m.Shooter.IsPseudoMono };
+            var info = new TrainCameraInfo { CameraId = m.Camera.CameraId.Text, Role = m.Camera.Role.Text, ShooterId = m.ShooterId, Connected = c?.Connected.Value ?? false, PseudoMono = m.Shooter.IsPseudoMono, PseudoChannel = m.Shooter.IsManualPseudoMono ? m.Shooter.ManualChannel : "" };
             lock (_angles) if (_angles.TryGetValue(m.Camera.CameraId.Text, out var angle)) info.AngleDegrees = angle;
             info.Temperature = c?.Temperature.Value ?? double.NaN;
             lock (_ramps) if (_ramps.TryGetValue(m.Camera.CameraId.Text, out var ramp)) { info.Cooler = ramp.Phase; info.CoolerSetPoint = ramp.SetPoint; }

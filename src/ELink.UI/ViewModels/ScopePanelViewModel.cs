@@ -33,8 +33,27 @@ public partial class ScopePanelViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _coolerText = "";
     [ObservableProperty] private bool _hasCoolers;
 
+    // a colour camera focused by hand that is used as pseudo mono: which colour was it focused for?
+    public string[] ManualChannels { get; } = ["R", "G", "B"];
+    [ObservableProperty] private bool _hasManualColour;
+    [ObservableProperty] private string _manualChannel = "G";
+    private readonly HashSet<string> _manualTrains = new();
+    private bool _settingChannel;
+    partial void OnManualChannelChanged(string value)
+    {
+        if (_settingChannel) return;
+        foreach (var t in _manualTrains.ToList()) _ = Commands.CallAsync(_mesh.Node, ELink.Contracts.Composition.TrainIds.SetPseudoChannel(t), (EVent.Connections.Models.BaseBinaryConvertibles.BinaryConvertibleString)value);
+    }
+    private void ShowManualColour(TrainState t)
+    {
+        var cam = t.Cameras.FirstOrDefault(c => c.PseudoChannel.Text != "");
+        lock (_manualTrains) { if (cam is null) _manualTrains.Remove(t.Id.Text); else _manualTrains.Add(t.Id.Text); HasManualColour = _manualTrains.Count > 0; }
+        if (cam is not null && cam.PseudoChannel.Text != ManualChannel) { _settingChannel = true; ManualChannel = cam.PseudoChannel.Text; _settingChannel = false; }
+    }
+
     private void ShowCoolers(TrainState t)
     {
+        ShowManualColour(t);
         static string T(double v) => double.IsNaN(v) ? "--" : v.ToString("0.0", CultureInfo.InvariantCulture);
         var lines = t.Cameras.Where(c => c.Cooler.Text != "").Select(c =>
             $"{c.CameraId.Text}: {c.Cooler.Text}  {T(c.Temperature.Value)} °C" + (double.IsNaN(c.CoolerSetPoint.Value) ? "" : $"  (set point {T(c.CoolerSetPoint.Value)} °C)")).ToList();
