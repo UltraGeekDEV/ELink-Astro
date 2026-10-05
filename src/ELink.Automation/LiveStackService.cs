@@ -295,6 +295,28 @@ public sealed class LiveStackService : IAsyncDisposable
         return stacked > 0 ? message : failure;
     }
 
+    /// <summary>Tells whoever is watching where a frame has landed on the stack (its corners as fractions of the grid).</summary>
+    private void AnnounceFrame(string source, string stackKey, LiveStacker stack, TanWcs wcs, int width, int height)
+    {
+        try
+        {
+            var corners = new[] { (0.0, 0.0), (width, 0.0), (width, height), (0.0, height) }.Select(c =>
+            {
+                var (ra, dec) = wcs.PixelToSky(c.Item1, c.Item2);
+                var (sx, sy) = stack.Wcs.SkyToPixel(ra, dec);
+                return (X: sx / stack.Width, Y: sy / stack.Height);
+            }).ToArray();
+            int frames; lock (_gate) frames = FramesIn();
+            var ev = new StackFrameAdded
+            {
+                Source = source, Stack = stackKey, Frames = frames,
+                X0 = corners[0].X, Y0 = corners[0].Y, X1 = corners[1].X, Y1 = corners[1].Y, X2 = corners[2].X, Y2 = corners[2].Y, X3 = corners[3].X, Y3 = corners[3].Y,
+            };
+            _ = Task.Run(async () => { try { await _node.FireEventAsync(LiveStackIds.FrameAdded, ev); } catch (Exception) { } });
+        }
+        catch (Exception) { }
+    }
+
     /// <summary>Adds a registered frame to one stack: (error, message).</summary>
     private (string? Error, string Message) AddToStack(LiveStackRequest r, Item item, string key, string fitsFilter, float[] data, int width, int height, int channels,
         TanWcs wcs, TanWcs rawWcs, double seconds, string how, string colour, bool countExposure)
@@ -325,6 +347,7 @@ public sealed class LiveStackService : IAsyncDisposable
         var added = stack.Add(data, width, height, channels, wcs, background);
         if (!added.Added) return ("!" + added.Message, "");
         lock (_gate) { if (countExposure) _exposure += seconds; fs.Exposure += seconds; }
+        AnnounceFrame(item.Source, key, stack, wcs, width, height);
         string resample = added.BinFactor > 1 ? $"binned {added.BinFactor}x, " : "";
         resample += added.Subsamples > 1 ? $"area-averaged {added.Subsamples}x{added.Subsamples}" : stack.Wcs.PixelScaleArcsec < wcs.PixelScaleArcsec * 0.999 ? $"interpolated ({stack.Interpolation})" : "resampled";
         string extra = (key != "" ? $", {key}" : "") + (Math.Abs(added.FluxScale - 1) > 0.02 ? FormattableString.Invariant($", flux x{added.FluxScale:0.00}") : "")
@@ -371,6 +394,7 @@ public sealed class LiveStackService : IAsyncDisposable
         lumaStack.Stack.Add(soft, width, height, 1, wcs, [bgSoft]);
         double seconds = !double.IsNaN(item.Seconds) && item.Seconds > 0 ? item.Seconds : img.GetDouble("EXPTIME", img.GetDouble("EXPOSURE", 0));
         lock (_gate) { _exposure += seconds; colourStack.Exposure += seconds; lumaStack.Exposure += seconds; }
+        AnnounceFrame(item.Source, PseudoKey(item.Pseudo), colourStack.Stack, wcs, width, height);
         return Task.FromResult($"{item.Source}: stacked, {item.Pseudo} in focus ({how}{colour}, {wcs.PixelScaleArcsec:0.##}\"/px → {colourStack.Stack.Wcs.PixelScaleArcsec:0.##}\"/px)");
     }
 
@@ -847,6 +871,13 @@ public sealed class LiveStackService : IAsyncDisposable
                 await Task.Run(() => { using (var fs = File.Create(path + ".part")) x.Stack.WriteTo(fs); File.Move(path + ".part", path, true); });
                 files.Add(new SavedFilter(x.Filter, file, x.Pedestal, x.Exposure, x.InputScale));
             }
+            // the linear, unstretched stack is kept as plain FITS beside the stack files: it is what any later processing starts from
+            try
+            {
+                var linear = GetImage(new LiveStackImageRequest { Neutralize = false });
+                if (linear.Ok.Value) { string lp = Path.Combine(dir, "linear.fits"); await File.WriteAllBytesAsync(lp + ".part", linear.Image.Data); File.Move(lp + ".part", lp, true); }
+            }
+            catch (Exception) { }
             var meta = new SavedSession(r.Center.RaHours.Value, r.Center.DecDegrees.Value, r.FovWidthDegrees.Value, r.FovHeightDegrees.Value, r.PositionAngleDegrees.Value, scale, exposure, files);
             string metaPath = Path.Combine(dir, "session.json");
             await File.WriteAllTextAsync(metaPath + ".part", System.Text.Json.JsonSerializer.Serialize(meta));

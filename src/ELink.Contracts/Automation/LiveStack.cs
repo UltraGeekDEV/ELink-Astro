@@ -186,8 +186,38 @@ public class LiveStackImage : IBinaryConvertible
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();
 }
 
+/// <summary>A frame has just been added to a stack: where it lies on the stack's grid, so a viewer can show it landing. Coordinates
+/// are fractions of the stack's width and height (x to the right, y along the stack's rows, as the grid is stored).</summary>
+public class StackFrameAdded : IBinaryConvertible
+{
+    public BinaryConvertibleString Source { get; set; } = "";
+    public BinaryConvertibleString Stack { get; set; } = "";
+    public BinaryConvertibleInt32 Frames { get; set; } = 0;
+    public BinaryConvertibleDouble X0 { get; set; } = 0.0; public BinaryConvertibleDouble Y0 { get; set; } = 0.0;
+    public BinaryConvertibleDouble X1 { get; set; } = 0.0; public BinaryConvertibleDouble Y1 { get; set; } = 0.0;
+    public BinaryConvertibleDouble X2 { get; set; } = 0.0; public BinaryConvertibleDouble Y2 { get; set; } = 0.0;
+    public BinaryConvertibleDouble X3 { get; set; } = 0.0; public BinaryConvertibleDouble Y3 { get; set; } = 0.0;
+
+    public override string Name => "StackFrameAdded";
+    private static readonly NOTESDescriptor d = new();
+    public override NOTESDescriptor Descriptor => d;
+    static StackFrameAdded()
+    {
+        d.RegisterField("Source", (StackFrameAdded x) => x.Source).Description("the shooter that took the frame");
+        d.RegisterField("Stack", (StackFrameAdded x) => x.Stack).Description("which stack it went into (a filter or layer; empty = the only one)");
+        d.RegisterField("Frames", (StackFrameAdded x) => x.Frames).Description("frames in all the stacks now");
+        d.RegisterField("X0", (StackFrameAdded x) => x.X0).Description("the frame's corners in turn: (0,0) (w,0) (w,h) (0,h) of the frame");
+        d.RegisterField("Y0", (StackFrameAdded x) => x.Y0); d.RegisterField("X1", (StackFrameAdded x) => x.X1); d.RegisterField("Y1", (StackFrameAdded x) => x.Y1);
+        d.RegisterField("X2", (StackFrameAdded x) => x.X2); d.RegisterField("Y2", (StackFrameAdded x) => x.Y2); d.RegisterField("X3", (StackFrameAdded x) => x.X3); d.RegisterField("Y3", (StackFrameAdded x) => x.Y3);
+    }
+    public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
+    public override byte[] ToBytes() => d.ToBytes(this).ToArray();
+}
+
 public static class LiveStackIds
 {
+    /// <summary>StackFrameAdded event: a frame has been stacked.</summary>
+    public const string FrameAdded = Root + ".FrameAdded";
     public const string Root = "ELink.Automation.LiveStack";
     /// <summary>LiveStackRequest in, CommandResult out: a new, empty stack that takes the shooters' frames from now on.</summary>
     public const string Start = Root + ".Start";

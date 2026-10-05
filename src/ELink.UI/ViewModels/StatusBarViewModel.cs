@@ -11,7 +11,7 @@ using EVent.Connections.Models.BaseBinaryConvertibles;
 
 namespace ELink.UI.ViewModels;
 
-public enum AppView { Sky, Scopes, Rig, Advanced }
+public enum AppView { Sky, Scopes, Picture, Rig, Advanced }
 
 /// <summary>One thing that has to be in place before a night's imaging can start, and where to fix it.</summary>
 public sealed partial class ReadinessItem : ObservableObject

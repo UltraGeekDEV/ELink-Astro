@@ -22,7 +22,7 @@
                     ToolTip.Tip="{Binding ScopeMessage}">
               <Border Classes="chip" Background="{Binding ChipClass, Converter={x:Static i:Chips.Background}}">
                 <StackPanel Classes="row" Spacing="6">
-                  <Ellipse Classes="dot" Fill="{Binding Accent, Converter={x:Static i:Chips.Hex}}"/>
+                  <Ellipse Classes="dot" Classes.pulse="{Binding Observing}" Fill="{Binding Accent, Converter={x:Static i:Chips.Hex}}"/>
                   <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold"/>
                   <TextBlock Text="{Binding ChipText}"/>
                 </StackPanel>

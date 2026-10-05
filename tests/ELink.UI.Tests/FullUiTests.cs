@@ -76,6 +76,7 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         if (solveSvc is not null) await solveSvc.StartAsync();
         string saveDir = Path.Combine(Path.GetTempPath(), "elink-ui-save-" + Guid.NewGuid().ToString("N"));
         await using var storage = new StorageService(hostNode, saveDir); await storage.StartAsync();
+        await using var processingSvc = new ProcessingService(hostNode, Path.Combine(saveDir, "pictures")); await processingSvc.StartAsync();
         await using var calibrationSvc = new CalibrationService(hostNode, saveDir); await calibrationSvc.StartAsync();
 
         // frontend: a separate node that joins the mesh
@@ -187,11 +188,31 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         await image.PreviewCommand.ExecuteAsync(null);
         Assert.Equal("", image.Message);
         Assert.Contains("main:", image.Summary);
+        int flashes = 0; vm.Picture.Flashed += quad => { Assert.Equal(4, quad.Count); flashes++; };
         await image.StartRunCommand.ExecuteAsync(null);
         // accepted (it may say it is learning the camera's angle first: an information, not an error)
         Assert.True(image.Message == "" || image.Message.StartsWith("learning") || image.Message.StartsWith("Saving the frames"), image.Message);
         Assert.True(await Eventually(() => image.Phase is "Done" or "Error", 400000), $"{image.Phase} {image.Message}");
         Assert.Equal("Done", image.Phase);
+        // each frame that was stacked was shown landing on the picture
+        Assert.True(await Eventually(() => flashes >= 1), $"{flashes} flashes");
+        // the picture page: the stack processed, shown, with what was done to it
+        vm.Navigate(AppView.Picture);
+        await vm.Picture.RefreshCommand.ExecuteAsync(null);
+        Assert.True(await Eventually(() => vm.Picture.HasImage), vm.Picture.Message);
+        Assert.NotNull(vm.Picture.Shown);
+        Assert.True(vm.Picture.Shown!.PixelSize.Width > 20);
+        Assert.Contains("frame", vm.Picture.Info);
+        Assert.Contains("stretched", vm.Picture.Note);
+        Assert.True(vm.Picture.HistogramGrey.Count > 10 || vm.Picture.HistogramRed.Count > 10);
+        vm.Picture.PunchyCommand.Execute(null); vm.Picture.RemoveGradient = false;
+        Assert.True(await Eventually(() => !vm.Picture.Note.Contains("gradient") && vm.Picture.Note.Contains("0.18")), "the picture follows the settings: " + vm.Picture.Note);
+        Shot(window, "07d3-picture");
+        await vm.Picture.SaveCommand.ExecuteAsync(null);
+        Assert.True(await Eventually(() => vm.Picture.Saved.Contains("saved")), vm.Picture.Message);
+        Assert.NotEmpty(Directory.GetFiles(Path.Combine(saveDir, "pictures"), "*_linear.fits"));
+        Assert.NotEmpty(Directory.GetFiles(Path.Combine(saveDir, "pictures"), "*_picture.png"));
+        vm.Navigate(AppView.Sky);
         Assert.True(await Eventually(() => image.CoverageText.Contains("100% complete")), image.CoverageText);
         Assert.NotNull(image.Map);
         Assert.Contains(image.Workers, w => w.StartsWith("main: Done"));

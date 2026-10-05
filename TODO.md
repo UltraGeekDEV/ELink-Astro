@@ -169,3 +169,11 @@ focus triggers/offsets -> live-stack rejection/calibration -> the rest.
 - [x] Manual tools grouped on Scopes; guiding test buttons folded away; mount drawer wraps instead of clipping; Yes/No instead of True/False
 - [x] Equipment + Drivers are one page (Devices); a scope has one mount (choosing another unticks the first); a scrim dims the page behind a device panel; choosing a GPS fills the Site; "Fill in the filter names" for the focus offsets; layers are rows; the setup chip has a tooltip
 - [x] Focus offsets are a table (a row per filter, steps as numbers; "Fill in the filter wheel's filters"); the INDI page listed the first property of the first device twice (a race when the device was auto-selected): fixed
+
+## Picture first
+- [x] Picture page: the live stack processed (gradient removal, automatic stretch, neutral sky, colour touches), looks, before/after, histogram, zoom and pan
+- [x] A frame lands on the picture as a white shape that fades; the picture cross-fades when it updates
+- [x] Linear stack saved unstretched (with every kept image, and on Save with the picture as a 16-bit PNG)
+- [x] A little life: pages cross-fade, toasts slide in, a scope that is exposing breathes
+- [ ] Processing ideas: noise reduction, star colour boost / star reduction, deconvolution, local contrast, crop, export of 8-bit JPEG for sharing
+- [ ] The frame-landing flash on the Sky chart too; a full-screen "watch" mode; an animated start of a new night

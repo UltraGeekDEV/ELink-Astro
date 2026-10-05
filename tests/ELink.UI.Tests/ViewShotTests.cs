@@ -6,6 +6,12 @@ using Avalonia.VisualTree;
 using ELink.Core.Astro;
 using ELink.UI.Controls;
 using ELink.UI.ViewModels;
+using ELink.Contracts;
+using ELink.Contracts.Automation;
+using ELink.Contracts.Composition;
+using ELink.Contracts.Equipment;
+using ELink.Core;
+using ELink.Imaging;
 using Xunit;
 
 namespace ELink.UI.Tests;
@@ -103,6 +109,80 @@ public class ViewShotTests : IClassFixture<IndiServerFixture>
         rig.Shot("drawer-mount");
         vm.CloseDrawerCommand.Execute(null);
         Assert.Null(vm.Drawer);
+    }
+
+    /// <summary>A colour star field with a glow, a nebula and some dither, as five frames of a live stack.</summary>
+    [AvaloniaFact]
+    public async Task ThePicturePageShowsAStackWithItsGradientTakenOutAndFramesLanding()
+    {
+        Assert.True(_server.Available);
+        await using var rig = await UiRig.StartAsync(_server);
+        var vm = rig.Vm; var node = rig.Session.Node;
+        const int W = 640, H = 420; const double Scale = 3;
+        var request = new LiveStackRequest
+        {
+            Label = "Synthetic field", Center = new SkyTarget { RaHours = 5.6, DecDegrees = -5, Epoch = "J2000" }, FovWidthDegrees = W * Scale / 3600, FovHeightDegrees = H * Scale / 3600, PixelScaleArcsec = Scale, Interpolation = "Bilinear",
+        };
+        request.ShooterIds.Add("synthetic");
+        Assert.True((await Commands.CallAsync(node, LiveStackIds.Start, request)).Ok.Value);
+        var rnd = new Random(7);
+        var stars = Enumerable.Range(0, 260).Select(_ => (X: rnd.NextDouble() * W, Y: rnd.NextDouble() * H, Flux: Math.Pow(rnd.NextDouble(), 4) * 9000 + 300, Sigma: 1.2 + rnd.NextDouble() * 1.4, Hue: rnd.NextDouble())).ToArray();
+        int shot = 0;
+        async Task Frame(double dx, double dy)
+        {
+            var wcs = TanWcs.Centered(5.6 * 15, -5, 0, Scale, W, H);
+            var shifted = wcs with { CrPix1 = wcs.CrPix1 + dx, CrPix2 = wcs.CrPix2 + dy };
+            var d = new float[3 * W * H]; var noise = new Random(100 + shot);
+            for (int y = 0; y < H; y++)
+                for (int x = 0; x < W; x++)
+                {
+                    double u = x / (double)W, v = y / (double)H, i = y * W + x;
+                    // sky glow from the lower right (orange), a magenta nebula and a blue cloud
+                    double glow = 700 * Math.Exp(-((u - 1) * (u - 1) * 2.2 + (v - 1) * (v - 1) * 2.6) * 2.5);
+                    double neb = 520 * Math.Exp(-((u - 0.38) * (u - 0.38) / 0.03 + (v - 0.45) * (v - 0.45) / 0.015)) * (0.6 + 0.4 * Math.Sin(14 * u + 9 * v));
+                    double cloud = 260 * Math.Exp(-((u - 0.75) * (u - 0.75) / 0.02 + (v - 0.25) * (v - 0.25) / 0.03));
+                    double r = 900 + glow * 1.0 + neb * 1.0 + 20 * Math.Sin(1000 * (x + 3 * y)), g = 950 + glow * 0.7 + neb * 0.25 + cloud * 0.5, b = 1100 + glow * 0.4 + neb * 0.7 + cloud * 1.0;
+                    foreach (var st in stars)
+                    {
+                        double px = st.X + dx, py = st.Y + dy; if (Math.Abs(x - px) > 8 || Math.Abs(y - py) > 8) continue;
+                        double f = st.Flux * Math.Exp(-((x - px) * (x - px) + (y - py) * (y - py)) / (2 * st.Sigma * st.Sigma));
+                        r += f * (st.Hue > 0.5 ? 1.0 : 0.65); g += f * 0.85; b += f * (st.Hue > 0.5 ? 0.6 : 1.0);
+                    }
+                    d[(int)i] = (float)(r + (noise.NextDouble() - 0.5) * 70); d[(int)(W * H + i)] = (float)(g + (noise.NextDouble() - 0.5) * 70); d[(int)(2 * W * H + i)] = (float)(b + (noise.NextDouble() - 0.5) * 70);
+                }
+            var cards = new List<(string, string)> { ("EXPTIME", "60") }; cards.AddRange(shifted.Cards());
+            await node.FireEventAsync(ShooterIds.Shot("synthetic"), new ShotEvent
+            {
+                Shooter = "synthetic", Format = ".fits", ExposureSeconds = 60, FrameType = "Light", Timestamp = "s" + ++shot, Data = new RawBytes(FitsImage.WriteFloat32(W, H, d, cards, channels: 3)),
+            });
+        }
+        var flashes = new List<IReadOnlyList<Point>>(); vm.Picture.Flashed += q => flashes.Add(q);
+        vm.Navigate(AppView.Picture);
+        foreach (var (dx, dy) in new[] { (0.0, 0.0), (3.0, -2.0), (-4.0, 3.0), (2.0, 5.0), (-3.0, -4.0) })
+        {
+            await Frame(dx, dy);
+            Assert.True(await UiRig.Eventually(() => flashes.Count == shot), $"{flashes.Count} flashes after {shot} frames");
+        }
+        Assert.True(await UiRig.Eventually(() => vm.Picture.HasImage && vm.Picture.Frames == 5 && vm.Picture.Info.StartsWith("5 frames")), vm.Picture.Info + vm.Picture.Message);
+        await Task.Delay(900);                                              // (the picture fades in)
+        rig.Shot("picture-page");
+        Assert.All(flashes.Last(), p => { Assert.InRange(p.X, -0.1, 1.1); Assert.InRange(p.Y, -0.1, 1.1); });
+
+        // a frame lands: its shape is shown on the picture for a moment
+        var viewer = rig.Window.GetVisualDescendants().OfType<PictureViewer>().First();
+        viewer.Flash([new Point(0.2, 0.2), new Point(0.7, 0.18), new Point(0.72, 0.68), new Point(0.18, 0.7)]);
+        await Task.Delay(250);
+        rig.Shot("picture-page-frame-landing");
+
+        // the same data without any processing
+        vm.Picture.LinearCommand.Execute(null);
+        Assert.True(await UiRig.Eventually(() => vm.Picture.Note.Contains("sky at") == false && !vm.Picture.Note.Contains("stretched")), vm.Picture.Note);
+        await Task.Delay(900);
+        rig.Shot("picture-page-linear");
+        vm.Picture.PunchyCommand.Execute(null);
+        Assert.True(await UiRig.Eventually(() => vm.Picture.Note.Contains("stretched")));
+        await Task.Delay(900);
+        rig.Shot("picture-page-punchy");
     }
 
     private static Point Screen(SkyChart chart, double ra, double dec, Avalonia.Controls.Window window)
@@ -243,8 +323,9 @@ public class ViewShotTests : IClassFixture<IndiServerFixture>
         window.GetVisualDescendants().OfType<Avalonia.Controls.Button>().First(b => Equals(b.Content, "Sky")).Focus();
         void Press(Key key, PhysicalKey physical, string symbol, RawInputModifiers mods = RawInputModifiers.None) => window.KeyPress(key, mods, physical, symbol);
         Press(Key.D2, PhysicalKey.Digit2, "2", RawInputModifiers.Control); Assert.Equal(AppView.Scopes, vm.View);
-        Press(Key.D3, PhysicalKey.Digit3, "3", RawInputModifiers.Control); Assert.Equal(AppView.Rig, vm.View);
-        Press(Key.D4, PhysicalKey.Digit4, "4", RawInputModifiers.Control); Assert.Equal(AppView.Advanced, vm.View);
+        Press(Key.D3, PhysicalKey.Digit3, "3", RawInputModifiers.Control); Assert.Equal(AppView.Picture, vm.View);
+        Press(Key.D4, PhysicalKey.Digit4, "4", RawInputModifiers.Control); Assert.Equal(AppView.Rig, vm.View);
+        Press(Key.D5, PhysicalKey.Digit5, "5", RawInputModifiers.Control); Assert.Equal(AppView.Advanced, vm.View);
         Press(Key.D1, PhysicalKey.Digit1, "1", RawInputModifiers.Control); Assert.Equal(AppView.Sky, vm.View);
         Assert.True(await UiRig.Eventually(() => vm.Catalog.Equipment.Any()));
         await vm.OpenDeviceAsync(vm.Catalog.Equipment.First(d => d.Kind == "Mount"));

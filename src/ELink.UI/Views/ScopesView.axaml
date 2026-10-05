@@ -16,7 +16,7 @@
               <DataTemplate>
                 <StackPanel Spacing="4" Margin="2,4">
                   <Grid ColumnDefinitions="*,Auto">
-                    <StackPanel Classes="row" Spacing="8"><Ellipse Classes="dot" Fill="{Binding Accent, Converter={x:Static i:Chips.Hex}}"/><TextBlock Text="{Binding DisplayName}" Classes="h2" TextTrimming="CharacterEllipsis"/></StackPanel>
+                    <StackPanel Classes="row" Spacing="8"><Ellipse Classes="dot" Classes.pulse="{Binding Observing}" Fill="{Binding Accent, Converter={x:Static i:Chips.Hex}}"/><TextBlock Text="{Binding DisplayName}" Classes="h2" TextTrimming="CharacterEllipsis"/></StackPanel>
                     <Border Grid.Column="1" Classes="chip" Background="{Binding ChipClass, Converter={x:Static i:Chips.Background}}"><TextBlock Text="{Binding ChipText}"/></Border>
                   </Grid>
                   <TextBlock Classes="hint" Text="{Binding PointerLine}"/>

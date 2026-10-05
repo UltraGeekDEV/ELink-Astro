@@ -1,0 +1,133 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:ELink.UI.Controls" xmlns:i="using:ELink.UI.Infrastructure"
+             x:Class="ELink.UI.Views.PictureView">
+  <Grid ColumnDefinitions="*,350">
+    <!-- the picture -->
+    <Grid Background="#080B10">
+      <c:PictureViewer x:Name="Viewer" Image="{Binding Shown}" Cursor="Hand"/>
+
+      <!-- nothing yet -->
+      <StackPanel IsVisible="{Binding !HasImage}" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="10" MaxWidth="460">
+        <TextBlock Text="✦" FontSize="46" Foreground="#4F6EA8" HorizontalAlignment="Center"/>
+        <TextBlock Text="Your picture will appear here" Classes="h2" HorizontalAlignment="Center"/>
+        <TextBlock Classes="hint" TextAlignment="Center" Text="Start an image on the Sky page (with 'Build the picture while shooting' on). The stack grows as frames arrive; each new frame lights up where it landed. Gradients are taken out and the picture is stretched for you; the stack itself is never changed."/>
+        <c:Notice Text="{Binding Message}" Kind="{Binding MessageKind}"/>
+      </StackPanel>
+
+      <!-- what it is -->
+      <Border IsVisible="{Binding HasImage}" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="14,12,0,0" Padding="12,8" CornerRadius="10" Background="#CC0E131C" BorderBrush="#2B3548" BorderThickness="1">
+        <StackPanel Spacing="2">
+          <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="16" IsVisible="{Binding Title.Length}"/>
+          <TextBlock Classes="hint" Text="{Binding Info}"/>
+          <TextBlock Classes="hint" Text="{Binding Note}" IsVisible="{Binding Note.Length}"/>
+        </StackPanel>
+      </Border>
+      <Border IsVisible="{Binding IsBusy}" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,14,14,0" Padding="10,4" CornerRadius="12" Background="#CC0E131C" BorderBrush="#2B3548" BorderThickness="1">
+        <TextBlock Classes="hint" Text="✦ updating…"/>
+      </Border>
+      <StackPanel HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="14,0,0,12" IsVisible="{Binding HasImage}">
+        <TextBlock Classes="hint" Text="Scroll to zoom · drag to move · double-click to fit"/>
+      </StackPanel>
+      <Button x:Name="CompareButton" Content="Hold to see it before processing" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,14,12" IsVisible="{Binding HasImage}"
+              ToolTip.Tip="Shows the same data with only a plain automatic stretch: no gradient removal, no colour changes"/>
+    </Grid>
+
+    <!-- what to do to it -->
+    <Border Grid.Column="1" Classes="panel" BorderBrush="#2B3548" BorderThickness="1,0,0,0">
+      <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="14" Spacing="0">
+          <Border Classes="card">
+            <StackPanel Spacing="8">
+              <TextBlock Classes="section" Text="PICTURE OF"/>
+              <ComboBox ItemsSource="{Binding Sources}" SelectedItem="{Binding SelectedSource}" HorizontalAlignment="Stretch" ToolTip.Tip="Automatic shows everything together. With layers or filters you can look at each one on its own."/>
+              <StackPanel IsVisible="{Binding HasPseudoMono}" Spacing="4">
+                <ComboBox ItemsSource="{Binding PseudoOutputs}" SelectedItem="{Binding PseudoOutput}" HorizontalAlignment="Stretch"/>
+                <TextBlock Classes="label" Text="Out-of-focus light (pseudo mono)"/>
+                <Slider Minimum="0" Maximum="1" Value="{Binding OutOfFocusWeight}"/>
+              </StackPanel>
+            </StackPanel>
+          </Border>
+
+          <Border Classes="card">
+            <StackPanel Spacing="8">
+              <TextBlock Classes="section" Text="LOOK"/>
+              <WrapPanel>
+                <Button Content="Natural" Command="{Binding NaturalCommand}" Margin="0,0,6,6" ToolTip.Tip="A dark grey sky, the colours as they are"/>
+                <Button Content="Punchy" Command="{Binding PunchyCommand}" Margin="0,0,6,6" ToolTip.Tip="A darker sky and more colour"/>
+                <Button Content="Gentle" Command="{Binding GentleCommand}" Margin="0,0,6,6" ToolTip.Tip="A lighter sky that shows the faintest things"/>
+                <Button Content="Linear" Command="{Binding LinearCommand}" Margin="0,0,6,6" ToolTip.Tip="No stretch, no gradient removal: the data as it is"/>
+              </WrapPanel>
+              <CheckBox IsChecked="{Binding Stretch}" Content="Stretch automatically"/>
+              <StackPanel IsEnabled="{Binding Stretch}" Spacing="2">
+                <Grid ColumnDefinitions="*,Auto"><TextBlock Classes="label" Text="Sky brightness"/><TextBlock Grid.Column="1" Classes="label" Text="{Binding BackgroundLevel, StringFormat={}{0:0.00}}"/></Grid>
+                <Slider Minimum="0.05" Maximum="0.6" Value="{Binding BackgroundLevel}" ToolTip.Tip="Where the sky background ends up: lower is darker, higher shows fainter things"/>
+              </StackPanel>
+              <StackPanel Spacing="2">
+                <Grid ColumnDefinitions="*,Auto"><TextBlock Classes="label" Text="Black point"/><TextBlock Grid.Column="1" Classes="label" Text="{Binding BlackClip, StringFormat={}{0:0.0}σ}"/></Grid>
+                <Slider Minimum="0" Maximum="6" Value="{Binding BlackClip}" ToolTip.Tip="How far below the sky level black is: a higher value keeps more of the faint end, a lower one makes the sky blacker"/>
+              </StackPanel>
+              <CheckBox IsChecked="{Binding Linked}" Content="Same stretch for all colours" ToolTip.Tip="Keeps the colour balance. Off: each colour on its own, which makes the sky neutral but can shift colours."/>
+            </StackPanel>
+          </Border>
+
+          <Border Classes="card">
+            <StackPanel Spacing="8">
+              <TextBlock Classes="section" Text="BACKGROUND"/>
+              <CheckBox IsChecked="{Binding RemoveGradient}" Content="Remove the gradient" ToolTip.Tip="Light pollution, the Moon or vignetting make one side of a picture brighter. A smooth model of the sky is fitted (nebulae and stars are left out) and taken away."/>
+              <StackPanel IsEnabled="{Binding RemoveGradient}" Spacing="6">
+                <StackPanel Spacing="2">
+                  <Grid ColumnDefinitions="*,Auto"><TextBlock Classes="label" Text="How uneven the sky is"/><TextBlock Grid.Column="1" Classes="label" Text="{Binding GradientDegree, StringFormat={}{0:0}}"/></Grid>
+                  <Slider Minimum="1" Maximum="6" TickFrequency="1" IsSnapToTickEnabled="True" Value="{Binding GradientDegree}" ToolTip.Tip="1 = a simple tilt, higher follows more complicated glows (and may start to take nebulosity with it)"/>
+                </StackPanel>
+                <CheckBox IsChecked="{Binding GradientDivide}" Content="Vignetting (divide instead of subtract)"/>
+              </StackPanel>
+              <CheckBox IsChecked="{Binding Neutralize}" Content="Make the sky neutral" ToolTip.Tip="The same sky level in every colour: no overall tint"/>
+            </StackPanel>
+          </Border>
+
+          <Border Classes="card">
+            <StackPanel Spacing="8">
+              <TextBlock Classes="section" Text="COLOUR"/>
+              <StackPanel Spacing="2">
+                <Grid ColumnDefinitions="*,Auto"><TextBlock Classes="label" Text="Saturation"/><TextBlock Grid.Column="1" Classes="label" Text="{Binding Saturation, StringFormat={}{0:0.00}}"/></Grid>
+                <Slider Minimum="0" Maximum="2.5" Value="{Binding Saturation}"/>
+              </StackPanel>
+              <StackPanel Spacing="2">
+                <Grid ColumnDefinitions="*,Auto"><TextBlock Classes="label" Text="Reduce green"/><TextBlock Grid.Column="1" Classes="label" Text="{Binding GreenReduction, StringFormat={}{0:0.00}}"/></Grid>
+                <Slider Minimum="0" Maximum="1" Value="{Binding GreenReduction}" ToolTip.Tip="Takes out a green cast"/>
+              </StackPanel>
+            </StackPanel>
+          </Border>
+
+          <Border Classes="card" IsVisible="{Binding HasImage}">
+            <StackPanel Spacing="6">
+              <TextBlock Classes="section" Text="HISTOGRAM"/>
+              <Border Background="#0B1220" CornerRadius="6" Width="256" Height="64" HorizontalAlignment="Left">
+                <Canvas Width="256" Height="64">
+                  <Polyline Points="{Binding HistogramGrey}" Stroke="#C9D3E6" StrokeThickness="1.5"/>
+                  <Polyline Points="{Binding HistogramRed}" Stroke="#FF6B6B" StrokeThickness="1.3" Opacity="0.9"/>
+                  <Polyline Points="{Binding HistogramGreen}" Stroke="#6BE08A" StrokeThickness="1.3" Opacity="0.9"/>
+                  <Polyline Points="{Binding HistogramBlue}" Stroke="#6B9BFF" StrokeThickness="1.3" Opacity="0.9"/>
+                </Canvas>
+              </Border>
+              <TextBlock Classes="hint" Text="How the picture's brightness is spread, dark to the left. The sky is the big hump."/>
+            </StackPanel>
+          </Border>
+
+          <Border Classes="card">
+            <StackPanel Spacing="8">
+              <TextBlock Classes="section" Text="KEEP IT"/>
+              <StackPanel Classes="row">
+                <Button Content="Save" Classes="primary" Command="{Binding SaveCommand}" IsEnabled="{Binding HasImage}"/>
+                <Button Content="Reset the look" Command="{Binding ResetCommand}"/>
+              </StackPanel>
+              <TextBlock Classes="hint" TextWrapping="Wrap" Text="Saves the stack as it really is (linear, unstretched FITS: nothing is lost, you can process it anywhere) and this picture as a 16-bit PNG. The stack is also kept unstretched with every kept image."/>
+              <c:Notice Text="{Binding Saved}" Kind="ok"/>
+              <c:Notice Text="{Binding Message}" Kind="{Binding MessageKind}" IsVisible="{Binding HasImage}"/>
+            </StackPanel>
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+    </Border>
+  </Grid>
+</UserControl>

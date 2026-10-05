@@ -85,7 +85,7 @@ dotnet run --project src/ELink.App -- --host <station-ip> --port 5698
 flowchart TB
     Bar[Status strip: how dark it is · what each scope is doing · what is left to set up]
     subgraph Body
-        Nav[Sky · Scopes · Rig · Advanced]
+        Nav[Sky · Scopes · Picture · Rig · Advanced]
         View[The chosen view]
     end
     Bar --- Body
@@ -93,8 +93,9 @@ flowchart TB
 
 - **Sky** (`Ctrl+1`): the sky chart, the image you are planning, the queue. This is where you work.
 - **Scopes** (`Ctrl+2`): one card per scope with what it is doing now; the selected one in full.
-- **Rig** (`Ctrl+3`): Set up (telescopes and scopes), Equipment, Site, Drivers, Calibration.
-- **Advanced** (`Ctrl+4`): the raw INDI properties, where frames are saved, a manual live stack.
+- **Picture** (`Ctrl+3`): the stack as a finished picture, growing as frames arrive (see below).
+- **Rig** (`Ctrl+4`): Devices (drivers and what is plugged in), Set up (telescopes and scopes), Site, Calibration.
+- **Advanced** (`Ctrl+5`): the raw INDI properties, where frames are saved, a custom stack.
 
 The **status strip** is always there. Left: how dark it is at your site (click to set the site). Middle: one chip per
 scope with what it is doing (idle, slewing, centring, focusing, guiding, exposing 12 of 30, error); click one to open it.
@@ -273,6 +274,31 @@ best image that is possible now *and* stays possible for at least half an hour: 
 soonest. When an image stops being possible (it sets, dawn, the Moon) it is stopped and kept; when it is deep enough it is
 done. Each entry says why it waits ("too low, rises 23:10", "not dark", "12° from the Moon"...). Left running, it carries on
 the next night by itself.
+
+## Picture
+
+The **Picture** page is the live stack made into a picture you can look at, and it updates by itself while the image is being taken.
+
+- **It grows in front of you.** Every time a frame is added to the stack, a white shape lights up where it landed and fades away; a
+  moment later the picture updates and fades from the old version to the new one.
+- **Gradient removal.** Light pollution, the Moon and vignetting make one side of a picture brighter. ELink samples the sky in a grid of
+  boxes (the faint pixels of each, away from the stars), fits a smooth surface to the samples, leaves out the samples that sit above it
+  (nebulae, galaxies) and fits again, then takes the model away. *How uneven the sky is* is how flexible the surface may be (1 is a plain
+  tilt, 6 follows complicated glows but may start to take faint nebulosity with it); *Vignetting* divides instead of subtracting.
+- **Automatic stretch.** A stack is linear: a faint nebula is almost black. The stretch puts the sky at the *Sky brightness* you choose and
+  lifts the faint end (a midtones transfer function, the way PixInsight's and N.I.N.A.'s screen stretch works). *Black point* sets how
+  far below the sky black is. *Same stretch for all colours* keeps the colour balance.
+- **Colour.** *Make the sky neutral* gives every colour the same sky level, *Saturation* and *Reduce green* are for taste.
+- **Looks:** *Natural*, *Punchy*, *Gentle* and *Linear* (the data as it is) are starting points.
+- **Hold to see it before processing** shows the same data with only a plain automatic stretch.
+- **Picture of:** the stack to look at: everything together, or one filter or layer on its own. With a pseudo mono stack the picture
+  selector and the out-of-focus slider are here too.
+- Scroll to zoom towards the pointer, drag to move, double-click to fit; the histogram shows how the brightness is spread.
+
+**Saving.** *Save* writes the stack as it really is, **linear and unstretched** (a 32-bit FITS, everything you can process anywhere
+else) and the picture as it is now (a 16-bit PNG, with a small file of the settings), in the station's `pictures` folder
+(`--save-dir`). The linear stack is also kept next to every kept image (`stacks/<name>/linear.fits`), so nothing depends on pressing
+Save. Processing never changes the stack.
 
 ## Scopes
 

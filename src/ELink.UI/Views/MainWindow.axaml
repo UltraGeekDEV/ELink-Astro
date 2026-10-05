@@ -9,8 +9,9 @@
   <Window.KeyBindings>
     <KeyBinding Gesture="Ctrl+D1" Command="{Binding GoSkyCommand}"/>
     <KeyBinding Gesture="Ctrl+D2" Command="{Binding GoScopesCommand}"/>
-    <KeyBinding Gesture="Ctrl+D3" Command="{Binding GoRigCommand}"/>
-    <KeyBinding Gesture="Ctrl+D4" Command="{Binding GoAdvancedCommand}"/>
+    <KeyBinding Gesture="Ctrl+D3" Command="{Binding GoPictureCommand}"/>
+    <KeyBinding Gesture="Ctrl+D4" Command="{Binding GoRigCommand}"/>
+    <KeyBinding Gesture="Ctrl+D5" Command="{Binding GoAdvancedCommand}"/>
     <KeyBinding Gesture="Escape" Command="{Binding CloseDrawerCommand}"/>
   </Window.KeyBindings>
   <Grid RowDefinitions="Auto,Auto,*">
@@ -37,13 +38,16 @@
           <StackPanel Spacing="4">
             <Button Classes="nav" Classes.active="{Binding IsSky}" Command="{Binding GoSkyCommand}" Content="Sky" ToolTip.Tip="Pick a target, frame the image, watch it build  (Ctrl+1)"/>
             <Button Classes="nav" Classes.active="{Binding IsScopes}" Command="{Binding GoScopesCommand}" Content="Scopes" ToolTip.Tip="What each scope is doing  (Ctrl+2)"/>
-            <Button Classes="nav" Classes.active="{Binding IsRig}" Command="{Binding GoRigCommand}" Content="Rig" ToolTip.Tip="Set up and look after your equipment  (Ctrl+3)"/>
-            <Button Classes="nav" Classes.active="{Binding IsAdvanced}" Command="{Binding GoAdvancedCommand}" Content="Advanced" ToolTip.Tip="Raw INDI properties, saving frames, manual tools  (Ctrl+4)"/>
+            <Button Classes="nav" Classes.active="{Binding IsPicture}" Command="{Binding GoPictureCommand}" Content="Picture" ToolTip.Tip="The picture as it grows: gradient out, stretched, saved  (Ctrl+3)"/>
+            <Button Classes="nav" Classes.active="{Binding IsRig}" Command="{Binding GoRigCommand}" Content="Rig" ToolTip.Tip="Set up and look after your equipment  (Ctrl+4)"/>
+            <Button Classes="nav" Classes.active="{Binding IsAdvanced}" Command="{Binding GoAdvancedCommand}" Content="Advanced" ToolTip.Tip="Raw INDI properties, saving frames, manual tools  (Ctrl+5)"/>
           </StackPanel>
         </DockPanel>
       </Border>
 
-      <ContentControl Grid.Column="1" Content="{Binding Current}"/>
+      <TransitioningContentControl Grid.Column="1" Content="{Binding Current}">
+        <TransitioningContentControl.PageTransition><CrossFade Duration="0:00:00.20"/></TransitioningContentControl.PageTransition>
+      </TransitioningContentControl>
 
       <!-- dims the page behind a device panel: click it to close the panel -->
       <Button Grid.Column="1" IsVisible="{Binding HasDrawer}" Command="{Binding CloseDrawerCommand}" Background="#99070A10" BorderThickness="0" CornerRadius="0"
@@ -76,7 +80,7 @@
       <ItemsControl Grid.Column="1" ItemsSource="{Binding Toasts}" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,16,16" Width="380">
         <ItemsControl.ItemTemplate>
           <DataTemplate>
-            <Border Background="#222B3C" BorderBrush="#3A4660" BorderThickness="1" CornerRadius="8" Padding="12,10" Margin="0,6,0,0">
+            <Border Classes="toast" Background="#222B3C" BorderBrush="#3A4660" BorderThickness="1" CornerRadius="8" Padding="12,10" Margin="0,6,0,0" RenderTransform="translate(0px,0px)">
               <Grid ColumnDefinitions="*,Auto">
                 <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Classes.error="{Binding Css, Converter={x:Static i:Chips.IsError}}"/>
                 <Button Grid.Column="1" Content="✕" Classes="ghost" Padding="6,0" Command="{Binding $parent[Window].DataContext.DismissToastCommand}" CommandParameter="{Binding}" VerticalAlignment="Top"/>

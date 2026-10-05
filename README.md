@@ -78,7 +78,7 @@ still to set up.
 
 ## Documentation
 
-- [User guide](docs/user-guide.md): the four views, setting up a rig, imaging an area, troubleshooting.
+- [User guide](docs/user-guide.md): the five views, the picture page, setting up a rig, imaging an area, troubleshooting.
 - [Developer guide](docs/development.md): architecture and the design spec, patterns, IDs, adding devices and services, testing.
 - [Roadmap](TODO.md).
 

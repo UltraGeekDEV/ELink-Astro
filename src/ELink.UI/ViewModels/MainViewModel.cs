@@ -23,6 +23,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public IndiBrowserViewModel IndiBrowser { get; }
     public AutofocusViewModel Autofocus { get; }
     public FocusAssistViewModel FocusAssist { get; }
+    public PictureViewModel Picture { get; }
     public ScheduleViewModel Schedule { get; }
     public ProfilesViewModel Profiles { get; }
     public CalibrationViewModel Calibration { get; }
@@ -40,11 +41,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public AdvancedViewModel Advanced { get; }
     public StatusBarViewModel StatusBar { get; }
 
-    [ObservableProperty, NotifyPropertyChangedFor(nameof(Current), nameof(IsSky), nameof(IsScopes), nameof(IsRig), nameof(IsAdvanced))]
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(Current), nameof(IsSky), nameof(IsScopes), nameof(IsPicture), nameof(IsRig), nameof(IsAdvanced))]
     private AppView _view = AppView.Sky;
-    public object Current => View switch { AppView.Scopes => Scopes, AppView.Rig => Rig, AppView.Advanced => Advanced, _ => Sky };
+    public object Current => View switch { AppView.Scopes => Scopes, AppView.Picture => Picture, AppView.Rig => Rig, AppView.Advanced => Advanced, _ => Sky };
     public bool IsSky => View == AppView.Sky;
     public bool IsScopes => View == AppView.Scopes;
+    public bool IsPicture => View == AppView.Picture;
     public bool IsRig => View == AppView.Rig;
     public bool IsAdvanced => View == AppView.Advanced;
 
@@ -67,6 +69,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         IndiBrowser = new IndiBrowserViewModel(mesh);
         Autofocus = new AutofocusViewModel(mesh, Catalog);
         FocusAssist = new FocusAssistViewModel(mesh, Catalog);
+        Picture = new PictureViewModel(mesh);
         Schedule = new ScheduleViewModel(mesh);
         Profiles = new ProfilesViewModel(mesh);
         Calibration = new CalibrationViewModel(mesh, Catalog);
@@ -99,6 +102,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     [RelayCommand] private void GoSky() => Navigate(AppView.Sky);
     [RelayCommand] private void GoScopes() => Navigate(AppView.Scopes);
+    [RelayCommand] private void GoPicture() => Navigate(AppView.Picture);
     [RelayCommand] private void GoRig() => Navigate(AppView.Rig);
     [RelayCommand] private void GoAdvanced() => Navigate(AppView.Advanced);
 
@@ -107,6 +111,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         await Catalog.StartAsync();
         await Autofocus.StartAsync();
         await FocusAssist.StartAsync();
+        await Picture.StartAsync();
         await Schedule.StartAsync();
         await Profiles.StartAsync();
         await Calibration.StartAsync();
@@ -171,6 +176,6 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Mesh.Notices.Posted -= OnNotice;
         Drawer?.Dispose();
         Scopes.Dispose(); StatusBar.Dispose();
-        Catalog.Dispose(); IndiBrowser.Dispose(); Autofocus.Dispose(); FocusAssist.Dispose(); Schedule.Dispose(); Profiles.Dispose(); Calibration.Dispose(); Storage.Dispose(); Image.Dispose(); Atlas.Dispose(); Centering.Dispose(); LiveStack.Dispose(); Site.Dispose(); Mesh.Dispose();
+        Catalog.Dispose(); IndiBrowser.Dispose(); Autofocus.Dispose(); FocusAssist.Dispose(); Picture.Dispose(); Schedule.Dispose(); Profiles.Dispose(); Calibration.Dispose(); Storage.Dispose(); Image.Dispose(); Atlas.Dispose(); Centering.Dispose(); LiveStack.Dispose(); Site.Dispose(); Mesh.Dispose();
     }
 }

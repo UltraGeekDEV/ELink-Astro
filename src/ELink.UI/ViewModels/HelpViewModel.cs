@@ -7,6 +7,8 @@ public sealed class HelpViewModel
 
     public IReadOnlyList<Entry> Terms { get; } = new Entry[]
     {
+        new("Linear and stretched", "A stack is linear: pixel values are proportional to the light, so a faint nebula looks almost black. A stretch brightens the faint end for your eyes. The Picture page stretches for you and the linear stack is always saved too, unstretched, so nothing is lost."),
+        new("Gradient", "A smooth, uneven brightness across the sky background (light pollution, the Moon, vignetting). The Picture page fits a model of it and takes it away."),
         new("Mount", "The motorised base that points at the sky (an equatorial or alt-az mount). It carries one or more telescopes."),
         new("Telescope", "One optical path: the tube or lens, the cameras behind it (imaging, or an off-axis guider), and the filter wheel, focuser and rotator in between. A guide telescope is a telescope too."),
         new("Scope", "A mount together with the telescopes on it, and everything it does by itself: pointing, centring after a slew, focusing, guiding, dithering, flipping at the meridian, cooling, throwing away bad frames. You ask a scope for images; you do not drive it. (In this program a telescope is only the optics; the scope is the whole working unit.)"),
@@ -34,7 +36,7 @@ public sealed class HelpViewModel
 
     public IReadOnlyList<Entry> Keys { get; } = new Entry[]
     {
-        new("Ctrl+1 … Ctrl+4", "Sky, Scopes, Rig, Advanced"),
+        new("Ctrl+1 … Ctrl+5", "Sky, Scopes, Picture, Rig, Advanced"),
         new("Esc", "Close the device panel, or the list of search matches"),
         new("+ / -  or the wheel", "Zoom the chart (the wheel zooms towards the pointer)"),
         new("F", "Zoom the chart to the image frame"),
