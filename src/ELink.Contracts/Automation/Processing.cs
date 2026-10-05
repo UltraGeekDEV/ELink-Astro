@@ -74,6 +74,10 @@ public class ProcessedImage : IBinaryConvertible
     public BinaryConvertibleDouble PixelScaleArcsec { get; set; } = 0.0;
     public BinaryConvertibleDouble ExposureSeconds { get; set; } = 0.0;
     public BinaryConvertibleBool FlipY { get; set; } = false;
+    public BinaryConvertibleDouble CropLeft { get; set; } = 0.0;
+    public BinaryConvertibleDouble CropTop { get; set; } = 0.0;
+    public BinaryConvertibleDouble CropWidth { get; set; } = 1.0;
+    public BinaryConvertibleDouble CropHeight { get; set; } = 1.0;
     public BinaryConvertibleDouble GradientPercent { get; set; } = 0.0;
     public BinaryConvertibleString Note { get; set; } = "";
     public BinaryConvertibleString Source { get; set; } = "";
@@ -94,6 +98,8 @@ public class ProcessedImage : IBinaryConvertible
         d.RegisterField("PixelScaleArcsec", (ProcessedImage x) => x.PixelScaleArcsec);
         d.RegisterField("ExposureSeconds", (ProcessedImage x) => x.ExposureSeconds).Description("total exposure of the stack shown");
         d.RegisterField("FlipY", (ProcessedImage x) => x.FlipY).Description("the picture's rows are the stack's rows last to first: a position on the stack grid (StackFrameAdded) is 1 - y on the picture");
+        d.RegisterField("CropLeft", (ProcessedImage x) => x.CropLeft).Description("the picture shows only the part of the stack that has data: this part, as fractions of the stack grid's width and height (rows as the grid is stored)");
+        d.RegisterField("CropTop", (ProcessedImage x) => x.CropTop); d.RegisterField("CropWidth", (ProcessedImage x) => x.CropWidth); d.RegisterField("CropHeight", (ProcessedImage x) => x.CropHeight);
         d.RegisterField("GradientPercent", (ProcessedImage x) => x.GradientPercent).Description("how much of the sky level the background model removed");
         d.RegisterField("Note", (ProcessedImage x) => x.Note).Description("what was done, in words");
         d.RegisterField("Source", (ProcessedImage x) => x.Source).Description("which stack it is of");

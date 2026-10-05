@@ -63,6 +63,7 @@ public sealed partial class PictureViewModel : ObservableObject, IDisposable
     [ObservableProperty] private List<Point> _histogramRed = new(), _histogramGreen = new(), _histogramBlue = new(), _histogramGrey = new();
     [ObservableProperty] private bool _colourHistogram;
     private bool _flipY = true;
+    private (double Left, double Top, double Width, double Height) _crop = (0, 0, 1, 1);
 
     partial void OnShowOriginalChanged(bool value) { if (value && (Original is null || _originalFor != _framesSeen)) _ = RefreshOriginalAsync(); }
 
@@ -78,8 +79,9 @@ public sealed partial class PictureViewModel : ObservableObject, IDisposable
 
     private void OnFrameAdded(StackFrameAdded e)
     {
-        double Y(double y) => _flipY ? 1 - y : y;
-        Flashed?.Invoke([new Point(e.X0.Value, Y(e.Y0.Value)), new Point(e.X1.Value, Y(e.Y1.Value)), new Point(e.X2.Value, Y(e.Y2.Value)), new Point(e.X3.Value, Y(e.Y3.Value))]);
+        // the grid's fractions into the picture's: the picture is only the part of the grid that has data, and may be shown upside down
+        Point P(double x, double y) { double ny = (y - _crop.Top) / _crop.Height; return new Point((x - _crop.Left) / _crop.Width, _flipY ? 1 - ny : ny); }
+        Flashed?.Invoke([P(e.X0.Value, e.Y0.Value), P(e.X1.Value, e.Y1.Value), P(e.X2.Value, e.Y2.Value), P(e.X3.Value, e.Y3.Value)]);
     }
 
     // ---- the processing settings ---------------------------------------------------------------------------------------
@@ -171,7 +173,7 @@ public sealed partial class PictureViewModel : ObservableObject, IDisposable
                 if (a is null) { Say("no picture processing on the mesh", "warn"); return; }
                 if (!a.Ok.Value) { HasImage = Image is not null; if (Image is null) Say(a.Message.Text == "" ? "nothing yet" : a.Message.Text, "info"); continue; }
                 var bmp = new Bitmap(new MemoryStream(a.Png.Data));
-                _flipY = a.FlipY.Value;
+                _flipY = a.FlipY.Value; _crop = (a.CropLeft.Value, a.CropTop.Value, Math.Max(a.CropWidth.Value, 1e-6), Math.Max(a.CropHeight.Value, 1e-6));
                 Image = bmp; HasImage = true;
                 Say("", "info");
                 Info = $"{a.Frames.Value} frame{(a.Frames.Value == 1 ? "" : "s")}  ·  {Duration(a.ExposureSeconds.Value)}  ·  {a.Width.Value}×{a.Height.Value} at {a.PixelScaleArcsec.Value:0.##}\"/px";

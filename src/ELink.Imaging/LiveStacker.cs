@@ -146,12 +146,18 @@ public sealed class LiveStacker
                     }
                 if (pairs.Count > 200)
                 {
-                    // the brightest 1 % of the frame where both have signal: stars, not sky
-                    var bright = pairs.OrderByDescending(p => p.Frame).Take(Math.Max(20, pairs.Count / 100)).Where(p => p.Frame > 0 && p.Stack > 0).ToList();
-                    if (bright.Count >= 10)
+                    // the stars: pixels well above the frame's own noise (not the brightest pixels, which in a frame with a sky gradient
+                    // or vignetting are sky); the two are compared by the light they hold, so noise does not matter
+                    var fv = pairs.Select(p => p.Frame).OrderBy(v => v).ToList();
+                    double med = fv[fv.Count / 2];
+                    var dev = fv.Select(v => Math.Abs(v - med)).OrderBy(v => v).ToList();
+                    double sigma = Math.Max(dev[dev.Count / 2] * 1.4826, 1e-6), threshold = med + 8 * sigma;
+                    var sv = pairs.Select(p => p.Stack).OrderBy(v => v).ToList(); double medStack = sv[sv.Count / 2];
+                    var star = pairs.Where(p => p.Frame > threshold && p.Stack > medStack).ToList();
+                    if (star.Count >= 30)
                     {
-                        var r = bright.Select(p => (double)p.Stack / p.Frame).Order().ToList();
-                        scale = Math.Clamp(r[r.Count / 2], 0.2, 5);
+                        double sumFrame = star.Sum(p => (double)p.Frame - med), sumStack = star.Sum(p => (double)p.Stack - medStack);
+                        if (sumFrame > 0 && sumStack > 0) scale = Math.Clamp(sumStack / sumFrame, 0.2, 5);
                     }
                 }
             }

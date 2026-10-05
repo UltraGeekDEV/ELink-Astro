@@ -177,3 +177,11 @@ focus triggers/offsets -> live-stack rejection/calibration -> the rest.
 - [x] A little life: pages cross-fade, toasts slide in, a scope that is exposing breathes
 - [ ] Processing ideas: noise reduction, star colour boost / star reduction, deconvolution, local contrast, crop, export of 8-bit JPEG for sharing
 - [ ] The frame-landing flash on the Sky chart too; a full-screen "watch" mode; an animated start of a new night
+
+## From real frames (a DSLR, 120 s subs, M 27, 2026-07-24; ~/Pictures)
+- [x] Frames lined up by their stars when there is no solver or the WCS is only the mount's position; the brightness matching compares stars' light, not the brightest pixels
+- [x] The picture leaves empty parts black (not sky-coloured), takes no part of them into its estimates and is cut to the part that has data
+- [ ] The stack grid follows the frames' orientation (so a tilted camera does not leave half of it empty); drop the weakly covered edge (only a few frames deep) from the picture
+- [ ] Flats: subtract a bias or dark flat first (the corners where the flat is almost black blow up), a per-colour flat normalisation, flats as a library master for DSLR raw frames
+- [ ] Remaining vignetting and dust after calibration: a vignetting-aware gradient model (radial) beside the polynomial
+- [ ] RealDataTests (ELINK_REAL_LIGHTS, ELINK_REAL_FLATS, ELINK_REAL_COUNT, ELINK_REAL_OUT): run them on your own frames

@@ -98,6 +98,9 @@ public class ProcessingTests
         for (int i = 0; i < 5000; i++) sky[i] = float.NaN;
         var p = PictureProcessor.Process(sky, W, H, 1, new ProcessingParams());
         Assert.All(p.Display, v => Assert.False(float.IsNaN(v)));
+        Assert.All(p.Display.Take(5000), v => Assert.Equal(0f, v));                  // nothing there: black
+        double med = p.Display.Skip(6000).OrderBy(x => x).ElementAt((p.Display.Length - 6000) / 2);
+        Assert.InRange(med, 0.2, 0.3);                                               // and it does not disturb the sky
         Assert.Equal(PictureProcessor.HistogramBins, p.Histogram.Length);
         Assert.Contains(p.Histogram, v => v > 0.9);
         Assert.Contains("stretched", p.Note);

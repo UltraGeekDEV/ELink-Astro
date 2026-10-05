@@ -341,9 +341,9 @@ flowchart LR
     F[frame from a ticked camera] --> K{calibrate}
     K -->|darks, flats from the library| R
     R{register}
-    R -->|FITS has a WCS| W[use it]
+    R -->|FITS has a solved WCS| W[use it]
     R -->|else| S[plate solve]
-    R -->|Pointing| P[shot's pointing + frame scale/angle]
+    R -->|no solver, or a WCS made from the mount's position| P[pointing for the first frame, then the frames' own stars]
     W & S & P --> C{colour camera?}
     C -->|Interpolated| CI[full-res RGB]
     C -->|Super pixel| CS[half-res RGB]
@@ -357,8 +357,13 @@ flowchart LR
 - **Field and output**: the centre, size and turn of the field, and the **pixel scale** in arcsec per pixel (smaller than the
   camera's: interpolated, bicubic by default; larger: each output pixel is the average of everything under it; `0` = the
   first frame's). *Memory limit* refuses fields that would be too large.
-- **Registration**: *Auto* uses a WCS already in the FITS, else plate solves (give the frame scale as a hint to speed it up);
-  *Solve* always solves; *Pointing* needs no solver but only the frame scale and angle, and is as accurate as your mount.
+- **Registration**: *Auto* uses a WCS already in the FITS when a plate solver wrote it (a CD or PC matrix, or `PLTSOLVD`), else plate
+  solves (give the frame scale as a hint to speed it up). Without a solver, or when the WCS was only made up from the mount's position (INDI
+  writes CDELT and CROTA, the same for every frame whatever the sky did), the first frame is placed by where the mount said it pointed and every
+  later frame is **lined up with it by its stars** (a shift and a small turn, from matching its brightest stars: it says how many matched).
+  A frame whose stars do not match keeps the pointing's placement and says so. *Solve* always solves; *Pointing* needs no solver but only the
+  frame scale and angle, and is as accurate as your mount. (Found with real frames: lined up by the WCS INDI wrote, a stack of 12 was smeared into
+  vertical trails and the brightness matching scaled the frames down to a fifth; lined up by stars, 145 stars matched and it came out sharp.)
 - **Colour (Bayer) frames** are debayered before stacking: *Interpolated* (full resolution), *Super pixel* (each 2×2 cell one
   RGB pixel, half the resolution, no interpolation artefacts, faster), or *None* (the raw mosaic as mono). The pattern comes
   from the frame's `BAYERPAT`; pick one if the camera does not write it.

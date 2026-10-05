@@ -138,7 +138,7 @@ public sealed class LiveStackService : IAsyncDisposable
         }
         lock (_gate)
         {
-            _request = r; _stacks.Clear(); _scale = r.PixelScaleArcsec.Value > 0 ? r.PixelScaleArcsec.Value : double.NaN;
+            _request = r; _stacks.Clear(); _reference = null; _scale = r.PixelScaleArcsec.Value > 0 ? r.PixelScaleArcsec.Value : double.NaN;
             _rejected = 0; _pending = 0; _exposure = 0; _lastScale = double.NaN; _last = ""; _seen.Clear();
             _sessionDir = dir; _framesSaved = 0;
             if (restored is not null)
@@ -269,6 +269,8 @@ public sealed class LiveStackService : IAsyncDisposable
         var (rawWcs, how) = await RegisterAsync(r, img, item, ct);   // the raw frame is what gets solved
         if (rawWcs is null) return "!" + how;
         var wcs = bin > 1 ? LiveStacker.Binned(rawWcs, bin) : rawWcs;
+        // no WCS, no solver: the frames' own stars place them on the first frame (which is placed by where the mount said it pointed)
+        if (how == "pointing" && r.Registration.Text == "Auto") (wcs, how) = await AlignByStarsAsync(data, width, height, channels, img, wcs, ct);
 
         if (item.Pseudo != "") return await StackPseudoAsync(item, r, img, data, width, height, channels, wcs, how, colour);
 
@@ -398,10 +400,49 @@ public sealed class LiveStackService : IAsyncDisposable
         return Task.FromResult($"{item.Source}: stacked, {item.Pseudo} in focus ({how}{colour}, {wcs.PixelScaleArcsec:0.##}\"/px → {colourStack.Stack.Wcs.PixelScaleArcsec:0.##}\"/px)");
     }
 
+    /// <summary>Does the header's WCS come from a plate solve? Solvers write a CD or PC matrix (or say they solved); a program that only knows the mount's
+    /// position writes CDELT and CROTA.</summary>
+    public static bool IsSolvedWcs(IReadOnlyDictionary<string, string> h) =>
+        h.ContainsKey("CD1_1") || h.ContainsKey("PC1_1") || h.TryGetValue("PLTSOLVD", out var v) && v.Trim().StartsWith('T');
+
+    private sealed record StarReference(IReadOnlyList<Star> Stars, TanWcs Wcs);
+    private StarReference? _reference;
+
+    /// <summary>The frame placed by its stars on the first frame of the stack. The first frame is the reference (and keeps the pointing's
+    /// placement); a frame whose stars do not match keeps the pointing's placement too, and says so.</summary>
+    private async Task<(TanWcs Wcs, string How)> AlignByStarsAsync(float[] data, int width, int height, int channels, FitsImage img, TanWcs byPointing, CancellationToken ct)
+    {
+        var stars = await Task.Run(() =>
+        {
+            int plane = width * height;
+            var luma = new float[plane];
+            for (int c = 0; c < channels; c++) for (int i = 0; i < plane; i++) luma[i] += data[c * plane + i] / channels;
+            return StarField.Detect(FitsImage.FromPlanar(width, height, 1, luma, img.Header, img.Range), sigma: 8, maxStars: 150).Stars;
+        }, ct);
+        StarReference? reference;
+        lock (_gate)
+        {
+            if (_reference is null && stars.Count >= 12) { _reference = new StarReference(stars, byPointing); return (byPointing, $"pointing, this is the reference frame ({stars.Count} stars)"); }
+            reference = _reference;
+        }
+        if (reference is null) return (byPointing, "pointing (too few stars to align by)");
+        var t = StarAligner.Align(reference.Stars, stars, maxShift: Math.Max(width, height) / 4.0);
+        if (t is not { } tr) return (byPointing, "pointing (its stars did not match the first frame's)");
+        // the frame's pixels land on the reference's through the transform: its own WCS is the reference's composed with it
+        var w = reference.Wcs;
+        double c0 = tr.Cos, s0 = tr.Sin;
+        double p0x = c0 * (w.CrPix1 - tr.Tx) + s0 * (w.CrPix2 - tr.Ty), p0y = -s0 * (w.CrPix1 - tr.Tx) + c0 * (w.CrPix2 - tr.Ty);   // R⁻¹ (crpix − t)
+        var placed = w with { CrPix1 = p0x, CrPix2 = p0y, Cd11 = w.Cd11 * c0 + w.Cd12 * s0, Cd12 = -w.Cd11 * s0 + w.Cd12 * c0, Cd21 = w.Cd21 * c0 + w.Cd22 * s0, Cd22 = -w.Cd21 * s0 + w.Cd22 * c0 };
+        return (placed, FormattableString.Invariant($"stars, {tr.Matches} matched, shift {Math.Sqrt(tr.Tx * tr.Tx + tr.Ty * tr.Ty):0} px, turn {tr.RotationDegrees:0.###}°"));
+    }
+
     private async Task<(TanWcs? Wcs, string How)> RegisterAsync(LiveStackRequest r, FitsImage img, Item item, CancellationToken ct)
     {
         string mode = r.Registration.Text;
-        if (mode == "Auto" && TanWcs.FromHeader(img.Header) is { } own) return (own, "frame WCS");
+        if (mode == "Auto" && TanWcs.FromHeader(img.Header) is { } own)
+            // a WCS a plate solver wrote is the frame's place on the sky; one a capture program made up from the mount's position (INDI's:
+            // CDELT and CROTA, no CD or PC matrix, no solver mark) is only a pointing, good for the first frame, not for lining frames up
+            return IsSolvedWcs(img.Header) ? (own, "frame WCS") : (own, "pointing");
         double ra = item.RaHours, dec = item.DecDegrees;
         if (double.IsNaN(ra) || double.IsNaN(dec)) (ra, dec) = HeaderPointing(img);
         if (mode is "Auto" or "Solve")
@@ -518,7 +559,7 @@ public sealed class LiveStackService : IAsyncDisposable
         lock (_gate)
         {
             if (_request is null) return CommandResult.Fail("no stack");
-            _stacks.Clear(); _scale = _request.PixelScaleArcsec.Value > 0 ? _request.PixelScaleArcsec.Value : double.NaN;
+            _stacks.Clear(); _reference = null; _scale = _request.PixelScaleArcsec.Value > 0 ? _request.PixelScaleArcsec.Value : double.NaN;
             _rejected = 0; _exposure = 0; _message = "emptied";
         }
         await Publish();
@@ -548,7 +589,7 @@ public sealed class LiveStackService : IAsyncDisposable
         for (int c = 0; c < channels; c++)
         {
             float sky = q.Neutralize.Value && channels == 3 ? common : pedestal[channels == 3 ? c : 0];
-            for (int i = c * plane; i < (c + 1) * plane; i++) data[i] = float.IsNaN(data[i]) ? sky : data[i] + sky;
+            for (int i = c * plane; i < (c + 1) * plane; i++) data[i] = float.IsNaN(data[i]) ? (q.KeepEmpty.Value ? float.NaN : sky) : data[i] + sky;
         }
         var cards = wcs.Cards().ToList();
         string Q(string s) => "'" + s.Replace("'", "''") + "'";
@@ -642,7 +683,7 @@ public sealed class LiveStackService : IAsyncDisposable
         for (int c = 0; c < channels; c++)
         {
             float sky = q.Neutralize.Value && channels == 3 ? common : pedestal[channels == 3 ? c : 0];
-            for (int i = c * plane; i < (c + 1) * plane; i++) data[i] = float.IsNaN(data[i]) ? sky : data[i] + sky;
+            for (int i = c * plane; i < (c + 1) * plane; i++) data[i] = float.IsNaN(data[i]) ? (q.KeepEmpty.Value ? float.NaN : sky) : data[i] + sky;
         }
         int frames = layers.Sum(s => s.Stack.Frames);
         var cards = wcs.Cards().ToList();
@@ -759,7 +800,7 @@ public sealed class LiveStackService : IAsyncDisposable
         for (int c = 0; c < 3; c++)
         {
             float sky = q.Neutralize.Value ? common : pedestal[c];
-            for (int i = c * plane; i < (c + 1) * plane; i++) data[i] = float.IsNaN(data[i]) ? sky : data[i] + sky;
+            for (int i = c * plane; i < (c + 1) * plane; i++) data[i] = float.IsNaN(data[i]) ? (q.KeepEmpty.Value ? float.NaN : sky) : data[i] + sky;
         }
         int frames = parts.Sum(p => p!.Stack.Frames);
         var cards = wcs.Cards().ToList();

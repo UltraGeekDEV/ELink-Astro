@@ -41,14 +41,7 @@ public static class PictureProcessor
         Array.Copy(data, d, d.Length);
         var notes = new List<string>();
 
-        // nothing-there pixels become the sky level of their channel
-        for (int c = 0; c < channels; c++)
-        {
-            var span = d.AsSpan(c * plane, plane);
-            float sky = Background(span);
-            for (int i = 0; i < span.Length; i++) if (float.IsNaN(span[i]) || float.IsInfinity(span[i])) span[i] = sky;
-        }
-
+        // pixels with nothing in them (NaN) stay empty: they take no part in any estimate and come out black
         double gradient = 0;
         if (p.RemoveGradient)
         {
@@ -103,7 +96,9 @@ public static class PictureProcessor
             double k = 1.0 / (hi[c] - black[c]);
             for (int i = 0; i < plane; i++)
             {
-                double x = (d[c * plane + i] - black[c]) * k;
+                float raw = d[c * plane + i];
+                if (float.IsNaN(raw) || float.IsInfinity(raw)) { outp[c * plane + i] = 0; continue; }
+                double x = (raw - black[c]) * k;
                 outp[c * plane + i] = (float)(p.Stretch ? Mtf(mid[c], x) : Math.Clamp(x, 0, 1));
             }
         }
@@ -134,7 +129,7 @@ public static class PictureProcessor
         // what the result looks like: how the picture's values are spread
         var hist = new double[HistogramBins * channels];
         for (int c = 0; c < channels; c++)
-            for (int i = 0; i < plane; i++) hist[c * HistogramBins + Math.Clamp((int)(outp[c * plane + i] * (HistogramBins - 1) + 0.5f), 0, HistogramBins - 1)]++;
+            for (int i = 0; i < plane; i++) { if (float.IsNaN(d[c * plane + i])) continue; hist[c * HistogramBins + Math.Clamp((int)(outp[c * plane + i] * (HistogramBins - 1) + 0.5f), 0, HistogramBins - 1)]++; }
         for (int c = 0; c < channels; c++)
         {
             double peak = 0; for (int b = 1; b < HistogramBins - 1; b++) peak = Math.Max(peak, hist[c * HistogramBins + b]);   // (the ends are mostly clipped pixels)
@@ -170,6 +165,7 @@ public static class PictureProcessor
     private static void Statistics(ReadOnlySpan<float> plane, out double median, out double sigma, out double white, double clipFraction)
     {
         var s = Sample(plane, 120000);
+        if (s.Count == 0) { median = 0; sigma = 1; white = 1; return; }
         s.Sort();
         double med = s[s.Count / 2];
         median = med;
