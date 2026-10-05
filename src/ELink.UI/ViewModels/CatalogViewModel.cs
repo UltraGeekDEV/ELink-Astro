@@ -77,6 +77,12 @@ public sealed partial class CatalogViewModel : ObservableObject
     /// <summary>Asks every provider what it has; replaces the lists.</summary>
     public async Task RefreshAsync()
     {
+        try { await RefreshCoreAsync(); }
+        catch (ObjectDisposedException) { }        // the window is closing: nothing left to refresh
+    }
+
+    private async Task RefreshCoreAsync()
+    {
         var lists = await _mesh.Node.CallFunctionAsync<NOTESVoid, DeviceList>(EquipmentIds.List, NOTESVoid.Void);
         var announced = (lists ?? new()).SelectMany(l => l.Devices)
             .Select(d => (Kind: d.Kind.Text, Id: d.Id.Text, Name: d.DisplayName.Text, Source: d.Source.Text)).ToList();
