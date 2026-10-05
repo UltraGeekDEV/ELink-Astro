@@ -15,11 +15,12 @@ namespace ELink.UI.ViewModels;
 public sealed partial class SkyViewModel : ObservableObject
 {
     private readonly MeshSession _mesh;
+    private readonly CatalogViewModel _catalog;
     private bool _rebuildQueued;
 
-    public SkyViewModel(MeshSession mesh, AtlasViewModel atlas, ImageViewModel image, ScheduleViewModel schedule, LiveStackViewModel liveStack, StatusBarViewModel status)
+    public SkyViewModel(MeshSession mesh, CatalogViewModel catalog, AtlasViewModel atlas, ImageViewModel image, ScheduleViewModel schedule, LiveStackViewModel liveStack, StatusBarViewModel status)
     {
-        _mesh = mesh; Atlas = atlas; Image = image; Schedule = schedule; LiveStack = liveStack; Status = status;
+        _mesh = mesh; _catalog = catalog; Atlas = atlas; Image = image; Schedule = schedule; LiveStack = liveStack; Status = status;
         atlas.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(AtlasViewModel.Selection)) FrameSelectionCommand.NotifyCanExecuteChanged(); };
         status.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(StatusBarViewModel.NeedsSetup)) OnPropertyChanged(nameof(ShowGettingStarted)); };
         image.PropertyChanged += (_, e) =>
@@ -150,10 +151,9 @@ public sealed partial class SkyViewModel : ObservableObject
 
         // each scope's own field at the centre, and the panels of a mosaic
         int panels = 1, cols = 1, rows = 1;
-        int colour = 0;
         foreach (var scope in Image.PlanScopes)
         {
-            var color = FieldColors[colour++ % FieldColors.Length];
+            var color = Color.Parse(_catalog.ScopeColor(scope.ScopeId));
             bool label = true;
             if (ShowFields)
                 foreach (var f in Fields(scope))

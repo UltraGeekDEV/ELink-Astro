@@ -49,11 +49,12 @@ public sealed partial class ScopesViewModel : ObservableObject, IDisposable
                 string name = def.DisplayName.Text != "" ? def.DisplayName.Text : def.Id.Text;
                 // a changed definition (guiding added, trains changed) needs a new card: the old one follows the old ids
                 if (existing is not null && existing.GuiderId == guider && existing.TrainIds.SequenceEqual(trains) && existing.DisplayName == name) continue;
-                var panel = new ScopePanelViewModel(_mesh, def.Id.Text, name, guider, trains);
+                var panel = new ScopePanelViewModel(_mesh, def.Id.Text, name, guider, trains) { Accent = _catalog.ScopeColor(def.Id.Text) };
                 await panel.StartAsync();
                 if (existing is not null) { int at = Cards.IndexOf(existing); Cards[at] = panel; existing.Dispose(); if (Selected == existing) Selected = panel; }
                 else Cards.Add(panel);
             }
+            foreach (var card in Cards) card.Accent = _catalog.ScopeColor(card.ScopeId);   // (positions move when a scope is removed)
             Selected ??= Cards.FirstOrDefault();
             if (Selected is not null && !Cards.Contains(Selected)) Selected = Cards.FirstOrDefault();
             OnPropertyChanged(nameof(HasScopes)); OnPropertyChanged(nameof(HasNoScopes));

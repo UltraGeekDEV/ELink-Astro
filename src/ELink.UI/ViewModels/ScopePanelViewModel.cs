@@ -79,6 +79,8 @@ public partial class ScopePanelViewModel : ObservableObject, IDisposable
         while (Activity.Count > 60) Activity.RemoveAt(Activity.Count - 1);
     }
 
+    /// <summary>This scope's colour (#RRGGBB), the same everywhere it is shown.</summary>
+    [ObservableProperty] private string _accent = "#78DCFF";
     public string ScopeId { get; }
     public string DisplayName { get; }
     public string Title => DisplayName;

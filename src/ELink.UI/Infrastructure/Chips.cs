@@ -25,4 +25,6 @@ public static class Chips
     public static readonly IValueConverter NoneText = new FuncValueConverter<string?, string>(t => string.IsNullOrEmpty(t) ? "none" : t);
     /// <summary>The Sky's side panel: about a third of the window, between 330 and 410.</summary>
     public static readonly IValueConverter PanelWidth = new FuncValueConverter<double, double>(w => Math.Clamp(w * 0.36, 330, 410));
+    /// <summary>"#RRGGBB" to a brush (the scope colours).</summary>
+    public static readonly IValueConverter Hex = new FuncValueConverter<string?, IBrush?>(h => h is { Length: > 0 } ? new SolidColorBrush(Color.Parse(h)) : null);
 }

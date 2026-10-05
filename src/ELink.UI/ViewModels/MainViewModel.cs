@@ -79,7 +79,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
         Scopes = new ScopesViewModel(mesh, Catalog, Autofocus, Centering) { OpenRig = () => Navigate(AppView.Rig, "Set up") };
         StatusBar = new StatusBarViewModel(mesh, Catalog, Scopes) { Navigate = Navigate };
-        Sky = new SkyViewModel(mesh, Atlas, Image, Schedule, LiveStack, StatusBar);
+        Sky = new SkyViewModel(mesh, Catalog, Atlas, Image, Schedule, LiveStack, StatusBar);
         Rig = new RigViewModel(Composer, Site, Equipment, Profiles, Calibration);
         Advanced = new AdvancedViewModel(IndiBrowser, Storage, LiveStack, new HelpViewModel());
 

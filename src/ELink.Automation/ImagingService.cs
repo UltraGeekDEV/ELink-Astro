@@ -18,7 +18,7 @@ namespace ELink.Automation;
 /// the scope. A live stack of all their frames is the resulting image.</para></summary>
 public sealed class ImagingService : IAsyncDisposable
 {
-    private sealed record ScopeFrames(string ScopeId, FrameSpec[] Frames, double FinestScale, string? Error, List<string> UnknownAngles);
+    private sealed record ScopeFrames(string ScopeId, FrameSpec[] Frames, double FinestScale, string? Error, List<string> UnknownAngles, Dictionary<string, double> Scales);
     private sealed record Plan(CoverageMap Map, CoverageMap Actual, List<ScopeFrames> Scopes, double Width, double Height, double Stepover, double Scale);
 
     private readonly TypeSafeEVentNode _node;
@@ -88,10 +88,11 @@ public sealed class ImagingService : IAsyncDisposable
     {
         var frames = new List<FrameSpec>();
         var unknownAngles = new List<string>();
+        var scales = new Dictionary<string, double>();      // arcsec per pixel of each camera whose angle is unknown
         double finest = double.NaN;
         string? error = await Collect(scopeId, 0, 0, 0);
         if (error is null && frames.Count == 0) error = $"scope {scopeId} has no imaging camera with a known field";
-        return new ScopeFrames(scopeId, frames.ToArray(), finest, error, unknownAngles);
+        return new ScopeFrames(scopeId, frames.ToArray(), finest, error, unknownAngles, scales);
 
         async Task<string?> Collect(string id, double dE, double dN, int depth)
         {
@@ -114,7 +115,7 @@ public sealed class ImagingService : IAsyncDisposable
                             return $"train {sid}: the field of {c.CameraId.Text} is not known (focal length set? camera connected?)";
                         // the camera's angle on the sky, if a solve has told its train (no rotator: it stays put)
                         double angle = double.IsNaN(c.AngleDegrees.Value) ? 0 : c.AngleDegrees.Value;
-                        if (double.IsNaN(c.AngleDegrees.Value)) unknownAngles.Add(c.ShooterId.Text);
+                        if (double.IsNaN(c.AngleDegrees.Value)) { unknownAngles.Add(c.ShooterId.Text); scales[c.ShooterId.Text] = c.PixelScaleArcsec.Value; }
                         frames.Add(new FrameSpec(c.FieldWidthDegrees.Value / 2, c.FieldHeightDegrees.Value / 2, angle, oe, on));
                         if (double.IsNaN(finest) || c.PixelScaleArcsec.Value < finest) finest = c.PixelScaleArcsec.Value;
                     }
@@ -398,8 +399,13 @@ public sealed class ImagingService : IAsyncDisposable
         {
             var snap = await SnapshotAsync();
             var unknown = new List<(string Shooter, string Scope)>();
+            var scaleOf = new Dictionary<string, double>();
             foreach (var id in r.ScopeIds.Select(s => s.Text).Distinct())
-                if (await FramesOfAsync(id, snap) is { Error: null } f) unknown.AddRange(f.UnknownAngles.Select(u => (u, id)));
+                if (await FramesOfAsync(id, snap) is { Error: null } f)
+                {
+                    unknown.AddRange(f.UnknownAngles.Select(u => (u, id)));
+                    foreach (var (k, v) in f.Scales) scaleOf[k] = v;
+                }
             if (unknown.Count == 0) return;
             await Set(s => s.Message = $"learning the camera angle of {string.Join(", ", unknown.Select(u => u.Shooter).Distinct())}");
             var solves = unknown.GroupBy(u => u.Shooter).Select(async g =>
@@ -411,6 +417,8 @@ public sealed class ImagingService : IAsyncDisposable
                 {
                     ShooterId = g.Key, ExposureSeconds = Math.Clamp(r.Exposure.Seconds.Value, 1, 10), TimeoutSeconds = 45,
                     HintRaHours = ra, HintDecDegrees = dec, HintRadiusDegrees = radius,
+                    // the camera's scale is known from its pixel size and the telescope: a narrow range makes the solve fast
+                    ScaleLowArcsecPerPixel = scaleOf.TryGetValue(g.Key, out var sc) && sc > 0 ? sc * 0.8 : 0, ScaleHighArcsecPerPixel = scaleOf.TryGetValue(g.Key, out var sc2) && sc2 > 0 ? sc2 * 1.25 : 0,
                 }, TimeSpan.FromSeconds(120));
                 return (g.Key, Solved: answers?.FirstOrDefault()?.Solved.Value == true);
             }).ToList();

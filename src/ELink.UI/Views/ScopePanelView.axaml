@@ -7,7 +7,7 @@
       <StackPanel Spacing="10">
         <Grid ColumnDefinitions="*,Auto">
           <StackPanel>
-            <TextBlock Classes="title" Text="{Binding DisplayName}"/>
+            <StackPanel Classes="row" Spacing="10"><Ellipse Classes="dot" Width="12" Height="12" Fill="{Binding Accent, Converter={x:Static i:Chips.Hex}}"/><TextBlock Classes="title" Text="{Binding DisplayName}"/></StackPanel>
             <TextBlock Classes="hint" Text="{Binding ScopeId}"/>
           </StackPanel>
           <Border Grid.Column="1" Classes="chip" Background="{Binding ChipClass, Converter={x:Static i:Chips.Background}}" VerticalAlignment="Top">

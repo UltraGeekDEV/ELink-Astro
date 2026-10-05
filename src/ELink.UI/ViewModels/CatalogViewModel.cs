@@ -49,6 +49,15 @@ public sealed partial class CatalogViewModel : ObservableObject
     public CompositionSnapshot Composition { get; private set; } = new();
     public event Action? CompositionChanged;
 
+    private static readonly string[] ScopePalette = ["#78DCFF", "#FF8CC8", "#A0FF8C", "#FFAA5A", "#C8A0FF", "#FFE066"];
+    /// <summary>A colour for each scope, by its place in the composition, so a scope is the same colour in the status strip, its card and on the chart.</summary>
+    public string ScopeColor(string scopeId)
+    {
+        int i = Composition.Scopes.ToList().FindIndex(x => x.Id.Text == scopeId);
+        if (i < 0) i = (int)((uint)scopeId.GetHashCode() % ScopePalette.Length);
+        return ScopePalette[i % ScopePalette.Length];
+    }
+
     public CatalogViewModel(MeshSession mesh)
     {
         _mesh = mesh;
