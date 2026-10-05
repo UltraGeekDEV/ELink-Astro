@@ -33,7 +33,7 @@
       </ItemsControl>
 
       <!-- is there anything left to set up -->
-      <Button Grid.Column="2" Classes="ghost" Padding="4,2">
+      <Button Grid.Column="2" Classes="ghost" Padding="4,2" ToolTip.Tip="What is still to set up before imaging: click for the list">
         <Border Classes="chip" Background="{Binding SetupClass, Converter={x:Static i:Chips.Background}}">
           <TextBlock Text="{Binding SetupText}"/>
         </Border>

@@ -26,6 +26,7 @@ public abstract partial class SectionHostViewModel : ObservableObject, IDisposab
     /// <summary>Shows a section by its title (anything not found leaves the current one).</summary>
     public void Show(string? title)
     {
+        if (title is "Equipment" or "Drivers" && !Sections.Any(x => x.Title == title)) title = "Devices";    // both are on one page now
         var s = title is null ? null : Sections.FirstOrDefault(x => string.Equals(x.Title, title, StringComparison.OrdinalIgnoreCase));
         Selected = s ?? Selected ?? Sections.FirstOrDefault();
     }
@@ -43,8 +44,7 @@ public sealed class RigViewModel : SectionHostViewModel
     public RigViewModel(ComposerViewModel setup, SiteViewModel site, EquipmentViewModel equipment, ProfilesViewModel drivers, CalibrationViewModel calibration)
     {
         // in the order a first set-up goes
-        Add("Drivers", "1 · Start the INDI drivers of your equipment (skip it if they are already running)", drivers);
-        Add("Equipment", "2 · What is plugged in, and whether it is connected", equipment);
+        Add("Devices", "1 · Start the INDI drivers of your equipment (skip it if they are already running), 2 · see what is plugged in and connect it", new DevicesViewModel(drivers, equipment));
         Add("Set up", "3 · Telescopes (the optics and cameras) and scopes (a mount with its telescopes)", setup);
         Add("Site", "4 · Where you are and your horizon (optional: it lets ELink plan around the night)", site);
         Add("Calibration", "Darks, biases and flats (once per camera, whenever you like)", calibration);

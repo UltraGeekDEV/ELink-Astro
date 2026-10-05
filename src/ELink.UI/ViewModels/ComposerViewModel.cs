@@ -6,6 +6,7 @@ using ELink.Contracts.Composition;
 using ELink.Contracts.Equipment;
 using ELink.Core;
 using ELink.UI.Infrastructure;
+using Event.Connections.Models.BaseBinaryConvertibles;
 using EVent.Connections.Models.BaseBinaryConvertibles;
 
 namespace ELink.UI.ViewModels;
@@ -200,6 +201,7 @@ public sealed partial class ComposerViewModel : ObservableObject
             foreach (var p in c.MountPointers.Where(p => mountChoices.All(x => x.Id != p.Id.Text)))
                 mountChoices.Add((p.Id.Text, NameOf(DeviceKinds.Mount, p.MountId.Text), "not connected", false));
             Refill(PointerChoices, mountChoices);
+            foreach (var m in PointerChoices) m.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(ComposeChoice.IsSelected) && m.IsSelected) foreach (var o in PointerChoices.Where(o => o != m && o.IsSelected)) o.IsSelected = false; };   // a scope has one mount
             Refill(ShooterChoices, c.Trains.Select(t => (t.Id.Text, t.Label.Text != "" ? t.Label.Text : t.Id.Text, TrainDetail(t), false))
                 .Concat(c.CameraShooters.Select(s => (s.Id.Text, s.Id.Text, $"camera {NameOf(DeviceKinds.Camera, s.CameraId.Text)}", false))).ToList());
             Refill(NestedChoices, c.Scopes.Select(s => (s.Id.Text, s.DisplayName.Text != "" ? s.DisplayName.Text : s.Id.Text, "combine its mounts and telescopes", false)).ToList());
@@ -347,6 +349,18 @@ public sealed partial class ComposerViewModel : ObservableObject
             choice.Role = cam.Role.Text; choice.PixelSize = cam.PixelSizeUm.Value; choice.SensorWidth = cam.SensorWidth.Value; choice.SensorHeight = cam.SensorHeight.Value;
             choice.Gain = TrainCameraChoice.Text(cam.Gain.Value); choice.Offset = TrainCameraChoice.Text(cam.Offset.Value); choice.CoolTo = TrainCameraChoice.Text(cam.CoolTo.Value); choice.CoolRate = cam.CoolDegreesPerMinute.Value; choice.PseudoMono = cam.PseudoMono.Value;
         }
+    }
+
+    /// <summary>A line per filter of the chosen wheel (what is typed stays), to put the steps in.</summary>
+    [RelayCommand]
+    private async Task FillOffsetsFromWheelAsync()
+    {
+        if (SelectedWheel is not { } wheel || wheel == None) return;
+        var state = (await _mesh.Node.CallFunctionAsync<NOTESVoid, FilterWheelState>(EquipmentIds.GetState(DeviceKinds.FilterWheel, wheel), NOTESVoid.Void, TimeSpan.FromSeconds(5)))?.FirstOrDefault();
+        if (state is null || state.FilterNames.Count == 0) { TrainSays("the filter wheel has not told its filter names yet (is it connected?)"); return; }
+        var have = FocusOffsets.Split(',', ';').Select(p => p.Trim().Split('=', 2)).Where(kv => kv.Length == 2).ToDictionary(kv => kv[0].Trim(), kv => kv[1].Trim(), StringComparer.OrdinalIgnoreCase);
+        FocusOffsets = string.Join(", ", state.FilterNames.Select(n => $"{n.Text}={(have.TryGetValue(n.Text, out var v) ? v : "0")}"));
+        TrainMessage = "";
     }
 
     [RelayCommand] private void CancelTrain() { TrainFormOpen = false; TrainMessage = ""; }

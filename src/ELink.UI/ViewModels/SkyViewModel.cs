@@ -81,7 +81,7 @@ public sealed partial class SkyViewModel : ObservableObject
         string hint = Image.IsActive ? "An image is being taken: stop it first."
             : Image.Scopes.Count == 0 ? "Set up a scope first (Rig › Set up)."
             : !Image.Scopes.Any(c => c.Selected) ? "Tick a scope that should take it."
-            : !Status.Readiness[0].Done ? "Connect your mount and camera first (Rig › Equipment)."
+            : !Status.Readiness[0].Done ? "Connect your mount and camera first (Rig › Devices)."
             : "";
         _startBlockedBy = hint != "" ? hint : Image.PlanProblem;     // (a problem with the plan is already said above the form)
         StartHint = hint;

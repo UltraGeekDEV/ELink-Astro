@@ -167,4 +167,5 @@ focus triggers/offsets -> live-stack rejection/calibration -> the rest.
 - [x] Frames saved by default when an image starts (switchable), with a warning when they are not
 - [x] Calibration shows only the fields of the chosen kind and says to cover the telescope; Site explains its horizon format; profile messages not red when they succeed
 - [x] Manual tools grouped on Scopes; guiding test buttons folded away; mount drawer wraps instead of clipping; Yes/No instead of True/False
-- [ ] Still open: Equipment + Drivers as one page; mount as a single choice instead of checkboxes; a drawer scrim; filling the Site from a GPS; per-filter focus offset table instead of "L=0, R=30"; layers as an editable list; the INDI page's duplicated card; tooltips on the status chips
+- [x] Equipment + Drivers are one page (Devices); a scope has one mount (choosing another unticks the first); a scrim dims the page behind a device panel; choosing a GPS fills the Site; "Fill in the filter names" for the focus offsets; layers are rows; the setup chip has a tooltip
+- [ ] Still open: a real per-filter table for the focus offsets (the text box stays, now with the names filled in); the INDI page's duplicated "Fast Exposure" card (cause not found)

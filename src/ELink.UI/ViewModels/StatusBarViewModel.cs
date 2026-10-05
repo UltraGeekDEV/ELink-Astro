@@ -43,7 +43,7 @@ public sealed partial class StatusBarViewModel : ObservableObject, IDisposable
         _mesh = mesh; _catalog = catalog; Scopes = scopes;
         Readiness = new ObservableCollection<ReadinessItem>
         {
-            new("Equipment connected", "connect your mount and camera (Rig › Equipment)", AppView.Rig, "Equipment"),
+            new("Equipment connected", "connect your mount and camera (Rig › Devices)", AppView.Rig, "Equipment"),
             new("Scope set up", "define a scope (Rig › Set up)", AppView.Rig, "Set up"),
             new("Site known", "enter your location so ELink can plan around the night (Rig › Site)", AppView.Rig, "Site", optional: true),
             new("Plate solver", "install ASTAP or astrometry.net for centring and stacking", AppView.Rig, "Drivers", optional: true),

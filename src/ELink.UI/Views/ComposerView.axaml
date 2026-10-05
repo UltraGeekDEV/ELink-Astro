@@ -54,7 +54,7 @@
             <StackPanel Spacing="6">
               <TextBlock Classes="section" Text="CAMERAS BEHIND IT"/>
               <TextBlock Classes="hint" Text="Imaging cameras take the pictures. An off-axis guider is a second camera behind the same optics, used for guiding. Leave the rest as “Not used”." IsVisible="{Binding TrainCameras.Count}"/>
-              <TextBlock Classes="hint" Text="No camera found. Connect your cameras in Rig › Equipment first." IsVisible="{Binding !TrainCameras.Count}"/>
+              <TextBlock Classes="hint" Text="No camera found. Connect your cameras in Rig › Devices first." IsVisible="{Binding !TrainCameras.Count}"/>
               <ItemsControl ItemsSource="{Binding TrainCameras}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate>
@@ -97,7 +97,10 @@
             </WrapPanel>
             <StackPanel IsVisible="{Binding CanSetFocusOffsets}" Spacing="2">
               <TextBlock Classes="label" Text="Focus offsets per filter (focuser steps)"/>
-              <TextBox Text="{Binding FocusOffsets}" Watermark="L=0, R=30, Ha=120"/>
+              <Grid ColumnDefinitions="*,8,Auto">
+                <TextBox Text="{Binding FocusOffsets}" Watermark="L=0, R=30, Ha=120"/>
+                <Button Grid.Column="2" Content="Fill in the filter names" Command="{Binding FillOffsetsFromWheelCommand}" ToolTip.Tip="Lists the filters of the chosen wheel, ready for their steps"/>
+              </Grid>
               <TextBlock Classes="hint" Text="When the filter changes the focuser moves by the difference, instead of refocusing."/>
             </StackPanel>
 
@@ -146,7 +149,7 @@
 
             <StackPanel Spacing="4">
               <TextBlock Classes="section" Text="MOUNT"/>
-              <TextBlock Classes="hint" Text="No mount found. Connect your mount in Rig › Equipment first." IsVisible="{Binding !PointerChoices.Count}"/>
+              <TextBlock Classes="hint" Text="No mount found. Connect your mount in Rig › Devices first." IsVisible="{Binding !PointerChoices.Count}"/>
               <ItemsControl ItemsSource="{Binding PointerChoices}">
                 <ItemsControl.ItemTemplate><DataTemplate><CheckBox IsChecked="{Binding IsSelected}" Content="{Binding Label}"/></DataTemplate></ItemsControl.ItemTemplate>
               </ItemsControl>

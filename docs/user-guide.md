@@ -54,7 +54,7 @@ That starts everything (INDI bridge, scopes, services, sky atlas, Stellarium lin
 
 | option | meaning | default |
 |---|---|---|
-| `--profile NAME` | run an equipment profile's drivers (Rig › Drivers) | none |
+| `--profile NAME` | run an equipment profile's drivers (Rig › Devices) | none |
 | `--indi host[:port][=name]` | an indiserver to bridge; repeat for several | `localhost:7624` (without a profile) |
 | `--port N` / `--listen IP` | mesh port and interface for other ELink processes | `5698`, loopback |
 | `--compose file.json` | where your setup is kept (the centring offset, site and so on are saved next to it) | `~/.config/elink/compose.json` |
@@ -64,7 +64,7 @@ That starts everything (INDI bridge, scopes, services, sky atlas, Stellarium lin
 | `--sky-data DIR` | KStars sky data | `/usr/share/kstars` |
 | `--no-ui` | headless; connect a UI later | |
 
-**Drivers** (recommended): instead of starting `indiserver` by hand, make a profile under *Rig › Drivers* (pick your
+**Drivers** (recommended): instead of starting `indiserver` by hand, make a profile under *Rig › Devices* (pick your
 drivers from the list INDI installed: eqmod, asi, gphoto, ...) and start it there, or at launch:
 
 ```bash
@@ -238,14 +238,14 @@ the output scale, a weather device that pauses it, *Start afresh* and *Check the
 own frames as soon as it is free (spots another scope already covered are skipped, scopes are never kept in step, a slow
 mount takes fewer shots), and guides, dithers, flips and focuses by itself.
 
-**Show** (*More options*) make an image out of several kinds of data, each with its own filter, range of pixel scales and
-depth. One line per layer: `name, filter, finest ″/px, coarsest ″/px, minutes`. For example a fast wide scope can build a deep,
+**Data layers** (*More options*, advanced) make an image out of several kinds of data. *Add a layer* gives a row with a name, a
+filter, a finest and a coarsest pixel scale (″/px, 0 = no limit) and an exposure goal. For example a fast wide scope can build a deep,
 coarse base while a long focal length scope adds the detail:
 
-```
-base,   L, 4, 10, 30
-detail, L, 0,  2, 120
-```
+| Name | Filter | Finest | Coarsest | Goal |
+|---|---|---|---|---|
+| base | L | 4 | 10 | 30 min |
+| detail | L | 0 | 2 | 120 min |
 
 A frame feeds **every** layer whose filter it was shot through and whose range holds its pixel scale (a frame at 1.5″/px feeds
 both layers above; one at 6″/px only the base). Each layer is its own channel of the coverage map, so each scope only works
@@ -349,11 +349,11 @@ Only Light frames are used. The stack can be fetched as a 32-bit FITS with a WCS
 
 | symptom | check |
 |---|---|
-| no equipment | Is `indiserver` running and given with `--indi` (or a profile started)? Rig › Equipment › *Look again*. |
+| no equipment | Is `indiserver` running and given with `--indi` (or a profile started)? Rig › Devices › *Look again*. |
 | "Ready" says a thing is missing | Click it: each line takes you to where it is fixed. |
 | the Set up page refuses a scope | The red line under its buttons says why (no mount ticked, no telescope, a camera already in another telescope...). |
 | centring says "no solver" | The status strip's list shows it; install ASTAP or astrometry.net, or set `ELINK_ASTAP` / `ELINK_SOLVE_FIELD`. |
 | solves fail | Exposure long enough for stars? Focus? Focal length and pixel size right (a wrong scale hint is retried without)? |
 | the stack stays empty | A telescope with a pixel size and sensor size filled in for a camera that reports its own (only DSLRs need them) makes frames the wrong size. |
-| scope stays "Slewing" | The mount is parked or not tracking: unpark it in Rig › Equipment › Open. |
+| scope stays "Slewing" | The mount is parked or not tracking: unpark it in Rig › Devices › Open. |
 | Stellarium shows no telescope | Equinox must be J2000; the port must match `--stellarium-port`. |

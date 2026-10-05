@@ -39,6 +39,23 @@ public sealed partial class SiteViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _longitude = "";
     [ObservableProperty] private double _elevation;
     [ObservableProperty] private string _gps = NoGps;
+    /// <summary>Choosing a GPS that has a fix fills in where you are (it can still be changed before Apply).</summary>
+    partial void OnGpsChanged(string value) { if (value != NoGps) _ = TakeFromGpsAsync(value); }
+    private async Task TakeFromGpsAsync(string id)
+    {
+        try
+        {
+            var g = (await _mesh.Node.CallFunctionAsync<Event.Connections.Models.BaseBinaryConvertibles.NOTESVoid, GpsState>(EquipmentIds.GetState(DeviceKinds.Gps, id), Event.Connections.Models.BaseBinaryConvertibles.NOTESVoid.Void, TimeSpan.FromSeconds(5)))?.FirstOrDefault();
+            if (g is not { HasFix.Value: true } || double.IsNaN(g.LatitudeDegrees.Value) || double.IsNaN(g.LongitudeDegrees.Value)) { UiThread.Post(() => Message = "that GPS has no position yet: the numbers stay as they are"); return; }
+            UiThread.Post(() =>
+            {
+                Latitude = Sexagesimal.Format(g.LatitudeDegrees.Value, 0); Longitude = Sexagesimal.Format(g.LongitudeDegrees.Value, 0);
+                if (!double.IsNaN(g.ElevationMeters.Value)) Elevation = Math.Round(g.ElevationMeters.Value);
+                Message = "position taken from the GPS: press Apply to use it";
+            });
+        }
+        catch (Exception) { }
+    }
     [ObservableProperty] private double _minAltitude = 15;
     [ObservableProperty] private string _horizonText = "";
     [ObservableProperty] private bool _pushToMounts = true;
@@ -50,7 +67,7 @@ public sealed partial class SiteViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _moonText = "";
     [ObservableProperty] private string _stateMessage = "";
     [ObservableProperty, NotifyPropertyChangedFor(nameof(MessageKind))] private string _message = "";
-    public string MessageKind => Message == "saved" ? "ok" : "error";
+    public string MessageKind => Message == "saved" ? "ok" : Message.StartsWith("position taken") ? "info" : "error";
     /// <summary>The next 24 hours: dark hours and the Moon's, for the bar on the page.</summary>
     [ObservableProperty] private NightTimeline? _night;
 

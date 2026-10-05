@@ -189,9 +189,31 @@
                     <StackPanel Grid.Row="2" Grid.Column="2"><TextBlock Classes="label" Text="Output scale (″/px)"/><NumericUpDown Value="{Binding Image.OutputScale}" Minimum="0" Increment="0.5" FormatString="0.###" ToolTip.Tip="0 = as fine as the finest scope"/></StackPanel>
                     <StackPanel Grid.Row="3"><TextBlock Classes="label" Text="Pause when this is unsafe"/><ComboBox ItemsSource="{Binding Image.Weather}" SelectedItem="{Binding Image.SelectedWeather}" HorizontalAlignment="Stretch"/></StackPanel>
                   </Grid>
-                  <StackPanel>
-                    <TextBlock Classes="label" Text="Data layers (optional, advanced): name, filter, finest ″/px, coarsest ″/px, minutes"/>
-                    <TextBox Text="{Binding Image.Layers}" AcceptsReturn="True" MinHeight="54" Watermark="base, L, 4, 10, 30&#x0a;detail, L, 0, 2, 120" ToolTip.Tip="Kinds of data the image is made of. A frame feeds a layer when it was shot through its filter and its pixel scale is in the layer's range, so a fast wide scope can build a deep, coarse base while a long focal length one adds detail, each to its own depth. Empty = everything is one layer."/>
+                  <StackPanel Spacing="4">
+                    <Grid ColumnDefinitions="*,Auto">
+                      <TextBlock Classes="label" Text="Data layers (optional, advanced)" VerticalAlignment="Center" ToolTip.Tip="Kinds of data the image is made of. A frame feeds a layer when it was shot through its filter and its pixel scale is in the layer's range, so a fast wide scope can build a deep, coarse base while a long focal length one adds detail, each to its own depth. No layers = everything is one layer."/>
+                      <Button Grid.Column="1" Content="Add a layer" Command="{Binding Image.AddLayerCommand}" Padding="8,3"/>
+                    </Grid>
+                    <ItemsControl ItemsSource="{Binding Image.LayerRows}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                          <Border Background="#151B26" CornerRadius="6" Padding="8" Margin="0,2">
+                            <StackPanel Spacing="6">
+                              <Grid ColumnDefinitions="*,6,90,6,Auto">
+                                <TextBox Text="{Binding Name}" Watermark="Name"/>
+                                <TextBox Grid.Column="2" Text="{Binding Filter}" Watermark="Filter"/>
+                                <Button Grid.Column="4" Content="✕" Classes="ghost" Command="{Binding $parent[UserControl].DataContext.Image.RemoveLayerCommand}" CommandParameter="{Binding}" ToolTip.Tip="Remove this layer"/>
+                              </Grid>
+                              <Grid ColumnDefinitions="*,6,*,6,*">
+                                <StackPanel><TextBlock Classes="label" Text="Finest ″/px"/><NumericUpDown Value="{Binding FinestScale}" Minimum="0" Increment="0.5" FormatString="0.##" ToolTip.Tip="Frames finer than this do not feed the layer. 0 = no limit."/></StackPanel>
+                                <StackPanel Grid.Column="2"><TextBlock Classes="label" Text="Coarsest ″/px"/><NumericUpDown Value="{Binding CoarsestScale}" Minimum="0" Increment="0.5" FormatString="0.##" ToolTip.Tip="Frames coarser than this do not feed the layer. 0 = no limit."/></StackPanel>
+                                <StackPanel Grid.Column="4"><TextBlock Classes="label" Text="Exposure goal (min)"/><NumericUpDown Value="{Binding Minutes}" Minimum="0" Increment="10" FormatString="0.##" ToolTip.Tip="0 = the image's exposure goal"/></StackPanel>
+                              </Grid>
+                            </StackPanel>
+                          </Border>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
                   </StackPanel>
                   <CheckBox IsChecked="{Binding Image.SaveFrames}" Content="Save the frames (folder: Advanced › Saving frames)"/>
                   <CheckBox IsChecked="{Binding Image.LiveStack}" Content="Build the picture while shooting"/>

@@ -181,8 +181,8 @@ public class EdgeCaseTests : IClassFixture<IndiServerFixture>
             return e is { Priority.Value: 7, RequireDark.Value: false } && Math.Abs(e.MinMoonSeparationDegrees.Value - 40) < 1e-9;
         }), "the edit should be applied without a button");
         // switched off: it stays in the queue
-        row = vm.Schedule.Rows[0]; row.Enabled = false;
-        Assert.True(await AsyncExt.EventuallyAsync(async () => !(await Backend()).Entries[0].Enabled.Value));
+        // (the rows are rebuilt when the scheduler's state comes back, so the row to edit is looked up again until the edit has taken)
+        Assert.True(await AsyncExt.EventuallyAsync(async () => { vm.Schedule.Rows[0].Enabled = false; await Task.Delay(150); return !(await Backend()).Entries[0].Enabled.Value; }));
         Assert.Equal(1, (await Backend()).Entries.Count);
 
         // taken out
@@ -198,14 +198,14 @@ public class EdgeCaseTests : IClassFixture<IndiServerFixture>
         Assert.True(_server.Available);
         await using var rig = await RigAsync(_server);
         var vm = rig.Vm; var image = vm.Image;
-        image.Layers = "coarse, , 500, 900, 1";
+        image.LayerRows.Add(new LayerRow { Name = "coarse", FinestScale = 500, CoarsestScale = 900, Minutes = 1 });
         Assert.True(await UiRig.Eventually(() => image.PlanProblem.Contains("coarse")), image.PlanProblem);
         Assert.True(await UiRig.Eventually(() => !vm.Sky.StartImageCommand.CanExecute(null)));
-        image.Layers = "this is not a layer, 1, 2, 3, 4, 5, 6";
-        Assert.True(await UiRig.Eventually(() => image.PlanProblem.Contains("a layer is")), image.PlanProblem);
-        image.Layers = "everything, , 0, 0, 1";
+        image.LayerRows[0].Name = "";
+        Assert.True(await UiRig.Eventually(() => image.PlanProblem.Contains("needs a name")), image.PlanProblem);
+        image.LayerRows[0].Name = "everything"; image.LayerRows[0].FinestScale = 0; image.LayerRows[0].CoarsestScale = 0;
         Assert.True(await UiRig.Eventually(() => image.PlanProblem == "" && vm.Sky.StartImageCommand.CanExecute(null)), image.PlanProblem);
-        image.Layers = "";
+        image.RemoveLayerCommand.Execute(image.LayerRows[0]);
         Assert.True(await UiRig.Eventually(() => image.PlanProblem == ""));
     }
 

@@ -16,6 +16,16 @@ using EVent.Connections.Models.BaseBinaryConvertibles;
 
 namespace ELink.UI.ViewModels;
 
+/// <summary>One layer of an image: a filter, a range of pixel scales and a depth.</summary>
+public sealed partial class LayerRow : ObservableObject
+{
+    [ObservableProperty] private string _name = "";
+    [ObservableProperty] private string _filter = "";
+    [ObservableProperty] private double _finestScale;
+    [ObservableProperty] private double _coarsestScale;
+    [ObservableProperty] private double _minutes;
+}
+
 public sealed record SavedImageItem(SavedImage Image)
 {
     public string Line => $"{Image.Label.Text}   ·   {Image.Visits.Value} shots   ·   " +
@@ -43,6 +53,11 @@ public sealed partial class ImageViewModel : ObservableObject, IDisposable
         catalog.Devices.CollectionChanged += (_, _) => UiThread.Post(RebuildChoices);
         RebuildChoices();
         PropertyChanged += (_, e) => { if (e.PropertyName is { } n && PlanInputs.Contains(n)) SchedulePlan(); };
+        LayerRows.CollectionChanged += (_, e) =>
+        {
+            if (e.NewItems is not null) foreach (LayerRow r in e.NewItems) r.PropertyChanged += (_, _) => SchedulePlan();
+            SchedulePlan();
+        };
     }
 
     public ObservableCollection<ShooterChoice> Scopes { get; } = new();
@@ -63,8 +78,10 @@ public sealed partial class ImageViewModel : ObservableObject, IDisposable
     [ObservableProperty] private double _exposureSeconds = 60;
     [ObservableProperty] private string _filter = "";
     [ObservableProperty] private string _iso = "";
-    /// <summary>Layers, one a line: name, filter, finest ″/px, coarsest ″/px, depth (minutes). Empty = one layer of everything.</summary>
-    [ObservableProperty] private string _layers = "";
+    /// <summary>The kinds of data the image is made of, one row each. No rows = one layer of everything.</summary>
+    public ObservableCollection<LayerRow> LayerRows { get; } = new();
+    [RelayCommand] private void AddLayer() => LayerRows.Add(new LayerRow { Name = LayerRows.Count == 0 ? "base" : $"layer {LayerRows.Count + 1}" });
+    [RelayCommand] private void RemoveLayer(LayerRow? row) { if (row is not null) LayerRows.Remove(row); }
     [ObservableProperty] private double _targetMinutes = 60;
     [ObservableProperty] private double _stepover;
     [ObservableProperty] private double _ditherArcsec = 30;
@@ -165,7 +182,8 @@ public sealed partial class ImageViewModel : ObservableObject, IDisposable
         ExposureSeconds = r.Exposure.Seconds.Value; Filter = r.Exposure.Filter.Text; Iso = r.Exposure.Iso.Text; TargetMinutes = r.TargetSeconds.Value / 60;
         Stepover = r.StepoverDegrees.Value; DitherArcsec = r.DitherArcsec.Value; OutputScale = r.OutputPixelScaleArcsec.Value; LiveStack = r.LiveStack.Value;
         foreach (var s in Scopes) s.Selected = r.ScopeIds.Any(x => x.Text == s.Id);
-        Layers = string.Join("\n", r.Layers.Select(l => FormattableString.Invariant($"{l.Label.Text}, {l.Filter.Text}, {l.MinScaleArcsec.Value:0.##}, {l.MaxScaleArcsec.Value:0.##}, {l.TargetSeconds.Value / 60:0.##}")));
+        LayerRows.Clear();
+        foreach (var l in r.Layers) LayerRows.Add(new LayerRow { Name = l.Label.Text, Filter = l.Filter.Text, FinestScale = l.MinScaleArcsec.Value, CoarsestScale = l.MaxScaleArcsec.Value, Minutes = l.TargetSeconds.Value / 60 });
         StartAfresh = false;
         Say($"{r.Label.Text}: press Start to carry it on", "info");
     }
@@ -193,14 +211,10 @@ public sealed partial class ImageViewModel : ObservableObject, IDisposable
             TargetSeconds = TargetMinutes * 60, StepoverDegrees = Stepover, DitherArcsec = DitherArcsec, MaxVisits = MaxVisits,
             WeatherId = SelectedWeather ?? "", LiveStack = LiveStack, OutputPixelScaleArcsec = OutputScale, Resume = !StartAfresh,
         };
-        foreach (var line in Layers.Split('\n').Select(l => l.Trim()).Where(l => l != ""))
+        foreach (var row in LayerRows)
         {
-            var p = line.Split(',').Select(x => x.Trim()).ToArray();
-            double Num(int i) => i < p.Length && p[i] != "" && double.TryParse(p[i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : p.Length <= i || p[i] == "" ? 0 : double.NaN;
-            double min = Num(2), max = Num(3), minutes = Num(4);
-            if (p[0] == "" || p.Length > 5 || double.IsNaN(min) || double.IsNaN(max) || double.IsNaN(minutes) || min < 0 || max < 0 || minutes < 0)
-            { problem = $"a layer is: name, filter, finest ″/px, coarsest ″/px, depth in minutes (not '{line}')"; return false; }
-            req.Layers.Add(new ImagingLayer { Label = p[0], Filter = p.Length > 1 ? p[1] : "", MinScaleArcsec = min, MaxScaleArcsec = max, TargetSeconds = minutes * 60 });
+            if (row.Name.Trim() == "") { problem = "every layer needs a name"; return false; }
+            req.Layers.Add(new ImagingLayer { Label = row.Name.Trim(), Filter = row.Filter.Trim(), MinScaleArcsec = row.FinestScale, MaxScaleArcsec = row.CoarsestScale, TargetSeconds = row.Minutes * 60 });
         }
         foreach (var s in Scopes.Where(s => s.Selected)) req.ScopeIds.Add(s.Id);
         if (req.ScopeIds.Count == 0) { problem = "tick at least one scope"; return false; }
@@ -260,7 +274,7 @@ public sealed partial class ImageViewModel : ObservableObject, IDisposable
 
     private static readonly HashSet<string> PlanInputs = new()
     {
-        nameof(CenterRa), nameof(CenterDec), nameof(Width), nameof(Height), nameof(PositionAngle), nameof(ExposureSeconds), nameof(Stepover), nameof(Filter), nameof(Layers),
+        nameof(CenterRa), nameof(CenterDec), nameof(Width), nameof(Height), nameof(PositionAngle), nameof(ExposureSeconds), nameof(Stepover), nameof(Filter),
     };
 
     /// <summary>Where the area is and how big it is, as the imaging service last said (the map's own size).</summary>

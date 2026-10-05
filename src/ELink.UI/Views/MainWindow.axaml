@@ -45,6 +45,10 @@
 
       <ContentControl Grid.Column="1" Content="{Binding Current}"/>
 
+      <!-- dims the page behind a device panel: click it to close the panel -->
+      <Button Grid.Column="1" IsVisible="{Binding HasDrawer}" Command="{Binding CloseDrawerCommand}" Background="#99070A10" BorderThickness="0" CornerRadius="0"
+              HorizontalAlignment="Stretch" VerticalAlignment="Stretch" ToolTip.Tip="Close the device panel"/>
+
       <!-- one device's own panel, over the right edge -->
       <Border Grid.Column="1" HorizontalAlignment="Right" Width="470" Background="#131822" BorderBrush="#2B3548" BorderThickness="1,0,0,0"
               IsVisible="{Binding HasDrawer}">

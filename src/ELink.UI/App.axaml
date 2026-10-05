@@ -22,6 +22,7 @@
     <DataTemplate DataType="vm:EquipmentViewModel"><v:EquipmentView/></DataTemplate>
     <DataTemplate DataType="vm:HelpViewModel"><v:HelpView/></DataTemplate>
     <DataTemplate DataType="vm:AutofocusViewModel"><v:AutofocusView/></DataTemplate>
+    <DataTemplate DataType="vm:DevicesViewModel"><v:DevicesView/></DataTemplate>
     <DataTemplate DataType="vm:FocusAssistViewModel"><v:FocusAssistView/></DataTemplate>
     <DataTemplate DataType="vm:ProfilesViewModel"><v:ProfilesView/></DataTemplate>
     <DataTemplate DataType="vm:CalibrationViewModel"><v:CalibrationView/></DataTemplate>

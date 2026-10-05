@@ -9,7 +9,7 @@
           <Button Content="Look again" Command="{Binding RefreshCommand}" ToolTip.Tip="Ask the mesh what is out there"/>
         </StackPanel>
         <TextBlock Classes="hint" IsVisible="{Binding HasNone}"
-                   Text="Nothing is plugged in yet. Start your INDI drivers from Rig › Drivers (or start the station with --indi) and the devices appear here."/>
+                   Text="Nothing is plugged in yet. Start your INDI drivers from Rig › Devices (or start the station with --indi) and the devices appear here."/>
         <c:Notice Text="{Binding Message}"/>
         <ItemsControl ItemsSource="{Binding Catalog.Equipment}">
           <ItemsControl.ItemTemplate>

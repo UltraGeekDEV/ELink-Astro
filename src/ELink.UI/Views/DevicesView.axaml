@@ -1,0 +1,11 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="ELink.UI.Views.DevicesView">
+  <StackPanel Spacing="0">
+    <Border Classes="card">
+      <Expander IsExpanded="True" Header="1 · Drivers: start your equipment's INDI drivers (skip if they are already running)">
+        <ContentControl Content="{Binding Drivers}" Margin="0,10,0,0"/>
+      </Expander>
+    </Border>
+    <ContentControl Content="{Binding Equipment}"/>
+  </StackPanel>
+</UserControl>
