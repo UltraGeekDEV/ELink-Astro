@@ -26,6 +26,7 @@ public class LiveStackRequest : IBinaryConvertible
     public BinaryConvertibleBool SeparateFilters { get; set; } = true;
     public BinaryConvertibleString SessionKey { get; set; } = "";
     public BinaryConvertibleBool Resume { get; set; } = true;
+    public BinaryConvertibleCollection<ImagingLayer> Layers { get; set; } = new();
     public BinaryConvertibleBool MatchFlux { get; set; } = true;
     public BinaryConvertibleDouble RejectSigma { get; set; } = 3.0;
     public BinaryConvertibleString BayerPattern { get; set; } = "";
@@ -52,6 +53,7 @@ public class LiveStackRequest : IBinaryConvertible
         d.RegisterField("MaxMegapixels", (LiveStackRequest x) => x.MaxMegapixels).Description("refuse fields larger than this at the requested scale (8 bytes of memory per pixel, 16 in colour)");
         d.RegisterField("SessionKey", (LiveStackRequest x) => x.SessionKey).Description("keep this stack (saved every few minutes and when stopped) under this name; empty = not kept");
         d.RegisterField("Resume", (LiveStackRequest x) => x.Resume).Description("carry on a kept stack of this name (it must cover the same field); false = start it afresh");
+        d.RegisterField("Layers", (LiveStackRequest x) => x.Layers, maxCount: 8).Description("with layers, one stack per layer: a frame goes to the first layer whose filter it was shot through and whose pixel scale range holds the frame's scale (a frame of none is left out); empty = one stack per filter");
         d.RegisterField("SeparateFilters", (LiveStackRequest x) => x.SeparateFilters).Description("one stack per filter (frames say which); false = all into one");
         d.RegisterField("MatchFlux", (LiveStackRequest x) => x.MatchFlux).Description("scale every frame so its stars match the stack (other cameras and scopes, thin cloud)");
         d.RegisterField("RejectSigma", (LiveStackRequest x) => x.RejectSigma).Description("leave out samples this many standard deviations from a pixel's mean (satellites, planes); 0 = keep all");

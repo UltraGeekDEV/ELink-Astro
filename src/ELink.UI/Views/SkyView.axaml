@@ -175,6 +175,10 @@
                     <StackPanel Grid.Row="2" Grid.Column="2"><TextBlock Classes="label" Text="Output scale (″/px)"/><NumericUpDown Value="{Binding Image.OutputScale}" Minimum="0" Increment="0.5" FormatString="0.###" ToolTip.Tip="0 = as fine as the finest scope"/></StackPanel>
                     <StackPanel Grid.Row="3"><TextBlock Classes="label" Text="Pause when this is unsafe"/><ComboBox ItemsSource="{Binding Image.Weather}" SelectedItem="{Binding Image.SelectedWeather}" HorizontalAlignment="Stretch"/></StackPanel>
                   </Grid>
+                  <StackPanel>
+                    <TextBlock Classes="label" Text="Layers (optional): name, filter, finest ″/px, coarsest ″/px, minutes"/>
+                    <TextBox Text="{Binding Image.Layers}" AcceptsReturn="True" MinHeight="54" Watermark="base, L, 4, 10, 30&#x0a;detail, L, 0, 2, 120" ToolTip.Tip="Kinds of data the image is made of. A frame feeds a layer when it was shot through its filter and its pixel scale is in the layer's range, so a fast wide scope can build a deep, coarse base while a long focal length one adds detail, each to its own depth. Empty = everything is one layer."/>
+                  </StackPanel>
                   <CheckBox IsChecked="{Binding Image.LiveStack}" Content="Build the picture while shooting"/>
                   <CheckBox IsChecked="{Binding Image.StartAfresh}" Content="Start afresh: forget what this name already has"/>
                   <StackPanel Classes="row">

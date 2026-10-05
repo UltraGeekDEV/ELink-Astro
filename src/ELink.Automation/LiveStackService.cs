@@ -37,7 +37,15 @@ public sealed class LiveStackService : IAsyncDisposable
         public double Exposure;
         /// <summary>Pseudo mono: the out-of-focus luminance stack holds the same frames again, so its frames are not counted twice.</summary>
         public bool Counted = true;
+        /// <summary>The filter written in the image's header, when the stack's key is something else (a layer's name).</summary>
+        public string? FitsFilter;
     }
+
+    /// <summary>The first layer a frame feeds: shot through its filter (a layer with none takes any) and within its scale range.</summary>
+    public static ImagingLayer? LayerFor(IEnumerable<ImagingLayer> layers, string filter, double scale) =>
+        layers.FirstOrDefault(l => (l.Filter.Text == "" || string.Equals(l.Filter.Text, filter, StringComparison.OrdinalIgnoreCase))
+            && (l.MinScaleArcsec.Value <= 0 || scale >= l.MinScaleArcsec.Value * (1 - 1e-6))
+            && (l.MaxScaleArcsec.Value <= 0 || scale <= l.MaxScaleArcsec.Value * (1 + 1e-6)));
     private const string PseudoLuminance = "pm:L";
     private static string PseudoKey(string channel) => "pm:" + channel;
     private static readonly string[] PseudoChannels = ["R", "G", "B"];
@@ -262,20 +270,44 @@ public sealed class LiveStackService : IAsyncDisposable
 
         if (item.Pseudo != "") return await StackPseudoAsync(item, r, img, data, width, height, channels, wcs, how, colour);
 
+        // which stacks: one per filter (the frame's, or its FITS header's), unless filters are stacked together; with layers, the stack
+        // of every layer the frame feeds (its filter, its pixel scale within the layer's range)
+        string filter = item.Filter != "" ? item.Filter : (img.Get("FILTER") ?? "");
+        var targets = new List<(string Key, string Fits)>();
+        if (r.Layers.Count > 0)
+        {
+            foreach (var layer in r.Layers.Where(l => LayerFor([l], filter.Trim(), rawWcs.PixelScaleArcsec) is not null)) targets.Add((layer.Label.Text, layer.Filter.Text));
+            if (targets.Count == 0) return FormattableString.Invariant($"{item.Source}: skipped, {rawWcs.PixelScaleArcsec:0.##}\"/px through {(filter == "" ? "no filter" : filter)} feeds no layer");
+        }
+        else { string k = r.SeparateFilters.Value ? filter.Trim() : ""; targets.Add((k, k)); }
+
+        double seconds = !double.IsNaN(item.Seconds) && item.Seconds > 0 ? item.Seconds : img.GetDouble("EXPTIME", img.GetDouble("EXPOSURE", 0));
+        string message = "", failure = "";
+        int stacked = 0;
+        foreach (var (key, fitsFilter) in targets)
+        {
+            var (error, note) = AddToStack(r, item, key, fitsFilter, data, width, height, channels, wcs, rawWcs, seconds, how, colour, countExposure: stacked == 0);
+            if (error is not null) { failure = error; continue; }
+            stacked++; message = message == "" ? note : message + "; also " + key;
+        }
+        return stacked > 0 ? message : failure;
+    }
+
+    /// <summary>Adds a registered frame to one stack: (error, message).</summary>
+    private (string? Error, string Message) AddToStack(LiveStackRequest r, Item item, string key, string fitsFilter, float[] data, int width, int height, int channels,
+        TanWcs wcs, TanWcs rawWcs, double seconds, string how, string colour, bool countExposure)
+    {
         LiveStacker stack; FilterStack fs;
         var background = new float[channels];
-        // which stack: one per filter (the frame's, or its FITS header's), unless filters are stacked together
-        string filter = item.Filter != "" ? item.Filter : (img.Get("FILTER") ?? "");
-        string key = r.SeparateFilters.Value ? filter.Trim() : "";
         lock (_gate)
         {
-            if (item.Generation != _generation) return "!stack was replaced";
+            if (item.Generation != _generation) return ("!stack was replaced", "");
             if (double.IsNaN(_scale))
             {
-                if (Size(r, wcs.PixelScaleArcsec) is { Error: { } err }) return "!" + err;
+                if (Size(r, wcs.PixelScaleArcsec) is { Error: { } err }) return ("!" + err, "");
                 _scale = wcs.PixelScaleArcsec;
             }
-            if (!_stacks.TryGetValue(key, out fs!)) _stacks[key] = fs = new FilterStack { Stack = Create(r, _scale), Filter = key };
+            if (!_stacks.TryGetValue(key, out fs!)) _stacks[key] = fs = new FilterStack { Stack = Create(r, _scale), Filter = key, FitsFilter = fitsFilter };
             stack = fs.Stack;
             int plane = width * height;
             var bg = Enumerable.Range(0, channels).Select(c => LiveStacker.Background(data.AsSpan(c * plane, plane).ToArray())).ToArray();
@@ -288,14 +320,13 @@ public sealed class LiveStackService : IAsyncDisposable
             _lastScale = rawWcs.PixelScaleArcsec;
         }
         var added = stack.Add(data, width, height, channels, wcs, background);
-        if (!added.Added) return "!" + added.Message;
-        double seconds = !double.IsNaN(item.Seconds) && item.Seconds > 0 ? item.Seconds : img.GetDouble("EXPTIME", img.GetDouble("EXPOSURE", 0));
-        lock (_gate) { _exposure += seconds; fs.Exposure += seconds; }
+        if (!added.Added) return ("!" + added.Message, "");
+        lock (_gate) { if (countExposure) _exposure += seconds; fs.Exposure += seconds; }
         string resample = added.BinFactor > 1 ? $"binned {added.BinFactor}x, " : "";
         resample += added.Subsamples > 1 ? $"area-averaged {added.Subsamples}x{added.Subsamples}" : stack.Wcs.PixelScaleArcsec < wcs.PixelScaleArcsec * 0.999 ? $"interpolated ({stack.Interpolation})" : "resampled";
         string extra = (key != "" ? $", {key}" : "") + (Math.Abs(added.FluxScale - 1) > 0.02 ? FormattableString.Invariant($", flux x{added.FluxScale:0.00}") : "")
                        + (added.RejectedPixels > 0 ? $", {added.RejectedPixels} outlier pixels left out" : "");
-        return $"{item.Source}: stacked ({how}{colour}, {wcs.PixelScaleArcsec:0.##}\"/px → {stack.Wcs.PixelScaleArcsec:0.##}\"/px, {resample}{extra})";
+        return (null, $"{item.Source}: stacked ({how}{colour}, {wcs.PixelScaleArcsec:0.##}\"/px → {stack.Wcs.PixelScaleArcsec:0.##}\"/px, {resample}{extra})");
     }
 
     /// <summary>Pseudo mono: one colour frame in which one channel was in focus. That channel goes to its own stack (the colours),
@@ -492,7 +523,8 @@ public sealed class LiveStackService : IAsyncDisposable
         var cards = wcs.Cards().ToList();
         string Q(string s) => "'" + s.Replace("'", "''") + "'";
         cards.Add(("OBJECT", Q(label)));
-        if (fs.Filter != "") cards.Add(("FILTER", Q(fs.Filter)));
+        if ((fs.FitsFilter ?? fs.Filter) != "") cards.Add(("FILTER", Q(fs.FitsFilter ?? fs.Filter)));
+        if (fs.FitsFilter is not null && fs.FitsFilter != fs.Filter && fs.Filter != "") cards.Add(("LAYER", Q(fs.Filter)));
         cards.Add(("NCOMBINE", stack.Frames.ToString(CultureInfo.InvariantCulture)));
         cards.Add(("EXPTIME", fs.Exposure.ToString("0.###", CultureInfo.InvariantCulture)));
         cards.Add(("CREATOR", Q("ELink live stack")));
@@ -639,7 +671,7 @@ public sealed class LiveStackService : IAsyncDisposable
             using var fs = File.OpenRead(Path.Combine(dir, f.File));
             var stack = LiveStacker.ReadFrom(fs);
             stack.Interpolation = Enum.Parse<Interpolation>(r.Interpolation.Text); stack.MatchFlux = r.MatchFlux.Value; stack.RejectSigma = Math.Max(0, r.RejectSigma.Value);
-            stacks[f.Filter] = new FilterStack { Stack = stack, Filter = f.Filter, Pedestal = f.Pedestal, Exposure = f.Exposure, Counted = f.Filter != PseudoLuminance };
+            stacks[f.Filter] = new FilterStack { Stack = stack, Filter = f.Filter, Pedestal = f.Pedestal, Exposure = f.Exposure, Counted = f.Filter != PseudoLuminance, FitsFilter = r.Layers.FirstOrDefault(l => l.Label.Text == f.Filter)?.Filter.Text };
         }
         return (stacks, meta.Scale, meta.Exposure);
     }

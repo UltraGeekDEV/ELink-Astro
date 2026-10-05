@@ -45,7 +45,7 @@ public class ImagingTests : IAsyncLifetime
     /// <summary>A scope of one mount and one train whose imaging camera covers w x h degrees.</summary>
     private readonly Dictionary<string, TrainState> _trainStates = new();
 
-    private async Task AddScopeAsync(string id, double w, double h, int slewMs = 20, bool withTrain = true, double angle = double.NaN)
+    private async Task AddScopeAsync(string id, double w, double h, int slewMs = 20, bool withTrain = true, double angle = double.NaN, double scale = 2.0)
     {
         var p = new FakePointer(_node, id + "-mount", slewMs); await p.StartAsync(); _owned.Add(p); _pointers[id] = p;
         string train = id + "-train";
@@ -56,7 +56,7 @@ public class ImagingTests : IAsyncLifetime
             t.Cameras.Add(new TrainCamera { CameraId = id + "-cam", Role = "Imaging" });
             _snap.Trains.Add(t);
             var state = new TrainState { Id = train, FocalLengthMm = 400 };
-            state.Cameras.Add(new TrainCameraInfo { CameraId = id + "-cam", Role = "Imaging", ShooterId = train + "-cam", Connected = true, PixelScaleArcsec = 2.0, FieldWidthDegrees = w, FieldHeightDegrees = h, AngleDegrees = angle });
+            state.Cameras.Add(new TrainCameraInfo { CameraId = id + "-cam", Role = "Imaging", ShooterId = train + "-cam", Connected = true, PixelScaleArcsec = scale, FieldWidthDegrees = w, FieldHeightDegrees = h, AngleDegrees = angle });
             _trainStates[id] = state;
             await _fakes.AddAsync<NOTESVoid, TrainState>(TrainIds.GetState(train), _ => Task.FromResult(state), "fake train");
         }
@@ -266,5 +266,70 @@ public class ImagingTests : IAsyncLifetime
         Assert.False((await Commands.CallAsync(_node, ImagingIds.Start, Request(1, 1, 0.1, "nope"), TimeSpan.FromSeconds(60))).Ok.Value);   // unknown scope
         var polar = Request(1, 1, 0.1, "plain"); polar.Center.DecDegrees = 89.8;
         Assert.False((await Commands.CallAsync(_node, ImagingIds.Start, polar, TimeSpan.FromSeconds(60))).Ok.Value);
+    }
+
+    private static ImagingLayer Layer(string name, string filter, double min, double max, double target) =>
+        new() { Label = name, Filter = filter, MinScaleArcsec = min, MaxScaleArcsec = max, TargetSeconds = target };
+
+    [Fact]
+    public async Task LayersWithOtherScaleRangesAreFedByTheScopesWhoseCamerasFitThem()
+    {
+        // a fast wide scope for a strong, coarse base and a long focal length one for the detail, both through L
+        await AddScopeAsync("base", 1.2, 0.8, slewMs: 10, scale: 8);
+        await AddScopeAsync("detail", 0.5, 0.35, slewMs: 10, scale: 1.5);
+        var r = Request(1.5, 1.0, 0.2, "base", "detail");
+        r.Exposure.Filter = "L";
+        r.Layers.Add(Layer("base", "L", 4, 10, 0.1));
+        r.Layers.Add(Layer("detail", "L", 0, 2, 0.3));
+        var start = await Commands.CallAsync(_node, ImagingIds.Start, r, TimeSpan.FromSeconds(60));
+        Assert.True(start.Ok.Value, start.Error.Text);
+        Assert.True(await Eventually(() => _last is { Phase.Text: "Done" or "Error" }), $"{_last?.Phase.Text} {_last?.Message.Text}");
+        Assert.Equal("Done", _last!.Phase.Text);
+        var layers = _last.Layers.ToDictionary(l => l.Label.Text);
+        Assert.True(layers["base"].MinSeconds.Value >= 0.1 - 1e-6, $"base {layers["base"].MinSeconds.Value}");
+        Assert.True(layers["detail"].MinSeconds.Value >= 0.3 - 1e-6, $"detail {layers["detail"].MinSeconds.Value}");
+        Assert.Equal((1, 1), (layers["base"].Scopes.Value, layers["detail"].Scopes.Value));
+        // the base is deep enough long before the detail: the wide scope took far fewer shots than the narrow one
+        Assert.True(_shooters["base"].Exposures < _shooters["detail"].Exposures, $"{_shooters["base"].Exposures} vs {_shooters["detail"].Exposures}");
+        lock (_shooters["base"].Requests) Assert.All(_shooters["base"].Requests, e => Assert.Equal("L", e.Filter.Text));
+        // and the base layer never got deeper than needed (the narrow scope's frames are too fine for it)
+        Assert.True(layers["base"].MeanSeconds.Value < 0.1 * 3, $"{layers["base"].MeanSeconds.Value}");
+    }
+
+    [Fact]
+    public async Task LayersOfOtherFiltersAreEachShotThroughTheirOwnFilter()
+    {
+        await AddScopeAsync("one", 0.5, 0.35, slewMs: 5);
+        var r = Request(0.5, 0.35, 0.1, "one");
+        r.Layers.Add(Layer("red", "R", 0, 0, 1.0));
+        r.Layers.Add(Layer("blue", "B", 0, 0, 2.0));
+        Assert.True((await Commands.CallAsync(_node, ImagingIds.Start, r, TimeSpan.FromSeconds(60))).Ok.Value);
+        Assert.True(await Eventually(() => _last is { Phase.Text: "Done" or "Error" }), $"{_last?.Phase.Text} {_last?.Message.Text}");
+        Assert.Equal("Done", _last!.Phase.Text);
+        var layers = _last.Layers.ToDictionary(l => l.Label.Text);
+        Assert.True(layers["red"].MinSeconds.Value >= 1.0 - 1e-6 && layers["blue"].MinSeconds.Value >= 2.0 - 1e-6, $"red {layers["red"].MinSeconds.Value} blue {layers["blue"].MinSeconds.Value}");
+        List<ShooterExposure> reqs; lock (_shooters["one"].Requests) reqs = _shooters["one"].Requests.ToList();
+        Assert.Contains(reqs, e => e.Filter.Text == "R"); Assert.Contains(reqs, e => e.Filter.Text == "B");
+        // blue was asked for twice the depth, so twice the shots
+        Assert.Equal(2 * reqs.Count(e => e.Filter.Text == "R"), reqs.Count(e => e.Filter.Text == "B"));
+        // a layer is not shot through a filter more often than it needs: the filter does not flip every shot
+        int changes = Enumerable.Range(1, reqs.Count - 1).Count(i => reqs[i].Filter.Text != reqs[i - 1].Filter.Text);
+        Assert.True(changes <= 6, $"{changes} filter changes in {reqs.Count} shots");
+    }
+
+    [Fact]
+    public async Task ALayerNoCameraCanFeedIsRefusedWithTheScalesThereAre()
+    {
+        await AddScopeAsync("one", 0.5, 0.35, scale: 2);
+        var r = Request(0.5, 0.35, 0.1, "one");
+        r.Layers.Add(Layer("coarse", "", 20, 40, 0));
+        var start = await Commands.CallAsync(_node, ImagingIds.Start, r, TimeSpan.FromSeconds(30));
+        Assert.False(start.Ok.Value);
+        Assert.Contains("coarse", start.Error.Text); Assert.Contains("2\"/px", start.Error.Text);
+
+        r.Layers.Clear(); r.Layers.Add(Layer("a", "", 0, 0, 0)); r.Layers.Add(Layer("A", "", 0, 0, 0));
+        Assert.Contains("two layers", (await Commands.CallAsync(_node, ImagingIds.Start, r, TimeSpan.FromSeconds(30))).Error.Text);
+        r.Layers.Clear(); r.Layers.Add(Layer("x", "", 10, 5, 0));
+        Assert.Contains("coarser", (await Commands.CallAsync(_node, ImagingIds.Start, r, TimeSpan.FromSeconds(30))).Error.Text);
     }
 }

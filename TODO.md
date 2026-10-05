@@ -146,7 +146,10 @@ focus triggers/offsets -> live-stack rejection/calibration -> the rest.
 - [x] Glossary / help for the terms (scope, telescope, depth per spot, panel, focus offset, pseudo mono)
 - [x] Plate solves of a camera's angle get the camera's pixel scale as a hint
 - [x] Pseudo mono: a colour camera takes turns to focus R, G, B (focus offsets); the in-focus channel of each frame is stacked as colour, the other two as luminance (weight 0 = left out); storage writes `infocus/` and `oof/`
-- [ ] Pseudo mono: autofocus per channel (measure R, G and B focus and fill the offsets in); a luminance-only output option
+- [x] Pseudo mono: autofocus per channel (G, then R and B from green's focus; the offsets R and B are measured and kept with the telescope)
+- [ ] Pseudo mono: a luminance-only output option
+- [x] Layers: the coverage map has N channels; each layer has a filter, a pixel-scale range and a depth; scopes plan for the layers their cameras feed; one live stack per layer
+- [ ] Layers: a combined output (a coarse base with the fine detail laid over it)
 
 ## Notes / decisions
 - EVent package in `~/ELink/package` has no nuget/ folder; real feed is `~/Desktop/EVent/EVent/dist/EVent/nuget`.

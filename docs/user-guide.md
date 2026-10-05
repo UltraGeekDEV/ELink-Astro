@@ -142,6 +142,10 @@ plate solver is installed. Each line takes you to the place. *Not now* puts it a
      stacked separately and mixed in as luminance as far as the *Out-of-focus light* slider (Sky › Layers, or the stack
      page) says: 0 keeps the colours sharp and leaves that light out (almost no colour fringes from an achromat, at the
      price of about two thirds of the light), 1 uses all of it (more signal, a white halo around the stars instead of a coloured one).
+     **Autofocus** knows about it: when a trigger fires the scope focuses green, then red and blue (each from green's focus,
+     measuring only that colour's stars in the super-pixel frame), puts the measured differences into the telescope's focus
+     offsets `R` and `B` (kept with the composition) and leaves the focuser at green. So the offsets do not need to be
+     typed or kept up to date by hand.
 
 Everything that is set up can be **edited** (the form loads what is there) or removed. It is saved and comes back on the next
 start. The *Advanced: mount pointers* list is for the curious.
@@ -219,6 +223,23 @@ length, which scopes share the work, and press **Start**. *More options*: filter
 the output scale, a weather device that pauses it, *Start afresh* and *Check the plan*. Each scope takes the next spot for its
 own frames as soon as it is free (spots another scope already covered are skipped, scopes are never kept in step, a slow
 mount takes fewer shots), and guides, dithers, flips and focuses by itself.
+
+**Layers** (*More options*) make an image out of several kinds of data, each with its own filter, range of pixel scales and
+depth. One line per layer: `name, filter, finest ″/px, coarsest ″/px, minutes`. For example a fast wide scope can build a deep,
+coarse base while a long focal length scope adds the detail:
+
+```
+base,   L, 4, 10, 30
+detail, L, 0,  2, 120
+```
+
+A frame feeds **every** layer whose filter it was shot through and whose range holds its pixel scale (a frame at 1.5″/px feeds
+both layers above; one at 6″/px only the base). Each layer is its own channel of the coverage map, so each scope only works
+on what its cameras can feed, the shot goes through the layer's filter, and a layer is finished when every spot has its
+depth. Scopes stay on a filter for a while rather than changing at every shot. The progress map shows the least advanced
+layer at each spot, the progress card each layer. The live stack keeps one stack per layer (pick it in the stack's filter
+list); frames no layer takes are left out. A layer that no camera of the chosen scopes can feed is refused, with the scales
+there are. Leave the box empty for one layer of everything.
 
 While it works the picture builds **on the sky** where the image is, with the progress map over it (blue not yet, yellow deep
 enough) and each scope's outline where it shoots. *Pause*, *Resume* and *Stop* appear when they apply.

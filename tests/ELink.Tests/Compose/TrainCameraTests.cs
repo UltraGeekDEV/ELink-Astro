@@ -177,4 +177,52 @@ public class TrainCameraTests : IAsyncLifetime
         Assert.False(wrong.Ok.Value);
         Assert.Contains("R, G and B", wrong.Error.Text);
     }
+
+    /// <summary>An RGGB frame of a few white stars; each colour is sharpest at its own focuser position.</summary>
+    private static byte[] ColourStars(int position, params (string Channel, int Best)[] best)
+    {
+        const int W = 240, H = 240;
+        var px = new ushort[W * H];
+        var stars = new (double X, double Y)[] { (40, 40), (120, 50), (200, 60), (60, 120), (140, 130), (200, 140), (50, 200), (120, 210), (190, 200) };
+        for (int y = 0; y < H; y++)
+            for (int x = 0; x < W; x++)
+            {
+                int c = (y % 2, x % 2) switch { (0, 0) => 0, (1, 1) => 2, _ => 1 };
+                int b = best.First(t => t.Channel == "RGB"[c].ToString()).Best;
+                double sigma = Math.Sqrt(2.2 * 2.2 + Math.Pow(0.05 * (position - b), 2));
+                double v = 300;
+                foreach (var (sx, sy) in stars) v += 6000 * 2.2 * 2.2 / (sigma * sigma) * Math.Exp(-((x - sx) * (x - sx) + (y - sy) * (y - sy)) / (2 * sigma * sigma));
+                px[y * W + x] = (ushort)Math.Min(65535, v);
+            }
+        return ELink.Imaging.FitsImage.Write16(W, H, px, new Dictionary<string, string> { ["BAYERPAT"] = "'RGGB'" });
+    }
+
+    [Fact]
+    public async Task APseudoMonoScopeFocusesEachColourAndKeepsTheOffsets()
+    {
+        await using var focuser = new FakeFocuser(_node, "f", 1000); await focuser.StartAsync();
+        _cam.FrameMaker = () => ColourStars(focuser.Position, ("R", 1020), ("G", 1000), ("B", 985));
+        await using var train = new ImagingTrain(_node, Train(c => c.PseudoMono = true, d => d.FocuserId = "f"));
+        await train.StartAsync();
+        IReadOnlyList<(string Filter, int Steps)>? kept = null;
+        train.FocusOffsetsChanged += o => kept = o;
+        await using var af = new ELink.Automation.AutofocusService(_node); await af.StartAsync();
+        await using var pointer = new FakePointer(_node, "pm", 20); await pointer.StartAsync();
+        var def = new ScopeDefinition { Id = "s", DisplayName = "s", MeridianFlip = false, FocusOnStart = true, FocusStepSize = 10, FocusSamples = 9, FocusExposureSeconds = 0.05 };
+        def.Pointers.Add("pm"); def.Shooters.Add(new ScopeShooterRef { Id = "t" });
+        await using var scope = new SmartScope(_node, def); await scope.StartAsync();
+
+        Assert.True((await Commands.CallAsync(_node, ShooterIds.Expose("s"), new ShooterExposure { Seconds = 0.05 })).Ok.Value);
+        Assert.True(await Eventually(() => kept is not null, 60000), "the offsets were never measured");
+        var offsets = kept!.ToDictionary(o => o.Filter, o => o.Steps);
+        string all = string.Join(", ", offsets.Select(o => o.Key + "=" + o.Value));
+        Assert.True(offsets["R"] is >= 16 and <= 24, all);
+        Assert.True(offsets["B"] is >= -19 and <= -11, all);
+        Assert.Equal(0, offsets["G"]);
+        // the train says so too, and the focuser is on green, or on red once the exposure that followed has focused its first colour
+        var state = Assert.Single((await _node.CallFunctionAsync<NOTESVoid, TrainState>(TrainIds.GetState("t"), NOTESVoid.Void))!);
+        Assert.Equal(3, state.FocusOffsets.Count);
+        Assert.True(state.Cameras[0].PseudoMono.Value);
+        Assert.True(await Eventually(() => Math.Abs(focuser.Position - 1000) <= 3 || Math.Abs(focuser.Position - 1000 - offsets["R"]) <= 3), $"{focuser.Position}");
+    }
 }

@@ -191,6 +191,23 @@ public class EdgeCaseTests : IClassFixture<IndiServerFixture>
         Assert.Empty((await Backend()).Entries);
         Assert.False(vm.Schedule.RunCommand.CanExecute(null));
     }
+
+    [AvaloniaFact]
+    public async Task LayersAreCheckedAgainstTheCamerasAsTheyAreTyped()
+    {
+        Assert.True(_server.Available);
+        await using var rig = await RigAsync(_server);
+        var vm = rig.Vm; var image = vm.Image;
+        image.Layers = "coarse, , 500, 900, 1";
+        Assert.True(await UiRig.Eventually(() => image.PlanProblem.Contains("coarse")), image.PlanProblem);
+        Assert.True(await UiRig.Eventually(() => !vm.Sky.StartImageCommand.CanExecute(null)));
+        image.Layers = "this is not a layer, 1, 2, 3, 4, 5, 6";
+        Assert.True(await UiRig.Eventually(() => image.PlanProblem.Contains("a layer is")), image.PlanProblem);
+        image.Layers = "everything, , 0, 0, 1";
+        Assert.True(await UiRig.Eventually(() => image.PlanProblem == "" && vm.Sky.StartImageCommand.CanExecute(null)), image.PlanProblem);
+        image.Layers = "";
+        Assert.True(await UiRig.Eventually(() => image.PlanProblem == ""));
+    }
 }
 
 internal static class AsyncExt

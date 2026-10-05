@@ -117,6 +117,17 @@ public sealed class CompositionHost : IAsyncDisposable
         var item = new ImagingTrain(_node, d);
         await item.StartAsync();
         _trains[id] = (Clone(d), item);
+        // offsets measured by an autofocus are kept with the telescope
+        item.FocusOffsetsChanged += offsets =>
+        {
+            lock (_trains)
+                if (_trains.TryGetValue(id, out var t) && ReferenceEquals(t.Item, item))
+                {
+                    t.Def.FocusOffsets.Clear();
+                    foreach (var (f, s) in offsets) t.Def.FocusOffsets.Add(new FilterFocusOffset { Filter = f, Steps = s });
+                }
+            Save();
+        };
         return CommandResult.Success();
     }
 

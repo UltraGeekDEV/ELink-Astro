@@ -13,6 +13,7 @@ public class AutofocusRequest : IBinaryConvertible
     public BinaryConvertibleInt32 StepSize { get; set; } = 3000;
     public BinaryConvertibleInt32 Samples { get; set; } = 7;
     public BinaryConvertibleString Filter { get; set; } = "";
+    public BinaryConvertibleString Channel { get; set; } = "";
 
     public override string Name => "AutofocusRequest";
     private static readonly NOTESDescriptor d = new();
@@ -25,6 +26,7 @@ public class AutofocusRequest : IBinaryConvertible
         d.RegisterField("StepSize", (AutofocusRequest x) => x.StepSize).Description("focuser steps between samples");
         d.RegisterField("Samples", (AutofocusRequest x) => x.Samples).Description("measurements per sweep, 5..15").Range(5, 15);
         d.RegisterField("Filter", (AutofocusRequest x) => x.Filter).Description("filter to focus through, empty = as is");
+        d.RegisterField("Channel", (AutofocusRequest x) => x.Channel).Description("R, G or B: focus one colour of a colour camera (a pseudo mono camera: its frames are split by colour and only that colour's stars are measured); empty = the whole frame");
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();

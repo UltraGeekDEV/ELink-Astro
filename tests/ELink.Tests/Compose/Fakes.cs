@@ -359,6 +359,8 @@ public sealed class FakeCamera : IAsyncDisposable
     public List<double> SetPoints { get; } = new();
     public List<ExposeRequest> Exposures { get; } = new();
     public List<double> TemperatureAtExposure { get; } = new();
+    /// <summary>What the next frame is (default: 16x16 of nothing).</summary>
+    public Func<byte[]>? FrameMaker { get; set; }
 
     public FakeCamera(TypeSafeEVentNode node, string id)
     {
@@ -392,7 +394,7 @@ public sealed class FakeCamera : IAsyncDisposable
                 await _node.FireEventAsync(Cmd("Frame"), new FrameEvent
                 {
                     Device = _id, Format = ".fits", ExposureSeconds = e.Seconds, FrameType = e.FrameType, Timestamp = DateTime.UtcNow.ToString("o"),
-                    Data = new RawBytes(ELink.Imaging.FitsImage.Write16(16, 16, new ushort[256])),
+                    Data = new RawBytes(FrameMaker?.Invoke() ?? ELink.Imaging.FitsImage.Write16(16, 16, new ushort[256])),
                 });
             });
             return CommandResult.Success();

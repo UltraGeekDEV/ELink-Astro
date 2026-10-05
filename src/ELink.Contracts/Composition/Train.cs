@@ -87,6 +87,7 @@ public class TrainCameraInfo : IBinaryConvertible
     public BinaryConvertibleString Cooler { get; set; } = "";
     public BinaryConvertibleDouble Temperature { get; set; } = double.NaN;
     public BinaryConvertibleDouble CoolerSetPoint { get; set; } = double.NaN;
+    public BinaryConvertibleBool PseudoMono { get; set; } = false;
 
     public override string Name => "TrainCameraInfo";
     private static readonly NOTESDescriptor d = new();
@@ -104,6 +105,7 @@ public class TrainCameraInfo : IBinaryConvertible
         d.RegisterField("Cooler", (TrainCameraInfo x) => x.Cooler).Description("empty (no cooling asked) | Waiting (not connected) | Cooling | Cold | Warming | Off | Error");
         d.RegisterField("Temperature", (TrainCameraInfo x) => x.Temperature);
         d.RegisterField("CoolerSetPoint", (TrainCameraInfo x) => x.CoolerSetPoint).Description("where the ramp has got to");
+        d.RegisterField("PseudoMono", (TrainCameraInfo x) => x.PseudoMono).Description("this colour camera takes turns to focus R, G and B (it needs a focuser and the offsets named R, G, B)");
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();
@@ -162,6 +164,19 @@ public class FilterFocusOffset : IBinaryConvertible
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();
 }
 
+/// <summary>The focus offsets of a train, set as a whole (what a per-colour autofocus has measured).</summary>
+public class FocusOffsetList : IBinaryConvertible
+{
+    public BinaryConvertibleCollection<FilterFocusOffset> Offsets { get; set; } = new();
+
+    public override string Name => "FocusOffsetList";
+    private static readonly NOTESDescriptor d = new();
+    public override NOTESDescriptor Descriptor => d;
+    static FocusOffsetList() { d.RegisterField("Offsets", (FocusOffsetList x) => x.Offsets, maxCount: 16); }
+    public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
+    public override byte[] ToBytes() => d.ToBytes(this).ToArray();
+}
+
 /// <summary>Optics handed to a camera (INDI SCOPE_INFO), so its frames carry the focal length.</summary>
 public class CameraOptics : IBinaryConvertible
 {
@@ -193,6 +208,8 @@ public static class TrainIds
     public static string Cool(string trainId) => EquipmentIds.Command(Kind, trainId, "Cool");
     /// <summary>Void in: ramp the cooled cameras up to their WarmTo, then switch the coolers off.</summary>
     public static string Warm(string trainId) => EquipmentIds.Command(Kind, trainId, "Warm");
+    /// <summary>FocusOffsetList in, CommandResult out: replace the train's focus offsets (kept with the composition).</summary>
+    public static string SetFocusOffsets(string trainId) => EquipmentIds.Command(Kind, trainId, "SetFocusOffsets");
     /// <summary>Camera command taking CameraOptics.</summary>
     public const string CameraSetOptics = "SetOptics";
 }

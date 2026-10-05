@@ -19,6 +19,8 @@ public sealed record CameraShooterOptions(double Gain = double.NaN, double Offse
 public sealed class CameraShooter : IAsyncDisposable
 {
     private readonly CameraShooterOptions _options;
+    /// <summary>A colour camera taking turns to focus red, green and blue.</summary>
+    public bool IsPseudoMono => _options.PseudoMono;
     private readonly RemoteState<FocuserState>? _focuser;
     private readonly TypeSafeEVentNode _node;
     private readonly string _id, _cameraId, _wheelId;
@@ -37,7 +39,7 @@ public sealed class CameraShooter : IAsyncDisposable
     {
         _node = node; _id = shooterId; _cameraId = cameraId; _wheelId = filterWheelId ?? "";
         _options = options ?? new();
-        if (_options.FocuserId != "" && _options.FocusOffsets is { Count: > 0 } && (_wheelId != "" || _options.PseudoMono))
+        if (_options.FocuserId != "" && _options.FocusOffsets is not null && (_options.PseudoMono || _wheelId != "" && _options.FocusOffsets.Count > 0))
             _focuser = new(node, EquipmentIds.State(DeviceKinds.Focuser, _options.FocuserId), EquipmentIds.GetState(DeviceKinds.Focuser, _options.FocuserId));
         _camera = new(node, EquipmentIds.State(DeviceKinds.Camera, cameraId), EquipmentIds.GetState(DeviceKinds.Camera, cameraId));
         if (_wheelId != "")
@@ -66,15 +68,19 @@ public sealed class CameraShooter : IAsyncDisposable
         _pseudoUsed = "";
         if (_options.PseudoMono)
         {
-            // R, G or B asked for, or taking turns when nothing is: every frame has one channel in focus
-            string? channel = PseudoChannels.FirstOrDefault(c => string.Equals(c, filter, StringComparison.OrdinalIgnoreCase));
-            if (filter != "" && channel is null) return CommandResult.Fail($"{_id} is a pseudo mono camera: its filters are R, G and B, not {filter}");
-            channel ??= PseudoChannels[_pseudoNext++ % 3];
-            if (_focuser is null) return CommandResult.Fail($"{_id} is a pseudo mono camera: it needs the train's focuser and focus offsets named R, G and B");
-            var moved = await MovePseudoAsync(channel);
-            if (!moved.Ok.Value) return moved;
-            _pseudoUsed = channel;
-            filter = "";
+            if (string.Equals(filter, "Raw", StringComparison.OrdinalIgnoreCase)) filter = "";   // as the camera has it, wherever the focuser is: an autofocus moves it itself and measures one colour
+            else
+            {
+                // R, G or B asked for, or taking turns when nothing is: every frame has one channel in focus
+                string? channel = PseudoChannels.FirstOrDefault(c => string.Equals(c, filter, StringComparison.OrdinalIgnoreCase));
+                if (filter != "" && channel is null) return CommandResult.Fail($"{_id} is a pseudo mono camera: its filters are R, G and B, not {filter}");
+                channel ??= PseudoChannels[_pseudoNext++ % 3];
+                if (_focuser is null) return CommandResult.Fail($"{_id} is a pseudo mono camera: it needs the train's focuser and focus offsets named R, G and B");
+                var moved = await MovePseudoAsync(channel);
+                if (!moved.Ok.Value) return moved;
+                _pseudoUsed = channel;
+                filter = "";
+            }
         }
         else if (filter != "")
         {

@@ -14,7 +14,12 @@ public sealed class CoveragePlanner
 {
     /// <summary>The map the planner paints as it plans (so visits queued ahead of the executor already count).</summary>
     public CoverageMap Map { get; }
+    /// <summary>The frames that feed this planner's layer: where they land is what it plans.</summary>
     public IReadOnlyList<FrameSpec> Frames { get; }
+    /// <summary>Every frame a shot takes (the cameras that feed other layers too): all of them are painted into the map.</summary>
+    public IReadOnlyList<FrameSpec> PaintFrames { get; set; }
+    /// <summary>The layer of the map this planner fills.</summary>
+    public int Layer { get; }
     public IReadOnlyList<double> Rotations { get; }
     public double AreaAngle { get; }
     public double ExposureSeconds { get; }
@@ -49,9 +54,9 @@ public sealed class CoveragePlanner
     private (double X, double Y) _heading = (0, 0);
 
     public CoveragePlanner(CoverageMap map, IReadOnlyList<FrameSpec> frames, IReadOnlyList<double> rotations, double areaAngle,
-        double exposureSeconds, double targetSeconds, double stepover)
+        double exposureSeconds, double targetSeconds, double stepover, int layer = 0)
     {
-        Map = map; Frames = frames; Rotations = rotations.Count > 0 ? rotations : new[] { 0.0 };
+        Map = map; Frames = frames; PaintFrames = frames; Layer = layer; Rotations = rotations.Count > 0 ? rotations : new[] { 0.0 };
         AreaAngle = areaAngle; ExposureSeconds = exposureSeconds; TargetSeconds = targetSeconds; Stepover = stepover;
         _minFrame = frames.Min(f => 2 * Math.Min(f.HalfWidth, f.HalfHeight));
         _fullGain = frames.Sum(f => 4 * f.HalfWidth * f.HalfHeight / (map.CellWidth * map.CellHeight));
@@ -62,7 +67,7 @@ public sealed class CoveragePlanner
     }
 
     /// <summary>True once every spot of the area has received the target (never in endless mode).</summary>
-    public bool Done => TargetSeconds > 0 && Map.Min() >= TargetSeconds - 1e-6;
+    public bool Done => TargetSeconds > 0 && Map.Min(Layer) >= TargetSeconds - 1e-6;
 
     private double Weight(float seconds)
     {
@@ -75,8 +80,8 @@ public sealed class CoveragePlanner
     private (double Score, double Deficit) Evaluate(Pose p)
     {
         var fp = CoverageMap.Footprints(p, Frames, AreaAngle);
-        if (TargetSeconds <= 0) { double g = Map.Gain(fp, Weight); return (g, g); }
-        Map.DeficitAndWaste(fp, TargetSeconds, out double d, out int w);
+        if (TargetSeconds <= 0) { double g = Map.Gain(fp, Weight, Layer); return (g, g); }
+        Map.DeficitAndWaste(fp, TargetSeconds, out double d, out int w, Layer);
         return d <= 0 ? (0, 0) : (d * d / (d + OverTargetPenalty * w), d);
     }
 
@@ -94,7 +99,7 @@ public sealed class CoveragePlanner
         double hop0 = Math.Max(Stepover, 1e-6);
         double perPassAtHop0 = ExposureSeconds * _frameArea / (hop0 * hop0);          // depth one pass deposits at the requested stepover
         if (TargetSeconds <= 0) { PassHop = hop0; PassCount = 0; _passIndex = 0; _lattice = Passes(true).GetEnumerator(); return; }   // endless
-        double missing = TargetSeconds - Map.Mean();
+        double missing = TargetSeconds - Map.Mean(Layer);
         if (missing <= 0) return;
         // at least one pass per allowed field rotation: the rotator turns between passes, never within one
         int passes = Math.Max(Math.Max(1, Rotations.Count), (int)Math.Ceiling(missing / perPassAtHop0 - 1e-9));
@@ -132,7 +137,7 @@ public sealed class CoveragePlanner
     private IEnumerable<Pose> Passes(bool endless)
     {
         int total = endless ? int.MaxValue : PassCount;
-        double missing = endless ? 0 : TargetSeconds - Map.Mean();
+        double missing = endless ? 0 : TargetSeconds - Map.Mean(Layer);
         for (int pass = 0; pass < total; pass++)
         {
             CurrentPass = pass + 1;
@@ -216,8 +221,11 @@ public sealed class CoveragePlanner
     {
         if (Last is { } l) { double dx = pose.X - l.X, dy = pose.Y - l.Y; double len = Math.Sqrt(dx * dx + dy * dy); if (len > 1e-9) _heading = (dx / len, dy / len); }
         Last = pose;
-        Map.Paint(CoverageMap.Footprints(pose, Frames, AreaAngle), ExposureSeconds);
+        Map.Paint(PaintFootprints(pose), ExposureSeconds);
     }
+
+    /// <summary>What a shot at this pose lands on, in every layer it feeds.</summary>
+    public Footprint[] PaintFootprints(Pose pose) => CoverageMap.Footprints(pose, PaintFrames, AreaAngle);
 
     /// <summary>A small bonus for continuing in the same direction (smooth sweeps), a malus for turning the rotator.</summary>
     private double Continuity(double dx, double dy, double rot, Pose last)

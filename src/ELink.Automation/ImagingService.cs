@@ -19,7 +19,13 @@ namespace ELink.Automation;
 public sealed class ImagingService : IAsyncDisposable
 {
     private sealed record ScopeFrames(string ScopeId, FrameSpec[] Frames, double FinestScale, string? Error, List<string> UnknownAngles, Dictionary<string, double> Scales);
-    private sealed record Plan(CoverageMap Map, CoverageMap Actual, List<ScopeFrames> Scopes, double Width, double Height, double Stepover, double Scale);
+    /// <summary>A layer as resolved: its place in the coverage map, the label and filter it goes by, and the shot that feeds it.</summary>
+    private sealed record LayerPlan(int Index, ImagingLayer Def, string Label, string Filter, double Exposure)
+    {
+        public bool Fits(FrameSpec f) => (Def.MinScaleArcsec.Value <= 0 || f.Scale >= Def.MinScaleArcsec.Value * (1 - 1e-6))
+                                         && (Def.MaxScaleArcsec.Value <= 0 || f.Scale > 0 && f.Scale <= Def.MaxScaleArcsec.Value * (1 + 1e-6));
+    }
+    private sealed record Plan(CoverageMap Map, CoverageMap Actual, List<ScopeFrames> Scopes, double Width, double Height, double Stepover, double Scale, List<LayerPlan> Layers);
 
     private readonly TypeSafeEVentNode _node;
     private readonly CommandSet _commands;
@@ -116,7 +122,7 @@ public sealed class ImagingService : IAsyncDisposable
                         // the camera's angle on the sky, if a solve has told its train (no rotator: it stays put)
                         double angle = double.IsNaN(c.AngleDegrees.Value) ? 0 : c.AngleDegrees.Value;
                         if (double.IsNaN(c.AngleDegrees.Value)) { unknownAngles.Add(c.ShooterId.Text); scales[c.ShooterId.Text] = c.PixelScaleArcsec.Value; }
-                        frames.Add(new FrameSpec(c.FieldWidthDegrees.Value / 2, c.FieldHeightDegrees.Value / 2, angle, oe, on));
+                        frames.Add(new FrameSpec(c.FieldWidthDegrees.Value / 2, c.FieldHeightDegrees.Value / 2, angle, oe, on, 1, double.IsNaN(c.PixelScaleArcsec.Value) ? 0 : c.PixelScaleArcsec.Value));
                         if (double.IsNaN(finest) || c.PixelScaleArcsec.Value < finest) finest = c.PixelScaleArcsec.Value;
                     }
                 }
@@ -139,6 +145,16 @@ public sealed class ImagingService : IAsyncDisposable
         if (r.WidthDegrees.Value < 0 || r.HeightDegrees.Value < 0 || r.WidthDegrees.Value > 60 || r.HeightDegrees.Value > 60) return "the area must be 0..60 degrees on a side";
         if (!(r.Exposure.Seconds.Value > 0)) return "the exposure must be longer than zero";
         if (r.TargetSeconds.Value < 0 || r.StepoverDegrees.Value < 0 || r.DitherArcsec.Value < 0 || r.MaxVisits.Value < 0) return "target, stepover, dither and visit limit cannot be negative";
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var l in r.Layers)
+        {
+            if (l.Label.Text.Trim() == "") return "every layer needs a name";
+            if (!names.Add(l.Label.Text.Trim())) return $"two layers are called '{l.Label.Text}'";
+            if (l.MinScaleArcsec.Value < 0 || l.MaxScaleArcsec.Value < 0 || l.TargetSeconds.Value < 0 || l.ExposureSeconds.Value < 0
+                || double.IsNaN(l.MinScaleArcsec.Value) || double.IsNaN(l.MaxScaleArcsec.Value)) return $"layer '{l.Label.Text}': scales, depth and exposure cannot be negative";
+            if (l.MinScaleArcsec.Value > 0 && l.MaxScaleArcsec.Value > 0 && l.MinScaleArcsec.Value > l.MaxScaleArcsec.Value)
+                return $"layer '{l.Label.Text}': its finest scale ({l.MinScaleArcsec.Value:0.##}\"/px) is coarser than its coarsest ({l.MaxScaleArcsec.Value:0.##}\"/px)";
+        }
         return null;
     }
 
@@ -153,6 +169,15 @@ public sealed class ImagingService : IAsyncDisposable
             if (f.Error is not null) return (null, f.Error);
             scopes.Add(f);
         }
+        var layers = r.Layers.Count == 0
+            ? new List<LayerPlan> { new(0, new ImagingLayer { Filter = r.Exposure.Filter.Text }, "", r.Exposure.Filter.Text, r.Exposure.Seconds.Value) }
+            : r.Layers.Select((l, i) => new LayerPlan(i, l, l.Label.Text.Trim(), l.Filter.Text != "" ? l.Filter.Text : r.Exposure.Filter.Text, l.ExposureSeconds.Value > 0 ? l.ExposureSeconds.Value : r.Exposure.Seconds.Value)).ToList();
+        foreach (var l in layers)
+            if (!scopes.Any(sc => sc.Frames.Any(l.Fits)))
+            {
+                string have = string.Join(", ", scopes.SelectMany(sc => sc.Frames).Select(f => f.Scale).Where(x => x > 0).Distinct().Order().Select(x => x.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "\"/px"));
+                return (null, $"layer '{l.Label}': none of the cameras of {string.Join(", ", scopes.Select(sc => sc.ScopeId))} takes frames in its scale range ({(have == "" ? "no known scales" : "they have " + have)})");
+            }
         var all = scopes.SelectMany(s => s.Frames).ToList();
         double minFrame = all.Min(f => 2 * Math.Min(f.HalfWidth, f.HalfHeight));
         var smallest = all.OrderBy(f => f.HalfWidth * f.HalfHeight).First();
@@ -164,15 +189,16 @@ public sealed class ImagingService : IAsyncDisposable
             return (null, "the area reaches a celestial pole, where the tiling is undefined");
         double stepover = r.StepoverDegrees.Value > 0 ? r.StepoverDegrees.Value : 0.1 * minFrame;
         double cell = Math.Max(minFrame / 12, Math.Sqrt(w * h / 40000.0));
-        var map = new CoverageMap(w, h, cell);
+        var map = new CoverageMap(w, h, cell, layers.Count);
         if (kept is not null)
         {
+            if (kept.Layers != layers.Count) return (null, $"the kept image '{r.Label.Text}' has {kept.Layers} layer(s), the request {layers.Count}: start it afresh or use another name");
             // carrying on: the same area, and the coverage it already has, on the grid it was kept on
             if (Math.Abs(kept.Width - w) > 1e-9 || Math.Abs(kept.Height - h) > 1e-9) return (null, $"the kept image '{r.Label.Text}' covers another area ({kept.Width:0.###}° x {kept.Height:0.###}°): start it afresh or use another name");
-            map = CoverageMap.Restore(w, h, kept.Cols, kept.Rows, kept.Seconds);
+            map = CoverageMap.Restore(w, h, kept.Cols, kept.Rows, kept.Seconds, layers.Count);
         }
         double scale = r.OutputPixelScaleArcsec.Value > 0 ? r.OutputPixelScaleArcsec.Value : scopes.Where(s => !double.IsNaN(s.FinestScale)).Select(s => s.FinestScale).DefaultIfEmpty(0).Min();
-        return (new Plan(map, map.Clone(), scopes, w, h, stepover, scale), null);
+        return (new Plan(map, map.Clone(), scopes, w, h, stepover, scale, layers), null);
     }
 
     private async Task<ImagingState> PreviewAsync(ImagingRequest r)
@@ -182,7 +208,8 @@ public sealed class ImagingService : IAsyncDisposable
         if (plan is null) return s;
         s.WidthDegrees = plan.Width; s.HeightDegrees = plan.Height;
         foreach (var sc in plan.Scopes) s.Workers.Add(Worker(sc));
-        s.Message = FormattableString.Invariant($"{plan.Width:0.###}° x {plan.Height:0.###}°, stepover {plan.Stepover:0.####}°") + (plan.Scale > 0 ? FormattableString.Invariant($", image at {plan.Scale:0.##}\"/px") : "");
+        s.Message = FormattableString.Invariant($"{plan.Width:0.###}° x {plan.Height:0.###}°, stepover {plan.Stepover:0.####}°") + (plan.Scale > 0 ? FormattableString.Invariant($", image at {plan.Scale:0.##}\"/px") : "")
+            + (plan.Layers.Count > 1 ? $", {plan.Layers.Count} layers" : "");
         return s;
     }
 
@@ -240,6 +267,8 @@ public sealed class ImagingService : IAsyncDisposable
                 SessionKey = runDir is null ? "" : r.Label.Text, Resume = r.Resume.Value,
             };
             foreach (var sc in plan.Scopes) stack.ShooterIds.Add(sc.ScopeId);
+            if (r.Layers.Count > 0)
+                foreach (var l in plan.Layers) stack.Layers.Add(new ImagingLayer { Label = l.Label, Filter = l.Filter, MinScaleArcsec = l.Def.MinScaleArcsec.Value, MaxScaleArcsec = l.Def.MaxScaleArcsec.Value });
             var started = await Commands.CallAsync(_node, LiveStackIds.Start, stack);
             if (!started.Ok.Value) await Set(s => s.Message = "no live stack: " + started.Error.Text);
         }
@@ -259,15 +288,8 @@ public sealed class ImagingService : IAsyncDisposable
         try
         {
             if (weather is not null) await weather.StartAsync();
-            // one planner per scope (its own frames), all painting the same map: a spot one scope covered is skipped by the others
-            var planners = plan.Scopes.ToDictionary(s => s.ScopeId, s =>
-            {
-                // an area that fits in this scope's frames is best served by centred shots, not raster passes
-                bool fits = s.Frames.Any(f => f.OffsetEast == 0 && f.OffsetNorth == 0 && plan.Width <= 2 * f.HalfWidth && plan.Height <= 2 * f.HalfHeight);
-                var p = new CoveragePlanner(plan.Map, s.Frames, [0.0], r.PositionAngleDegrees.Value, r.Exposure.Seconds.Value, r.TargetSeconds.Value, plan.Stepover) { TopUpOnly = fits };
-                if (fits) p.Plan();
-                return p;
-            });
+            // one planner per scope and layer it can feed (its own frames), all painting the same map: a spot one scope covered is skipped by the others
+            var planners = plan.Scopes.ToDictionary(s => s.ScopeId, s => PlannersOf(r, plan, s));
             await Task.WhenAll(plan.Scopes.Select(s => Task.Run(() => WorkAsync(r, plan, s, planners[s.ScopeId], weather, ct))));
             ct.ThrowIfCancellationRequested();
             lock (_gate)
@@ -292,40 +314,85 @@ public sealed class ImagingService : IAsyncDisposable
         }
     }
 
+    private double TargetOf(LayerPlan l) => l.Def.TargetSeconds.Value > 0 ? l.Def.TargetSeconds.Value : _target;
+
+    /// <summary>A scope's planners, one for each layer one of its cameras feeds. A shot goes through one filter: the frames that
+    /// feed a layer are the planner's, and every camera that feeds any layer of the same filter is painted (it took the picture too).</summary>
+    private List<(LayerPlan Layer, CoveragePlanner Planner)> PlannersOf(ImagingRequest r, Plan plan, ScopeFrames s)
+    {
+        var list = new List<(LayerPlan, CoveragePlanner)>();
+        foreach (var l in plan.Layers)
+        {
+            var group = plan.Layers.Where(x => string.Equals(x.Filter, l.Filter, StringComparison.OrdinalIgnoreCase)).ToList();
+            FrameSpec[] Masked() => s.Frames.Select(f => f with { Mask = group.Where(g => g.Fits(f)).Aggregate(0, (m, g) => m | 1 << g.Index) }).ToArray();
+            var masked = Masked();
+            var mine = masked.Where(f => (f.Mask >> l.Index & 1) != 0).ToArray();
+            if (mine.Length == 0) continue;
+            // an area that fits in this scope's frames is best served by centred shots, not raster passes
+            bool fits = mine.Any(f => f.OffsetEast == 0 && f.OffsetNorth == 0 && plan.Width <= 2 * f.HalfWidth && plan.Height <= 2 * f.HalfHeight);
+            double target; lock (_gate) target = TargetOf(l);
+            var p = new CoveragePlanner(plan.Map, mine, [0.0], r.PositionAngleDegrees.Value, l.Exposure, target, plan.Stepover, l.Index)
+            { TopUpOnly = fits, PaintFrames = masked.Where(f => f.Mask != 0).ToArray() };
+            if (fits) p.Plan();
+            list.Add((l, p));
+        }
+        return list;
+    }
+
+    private ShooterExposure ExposureOf(ImagingRequest r, LayerPlan l)
+    {
+        Span<byte> bytes = r.Exposure.ToBytes();
+        var e = new ShooterExposure(); e.FromBytes(ref bytes);
+        e.Seconds = l.Exposure;
+        if (l.Filter != "") e.Filter = l.Filter;
+        return e;
+    }
+
     /// <summary>One scope's worker: next spot for its frames, a dithered shot there, painted when it is done.</summary>
-    private async Task WorkAsync(ImagingRequest r, Plan plan, ScopeFrames scope, CoveragePlanner planner, RemoteState<WeatherState>? weather, CancellationToken ct)
+    private async Task WorkAsync(ImagingRequest r, Plan plan, ScopeFrames scope, List<(LayerPlan Layer, CoveragePlanner Planner)> planners, RemoteState<WeatherState>? weather, CancellationToken ct)
     {
         string id = scope.ScopeId;
         using var state = new RemoteState<ScopeState>(_node, ScopeIds.State(id), ScopeIds.GetState(id));
         await state.StartAsync();
         double dither = r.DitherArcsec.Value / 3600;
         int rejectedInARow = 0;
+        var exhausted = new HashSet<CoveragePlanner>();      // nothing left for a shot of this layer to improve (until its depth changes or a shot is rejected)
+        (LayerPlan Layer, CoveragePlanner Planner)? current = null;
+        if (planners.Count == 0) { await SetWorker(id, w => { w.Phase = "Done"; w.Message = "none of its cameras feeds a layer"; }); return; }
         while (!ct.IsCancellationRequested)
         {
             await WaitUntilAllowedAsync(weather, ct);
-            Pose? pose;
+            Pose? pose = null;
+            (LayerPlan Layer, CoveragePlanner Planner) chosen = planners[0];
             lock (_gate)
             {
                 if (r.MaxVisits.Value > 0 && _visitsStarted >= r.MaxVisits.Value) pose = null;
                 else
                 {
                     // a new depth while running: this scope's plan is redone from what is still missing
-                    if (planner.TargetSeconds != _target) { planner.TargetSeconds = _target; planner.Plan(); }
-                    pose = planner.Next();
-                    if (pose is not null) _visitsStarted++;
+                    foreach (var (l, p) in planners)
+                        if (p.TargetSeconds != TargetOf(l)) { p.TargetSeconds = TargetOf(l); p.Plan(); exhausted.Remove(p); }
+                    foreach (var candidate in Candidates(planners, exhausted, current))
+                    {
+                        pose = candidate.Planner.Next();
+                        if (pose is not null) { chosen = candidate; current = candidate; _visitsStarted++; break; }
+                        exhausted.Add(candidate.Planner);
+                    }
                 }
             }
             if (pose is not { } planned) break;
+            var planner = chosen.Planner;
+            var exposure = ExposureOf(r, chosen.Layer);
             // unguided dithering: land anywhere within the dither radius of the planned spot
             double a = _random.NextDouble() * 2 * Math.PI, rr = dither * Math.Sqrt(_random.NextDouble());
             var at = planned with { X = planned.X + rr * Math.Cos(a), Y = planned.Y + rr * Math.Sin(a) };
             await SetWorker(id, w => { w.Phase = "Shooting"; w.PoseX = at.X; w.PoseY = at.Y; w.Message = ""; });
-            string error = await ShootAsync(r, id, state, at, ct);
-            double exp = r.Exposure.Seconds.Value, pa = r.PositionAngleDegrees.Value;
+            string error = await ShootAsync(r, id, state, at, exposure, ct);
+            double exp = planner.ExposureSeconds;
             if (error.StartsWith(RejectedMark))
             {
                 // the scope judged the frame bad: it does not count; the spot goes back to the plan
-                lock (_gate) { plan.Map.Paint(CoverageMap.Footprints(planned, scope.Frames, pa), -exp); _visitsStarted--; }
+                lock (_gate) { plan.Map.Paint(planner.PaintFootprints(planned), -exp); _visitsStarted--; exhausted.Clear(); }
                 string why = error[RejectedMark.Length..];
                 rejectedInARow++;
                 await SetWorker(id, w => { w.Rejected = w.Rejected.Value + 1; w.Message = "rejected: " + why; });
@@ -340,15 +407,15 @@ public sealed class ImagingService : IAsyncDisposable
             if (error != "")
             {
                 // give the spot back to the plan: another scope may take it
-                lock (_gate) plan.Map.Paint(CoverageMap.Footprints(planned, scope.Frames, pa), -exp);
+                lock (_gate) plan.Map.Paint(planner.PaintFootprints(planned), -exp);
                 await SetWorker(id, w => { w.Phase = "Failed"; w.Message = error; });
                 return;
             }
             lock (_gate)
             {
                 // the shot landed at the dithered spot: the plan learns where it really went, the real map gets it
-                var real = CoverageMap.Footprints(at, scope.Frames, pa);
-                plan.Map.Paint(CoverageMap.Footprints(planned, scope.Frames, pa), -exp);
+                var real = planner.PaintFootprints(at);
+                plan.Map.Paint(planner.PaintFootprints(planned), -exp);
                 plan.Map.Paint(real, exp);
                 plan.Actual.Paint(real, exp);
             }
@@ -359,25 +426,41 @@ public sealed class ImagingService : IAsyncDisposable
         if (!ct.IsCancellationRequested) await SetWorker(id, w => { w.Phase = "Done"; w.Message = ""; });
     }
 
+    /// <summary>The layers a scope could shoot for, best first: the least advanced (by its depth), but staying on the filter in hand
+    /// (changing filters costs time) unless another is clearly behind (by a third of its depth).</summary>
+    private static List<(LayerPlan Layer, CoveragePlanner Planner)> Candidates(List<(LayerPlan Layer, CoveragePlanner Planner)> planners,
+        HashSet<CoveragePlanner> exhausted, (LayerPlan Layer, CoveragePlanner Planner)? current)
+    {
+        double Progress((LayerPlan, CoveragePlanner Planner) x) => x.Planner.TargetSeconds > 0 ? x.Planner.Map.Mean(x.Planner.Layer) / x.Planner.TargetSeconds : x.Planner.Map.Mean(x.Planner.Layer);
+        var open = planners.Where(x => !exhausted.Contains(x.Planner)).OrderBy(Progress).ToList();
+        if (open.Count > 1 && current is { } c && open.Any(x => x.Planner == c.Planner))
+        {
+            var best = open[0];
+            bool sameFilter = string.Equals(best.Layer.Filter, c.Layer.Filter, StringComparison.OrdinalIgnoreCase);
+            if (!sameFilter && Progress(c) <= Progress(best) + 0.3) { open.RemoveAll(x => x.Planner == c.Planner); open.Insert(0, c); }
+        }
+        return open;
+    }
+
     private const string RejectedMark = "!rejected:";
 
     /// <summary>One shot through the scope. "" when done and good; RejectedMark + why when every frame of it was rejected by
     /// the scope's grading; anything else is an error.</summary>
-    private async Task<string> ShootAsync(ImagingRequest r, string scope, RemoteState<ScopeState> state, Pose at, CancellationToken ct)
+    private async Task<string> ShootAsync(ImagingRequest r, string scope, RemoteState<ScopeState> state, Pose at, ShooterExposure exposure, CancellationToken ct)
     {
         var frames = new List<ShotEvent>();
         Action<ShotEvent> onShot = s => { lock (frames) frames.Add(s); };
         await _node.HookEventAsync(ShooterIds.Shot(scope), onShot, "image request: frame grades");
-        try { return await ShootOnceAsync(r, scope, state, at, frames, ct); }
+        try { return await ShootOnceAsync(r, scope, state, at, exposure, frames, ct); }
         finally { try { _node.UnhookEvent(ShooterIds.Shot(scope), onShot); } catch (ObjectDisposedException) { } }
     }
 
-    private async Task<string> ShootOnceAsync(ImagingRequest r, string scope, RemoteState<ScopeState> state, Pose at, List<ShotEvent> frames, CancellationToken ct)
+    private async Task<string> ShootOnceAsync(ImagingRequest r, string scope, RemoteState<ScopeState> state, Pose at, ShooterExposure exposure, List<ShotEvent> frames, CancellationToken ct)
     {
         var (ra, dec) = PlanProjection.ToSky(r.Center.RaHours.Value, r.Center.DecDegrees.Value, r.PositionAngleDegrees.Value, at.X, at.Y);
         var start = await Commands.CallAsync(_node, ScopeIds.Command(scope, "Observe"), new ObserveRequest
         {
-            Target = new SkyTarget { RaHours = ra, DecDegrees = dec, Epoch = "J2000" }, Exposure = r.Exposure, Count = 1,
+            Target = new SkyTarget { RaHours = ra, DecDegrees = dec, Epoch = "J2000" }, Exposure = exposure, Count = 1,
             SlewTimeoutSeconds = r.SlewTimeoutSeconds.Value, ObjectName = r.Label.Text, PlanId = r.Label.Text,
         });
         if (!start.Ok.Value) return start.Error.Text;
@@ -432,8 +515,8 @@ public sealed class ImagingService : IAsyncDisposable
 
     // ---- keeping images for another night ------------------------------------------------------------------------
 
-    private sealed record Kept(ImagingRequest Request, double Width, double Height, int Cols, int Rows, float[] Seconds, int Visits, string UpdatedUtc);
-    private sealed record KeptMeta(double Width, double Height, int Cols, int Rows, int Visits, string UpdatedUtc);
+    private sealed record Kept(ImagingRequest Request, double Width, double Height, int Cols, int Rows, float[] Seconds, int Visits, string UpdatedUtc, int Layers);
+    private sealed record KeptMeta(double Width, double Height, int Cols, int Rows, int Visits, string UpdatedUtc, int Layers = 1);
 
     private static string Safe(string label) => new(label.Trim().Select(c => char.IsLetterOrDigit(c) || c is '-' or '_' ? c : '_').ToArray());
 
@@ -441,7 +524,7 @@ public sealed class ImagingService : IAsyncDisposable
     private void Keep(ImagingRequest r, Plan plan)
     {
         string? dir; int visits; float[] seconds;
-        lock (_gate) { dir = _runDir; visits = _state.Visits.Value; seconds = (float[])plan.Actual.Seconds.Clone(); }
+        lock (_gate) { dir = _runDir; visits = _state.Visits.Value; seconds = plan.Actual.Flatten(); }
         if (dir is null) return;
         try
         {
@@ -450,7 +533,7 @@ public sealed class ImagingService : IAsyncDisposable
             Write("request.bin", r.ToBytes());
             Write("coverage.bin", System.Runtime.InteropServices.MemoryMarshal.AsBytes(seconds.AsSpan()).ToArray());
             Write("image.json", System.Text.Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(
-                new KeptMeta(plan.Width, plan.Height, plan.Actual.Cols, plan.Actual.Rows, visits, DateTime.UtcNow.ToString("o")))));
+                new KeptMeta(plan.Width, plan.Height, plan.Actual.Cols, plan.Actual.Rows, visits, DateTime.UtcNow.ToString("o"), plan.Actual.Layers))));
         }
         catch (Exception ex) { lock (_gate) _state.Message = "could not keep the image: " + ex.Message; }
     }
@@ -464,8 +547,8 @@ public sealed class ImagingService : IAsyncDisposable
             var r = new ImagingRequest(); r.FromBytes(ref req);
             var bytes = File.ReadAllBytes(Path.Combine(dir, "coverage.bin"));
             var seconds = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, float>(bytes).ToArray();
-            if (seconds.Length != meta.Cols * meta.Rows) return null;
-            return new Kept(r, meta.Width, meta.Height, meta.Cols, meta.Rows, seconds, meta.Visits, meta.UpdatedUtc);
+            if (seconds.Length != meta.Cols * meta.Rows * Math.Max(1, meta.Layers)) return null;
+            return new Kept(r, meta.Width, meta.Height, meta.Cols, meta.Rows, seconds, meta.Visits, meta.UpdatedUtc, Math.Max(1, meta.Layers));
         }
         catch (Exception) { return null; }
     }
@@ -560,9 +643,19 @@ public sealed class ImagingService : IAsyncDisposable
             }
             if (_plan?.Actual is { } map)
             {
-                s.MinSeconds = map.Min(); s.MeanSeconds = map.Mean(); s.MaxSeconds = map.Max();
-                var bytes = map.Render(Math.Max(_target, map.Max()), 96, 64, out int cols, out int rows);
+                var layers = _plan.Layers;
+                s.MinSeconds = Enumerable.Range(0, map.Layers).Min(l => map.Min(l)); s.MeanSeconds = Enumerable.Range(0, map.Layers).Average(l => map.Mean(l)); s.MaxSeconds = Enumerable.Range(0, map.Layers).Max(l => map.Max(l));
+                byte[] bytes; int cols, rows;
+                if (map.Layers == 1) bytes = map.Render(Math.Max(TargetOf(layers[0]), map.Max()), 96, 64, out cols, out rows);
+                else bytes = map.RenderProgress(layers.Select(TargetOf).ToList(), 96, 64, out cols, out rows);
                 s.MapCols = cols; s.MapRows = rows; s.Map = new RawBytes(bytes);
+                if (layers.Count > 1 || layers[0].Label != "")
+                    foreach (var l in layers)
+                        s.Layers.Add(new ImagingLayerState
+                        {
+                            Label = l.Label, Filter = l.Filter, TargetSeconds = TargetOf(l), MinSeconds = map.Min(l.Index), MeanSeconds = map.Mean(l.Index),
+                            Scopes = _plan.Scopes.Count(sc => sc.Frames.Any(l.Fits)),
+                        });
             }
             return s;
         }

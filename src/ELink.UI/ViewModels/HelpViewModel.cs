@@ -25,6 +25,7 @@ public sealed class HelpViewModel
         new("Pseudo mono", "A colour camera used like a mono one with red, green and blue filters: it takes turns to bring each colour into focus. In every frame the in-focus colour goes to the colour stack, the other two (soft) to a luminance stack. Colour fringes from a refractor stay out of the colours."),
         new("Out-of-focus light", "In pseudo mono, the light of the two colours that were not in focus. Leaving it out gives the sharpest colours (but throws away about two thirds of the light); adding it gives more signal with a soft, white halo around the stars. Set how much with the slider under Layers."),
         new("Debayer / super pixel", "A colour camera's pixels each see one colour. Debayering fills in the other two from the neighbours; super pixel instead joins each 2×2 cell into one colour pixel (half the size, nothing guessed)."),
+        new("Layer", "One kind of data an image is made of, with its own filter, range of pixel scales and depth. A frame feeds every layer whose filter it was shot through and whose scale range holds its pixel scale. With layers a wide, fast scope can build a deep coarse base while a long focal length scope adds the detail, each by itself, and each layer gets its own stack."),
         new("Pointer", "What the software points: a mount. You rarely meet it: saving a scope makes the pointer for its mount."),
     };
 

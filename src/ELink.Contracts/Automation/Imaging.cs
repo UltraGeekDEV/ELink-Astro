@@ -5,6 +5,34 @@ using Event.Connections.Models.BaseBinaryConvertibles;
 
 namespace ELink.Contracts.Automation;
 
+/// <summary>One layer (channel) of an image: a kind of data with its own depth. A frame feeds a layer when it was shot through the
+/// layer's filter and its pixel scale is within the layer's range. With layers a wide, fast scope can build a strong low resolution
+/// base while a long focal length scope adds a high resolution one, each to the depth it needs, by itself.</summary>
+public class ImagingLayer : IBinaryConvertible
+{
+    public BinaryConvertibleString Label { get; set; } = "";
+    public BinaryConvertibleString Filter { get; set; } = "";
+    public BinaryConvertibleDouble MinScaleArcsec { get; set; } = 0.0;
+    public BinaryConvertibleDouble MaxScaleArcsec { get; set; } = 0.0;
+    public BinaryConvertibleDouble TargetSeconds { get; set; } = 0.0;
+    public BinaryConvertibleDouble ExposureSeconds { get; set; } = 0.0;
+
+    public override string Name => "ImagingLayer";
+    private static readonly NOTESDescriptor d = new();
+    public override NOTESDescriptor Descriptor => d;
+    static ImagingLayer()
+    {
+        d.RegisterField("Label", (ImagingLayer x) => x.Label).Description("names the layer (and its stack)");
+        d.RegisterField("Filter", (ImagingLayer x) => x.Filter).Description("the filter its shots are taken through; empty = the request's exposure's");
+        d.RegisterField("MinScaleArcsec", (ImagingLayer x) => x.MinScaleArcsec).Description("frames finer than this (arcseconds per pixel) do not feed it; 0 = no limit");
+        d.RegisterField("MaxScaleArcsec", (ImagingLayer x) => x.MaxScaleArcsec).Description("frames coarser than this do not feed it; 0 = no limit");
+        d.RegisterField("TargetSeconds", (ImagingLayer x) => x.TargetSeconds).Description("its depth; 0 = the request's");
+        d.RegisterField("ExposureSeconds", (ImagingLayer x) => x.ExposureSeconds).Description("one shot of it; 0 = the request's");
+    }
+    public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
+    public override byte[] ToBytes() => d.ToBytes(this).ToArray();
+}
+
 /// <summary>"I want this image of this part of the sky": an area, a depth, and the scopes that may work on it. A single
 /// target is just an area no bigger than a frame. Every scope pulls its next spot from one shared coverage plan as
 /// soon as it is free (they are never kept in step), and does its own guiding, dithering, flips and focus on the way.
@@ -28,6 +56,7 @@ public class ImagingRequest : IBinaryConvertible
     public BinaryConvertibleDouble SlewTimeoutSeconds { get; set; } = 300.0;
     public BinaryConvertibleDouble SkyWaitSeconds { get; set; } = 120.0;
     public BinaryConvertibleBool Resume { get; set; } = true;
+    public BinaryConvertibleCollection<ImagingLayer> Layers { get; set; } = new();
 
     public override string Name => "ImagingRequest";
     private static readonly NOTESDescriptor d = new();
@@ -51,6 +80,7 @@ public class ImagingRequest : IBinaryConvertible
         d.RegisterField("SlewTimeoutSeconds", (ImagingRequest x) => x.SlewTimeoutSeconds);
         d.RegisterField("Resume", (ImagingRequest x) => x.Resume).Description("an image of this name was started before (another night): carry on with its coverage and stack; false = start it afresh");
         d.RegisterField("SkyWaitSeconds", (ImagingRequest x) => x.SkyWaitSeconds).Description("after 3 rejected shots in a row, a scope waits this long before the next (clouds passing)");
+        d.RegisterField("Layers", (ImagingRequest x) => x.Layers, maxCount: 8).Description("kinds of data the image is made of, each with a filter, a range of pixel scales and a depth; empty = one layer of everything, shot as Exposure says");
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();
@@ -115,6 +145,32 @@ public class ImagingWorker : IBinaryConvertible
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();
 }
 
+/// <summary>How far one layer of the image has got.</summary>
+public class ImagingLayerState : IBinaryConvertible
+{
+    public BinaryConvertibleString Label { get; set; } = "";
+    public BinaryConvertibleString Filter { get; set; } = "";
+    public BinaryConvertibleDouble TargetSeconds { get; set; } = 0.0;
+    public BinaryConvertibleDouble MinSeconds { get; set; } = 0.0;
+    public BinaryConvertibleDouble MeanSeconds { get; set; } = 0.0;
+    public BinaryConvertibleInt32 Scopes { get; set; } = 0;
+
+    public override string Name => "ImagingLayerState";
+    private static readonly NOTESDescriptor d = new();
+    public override NOTESDescriptor Descriptor => d;
+    static ImagingLayerState()
+    {
+        d.RegisterField("Label", (ImagingLayerState x) => x.Label);
+        d.RegisterField("Filter", (ImagingLayerState x) => x.Filter);
+        d.RegisterField("TargetSeconds", (ImagingLayerState x) => x.TargetSeconds);
+        d.RegisterField("MinSeconds", (ImagingLayerState x) => x.MinSeconds);
+        d.RegisterField("MeanSeconds", (ImagingLayerState x) => x.MeanSeconds);
+        d.RegisterField("Scopes", (ImagingLayerState x) => x.Scopes).Description("how many scopes have a camera that feeds it");
+    }
+    public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
+    public override byte[] ToBytes() => d.ToBytes(this).ToArray();
+}
+
 public class ImagingState : IBinaryConvertible
 {
     public BinaryConvertibleString Phase { get; set; } = "Idle";
@@ -131,6 +187,7 @@ public class ImagingState : IBinaryConvertible
     public BinaryConvertibleInt32 MapRows { get; set; } = 0;
     public RawBytes Map { get; set; } = new();
     public BinaryConvertibleCollection<ImagingWorker> Workers { get; set; } = new();
+    public BinaryConvertibleCollection<ImagingLayerState> Layers { get; set; } = new();
 
     public override string Name => "ImagingState";
     private static readonly NOTESDescriptor d = new();
@@ -151,6 +208,7 @@ public class ImagingState : IBinaryConvertible
         d.RegisterField("MapRows", (ImagingState x) => x.MapRows);
         d.RegisterField("Map", (ImagingState x) => x.Map).Description("coverage, one byte per cell (0..255 of the target), row-major from the north-west");
         d.RegisterField("Workers", (ImagingState x) => x.Workers, maxCount: 16);
+        d.RegisterField("Layers", (ImagingState x) => x.Layers, maxCount: 8).Description("how far each layer has got (with several layers the Map shows the least advanced one at each spot)");
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();

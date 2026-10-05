@@ -63,6 +63,8 @@ public sealed partial class ImageViewModel : ObservableObject, IDisposable
     [ObservableProperty] private double _exposureSeconds = 60;
     [ObservableProperty] private string _filter = "";
     [ObservableProperty] private string _iso = "";
+    /// <summary>Layers, one a line: name, filter, finest ″/px, coarsest ″/px, depth (minutes). Empty = one layer of everything.</summary>
+    [ObservableProperty] private string _layers = "";
     [ObservableProperty] private double _targetMinutes = 60;
     [ObservableProperty] private double _stepover;
     [ObservableProperty] private double _ditherArcsec = 30;
@@ -156,6 +158,7 @@ public sealed partial class ImageViewModel : ObservableObject, IDisposable
         ExposureSeconds = r.Exposure.Seconds.Value; Filter = r.Exposure.Filter.Text; Iso = r.Exposure.Iso.Text; TargetMinutes = r.TargetSeconds.Value / 60;
         Stepover = r.StepoverDegrees.Value; DitherArcsec = r.DitherArcsec.Value; OutputScale = r.OutputPixelScaleArcsec.Value; LiveStack = r.LiveStack.Value;
         foreach (var s in Scopes) s.Selected = r.ScopeIds.Any(x => x.Text == s.Id);
+        Layers = string.Join("\n", r.Layers.Select(l => FormattableString.Invariant($"{l.Label.Text}, {l.Filter.Text}, {l.MinScaleArcsec.Value:0.##}, {l.MaxScaleArcsec.Value:0.##}, {l.TargetSeconds.Value / 60:0.##}")));
         StartAfresh = false;
         Say($"{r.Label.Text}: press Start to carry it on", "info");
     }
@@ -183,6 +186,15 @@ public sealed partial class ImageViewModel : ObservableObject, IDisposable
             TargetSeconds = TargetMinutes * 60, StepoverDegrees = Stepover, DitherArcsec = DitherArcsec, MaxVisits = MaxVisits,
             WeatherId = SelectedWeather ?? "", LiveStack = LiveStack, OutputPixelScaleArcsec = OutputScale, Resume = !StartAfresh,
         };
+        foreach (var line in Layers.Split('\n').Select(l => l.Trim()).Where(l => l != ""))
+        {
+            var p = line.Split(',').Select(x => x.Trim()).ToArray();
+            double Num(int i) => i < p.Length && p[i] != "" && double.TryParse(p[i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : p.Length <= i || p[i] == "" ? 0 : double.NaN;
+            double min = Num(2), max = Num(3), minutes = Num(4);
+            if (p[0] == "" || p.Length > 5 || double.IsNaN(min) || double.IsNaN(max) || double.IsNaN(minutes) || min < 0 || max < 0 || minutes < 0)
+            { problem = $"a layer is: name, filter, finest ″/px, coarsest ″/px, depth in minutes (not '{line}')"; return false; }
+            req.Layers.Add(new ImagingLayer { Label = p[0], Filter = p.Length > 1 ? p[1] : "", MinScaleArcsec = min, MaxScaleArcsec = max, TargetSeconds = minutes * 60 });
+        }
         foreach (var s in Scopes.Where(s => s.Selected)) req.ScopeIds.Add(s.Id);
         if (req.ScopeIds.Count == 0) { problem = "tick at least one scope"; return false; }
         return true;
@@ -241,7 +253,7 @@ public sealed partial class ImageViewModel : ObservableObject, IDisposable
 
     private static readonly HashSet<string> PlanInputs = new()
     {
-        nameof(CenterRa), nameof(CenterDec), nameof(Width), nameof(Height), nameof(PositionAngle), nameof(ExposureSeconds), nameof(Stepover), nameof(Filter),
+        nameof(CenterRa), nameof(CenterDec), nameof(Width), nameof(Height), nameof(PositionAngle), nameof(ExposureSeconds), nameof(Stepover), nameof(Filter), nameof(Layers),
     };
 
     /// <summary>Where the area is and how big it is, as the imaging service last said (the map's own size).</summary>
@@ -269,6 +281,9 @@ public sealed partial class ImageViewModel : ObservableObject, IDisposable
             ? $"coverage  min {Fmt(s.MinSeconds.Value)} · mean {Fmt(s.MeanSeconds.Value)} · max {Fmt(s.MaxSeconds.Value)}" +
               (s.TargetSeconds.Value > 0 ? $"   of {Fmt(s.TargetSeconds.Value)}   ({Math.Min(100, 100 * s.MinSeconds.Value / s.TargetSeconds.Value):0}% complete)" : "")
             : "";
+        if (s.Layers.Count > 1 || s.Layers.Count == 1 && s.Layers[0].Label.Text != "")
+            CoverageText += "\n" + string.Join("\n", s.Layers.Select(l => $"{l.Label.Text}{(l.Filter.Text != "" ? $" ({l.Filter.Text})" : "")}: {Fmt(l.MeanSeconds.Value)} mean, least {Fmt(l.MinSeconds.Value)}" +
+                (l.TargetSeconds.Value > 0 ? $" of {Fmt(l.TargetSeconds.Value)}" : "") + (l.Scopes.Value == 0 ? " — no scope feeds it" : "")));
         var lines = s.Workers.Select(w => $"{w.ScopeId.Text}: {w.Phase.Text}, {w.Visits.Value} shots" + (w.Rejected.Value > 0 ? $" ({w.Rejected.Value} rejected)" : "") + (w.Message.Text != "" ? $" — {w.Message.Text}" : "")).ToList();
         if (!Workers.SequenceEqual(lines)) { Workers.Clear(); foreach (var l in lines) Workers.Add(l); }
         if (s.WidthDegrees.Value > 0) { _areaW = s.WidthDegrees.Value; _areaH = s.HeightDegrees.Value; }

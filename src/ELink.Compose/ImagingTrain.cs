@@ -26,6 +26,10 @@ public sealed class ImagingTrain : IAsyncDisposable
     private string _message = "";
     private readonly Dictionary<string, double> _angles = new();   // by camera id, learned from plate solves
     private Action<ELink.Contracts.Automation.SolveResult>? _onSolved;
+    /// <summary>The focus offsets the cameras' shooters read; replaced entry by entry when they are re-measured.</summary>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> _offsets = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Raised when the offsets were replaced (so the composition can keep them).</summary>
+    public event Action<IReadOnlyList<(string Filter, int Steps)>>? FocusOffsetsChanged;
 
     /// <summary>A cooled camera's ramp: the set point walks towards the target a little every tick.</summary>
     private sealed class Ramp
@@ -45,6 +49,7 @@ public sealed class ImagingTrain : IAsyncDisposable
         _node = node; _def = definition; _id = definition.Id.Text;
         bool wheelUsed = false;
         int guides = 0;
+        foreach (var o in definition.FocusOffsets) _offsets[o.Filter.Text] = o.Steps.Value;
         foreach (var c in definition.Cameras)
         {
             bool guiding = c.Role.Text == "Guiding";
@@ -53,7 +58,7 @@ public sealed class ImagingTrain : IAsyncDisposable
             string? wheel = !guiding && !wheelUsed && definition.FilterWheelId.Text != "" ? definition.FilterWheelId.Text : null;
             if (wheel is not null) wheelUsed = true;
             var options = new CameraShooterOptions(c.Gain.Value, c.Offset.Value, wheel is not null || (c.PseudoMono.Value && !guiding) ? definition.FocuserId.Text : "",
-                definition.FocusOffsets.GroupBy(o => o.Filter.Text, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First().Steps.Value, StringComparer.OrdinalIgnoreCase)) { PseudoMono = c.PseudoMono.Value && !guiding && wheel is null };
+                _offsets) { PseudoMono = c.PseudoMono.Value && !guiding && wheel is null };
             var member = new Member(c, sid, new CameraShooter(node, sid, c.CameraId.Text, wheel, options),
                 new RemoteState<CameraState>(node, EquipmentIds.State(DeviceKinds.Camera, c.CameraId.Text), EquipmentIds.GetState(DeviceKinds.Camera, c.CameraId.Text)),
                 new RemoteState<ShooterState>(node, ShooterIds.State(sid), ShooterIds.GetState(sid)),
@@ -99,8 +104,22 @@ public sealed class ImagingTrain : IAsyncDisposable
             await _commands.AddAsync<NOTESVoid, CommandResult>(TrainIds.Warm(_id), _ => SetRampsAsync("Warm"), $"warm the cameras of train {_id} up slowly and switch the coolers off");
             _cooling = Task.Run(() => CoolLoopAsync(_stop.Token));
         }
+        await _commands.AddAsync<FocusOffsetList, CommandResult>(TrainIds.SetFocusOffsets(_id), SetFocusOffsetsAsync, $"replace the focus offsets of train {_id}");
         await _shooterPub.StartAsync();
         await _trainPub.StartAsync();
+    }
+
+    private async Task<CommandResult> SetFocusOffsetsAsync(FocusOffsetList list)
+    {
+        var offsets = list.Offsets.Where(o => o.Filter.Text.Trim() != "").GroupBy(o => o.Filter.Text.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Select(g => (Filter: g.Key, Steps: g.Last().Steps.Value)).ToList();
+        _offsets.Clear();
+        foreach (var (f, s) in offsets) _offsets[f] = s;
+        _def.FocusOffsets.Clear();
+        foreach (var (f, s) in offsets) _def.FocusOffsets.Add(new FilterFocusOffset { Filter = f, Steps = s });
+        FocusOffsetsChanged?.Invoke(offsets);
+        await _trainPub.PublishAsync();
+        return CommandResult.Success();
     }
 
     /// <summary>Once per connection: tell the camera which telescope it sits behind, and, for cameras whose driver
@@ -242,7 +261,7 @@ public sealed class ImagingTrain : IAsyncDisposable
         foreach (var m in All)
         {
             var c = m.State.Latest;
-            var info = new TrainCameraInfo { CameraId = m.Camera.CameraId.Text, Role = m.Camera.Role.Text, ShooterId = m.ShooterId, Connected = c?.Connected.Value ?? false };
+            var info = new TrainCameraInfo { CameraId = m.Camera.CameraId.Text, Role = m.Camera.Role.Text, ShooterId = m.ShooterId, Connected = c?.Connected.Value ?? false, PseudoMono = m.Shooter.IsPseudoMono };
             lock (_angles) if (_angles.TryGetValue(m.Camera.CameraId.Text, out var angle)) info.AngleDegrees = angle;
             info.Temperature = c?.Temperature.Value ?? double.NaN;
             lock (_ramps) if (_ramps.TryGetValue(m.Camera.CameraId.Text, out var ramp)) { info.Cooler = ramp.Phase; info.CoolerSetPoint = ramp.SetPoint; }

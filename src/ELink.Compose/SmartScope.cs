@@ -6,6 +6,7 @@ using ELink.Contracts.Site;
 using ELink.Core;
 using ELink.Core.Astro;
 using Event.CoreFunctionality;
+using EVent.Connections.Models.BaseBinaryConvertibles;
 using Event.Connections.Models.BaseBinaryConvertibles;
 
 namespace ELink.Compose;
@@ -54,7 +55,7 @@ public sealed class SmartScope : IAsyncDisposable
         public DateTime? LastFocus;
         public double LastTemperature = double.NaN, BaselineHfr = double.NaN;
         public string LastFilter = "";
-        public bool HasOffsets;
+        public bool HasOffsets, PseudoMono;
         public readonly List<double> RecentHfr = new();
     }
     private List<RemoteState<TrainState>>? _trainStates;
@@ -256,7 +257,7 @@ public sealed class SmartScope : IAsyncDisposable
             if (answers?.FirstOrDefault() is not { } t || t.FocuserId.Text == "") continue;
             var cam = t.Cameras.FirstOrDefault(c => c.Role.Text == "Imaging");
             if (cam is null) continue;
-            var ft = new FocusTrain { TrainId = sh.Id, FocuserId = t.FocuserId.Text, CameraShooter = cam.ShooterId.Text, HasOffsets = t.FocusOffsets.Count > 0 };
+            var ft = new FocusTrain { TrainId = sh.Id, FocuserId = t.FocuserId.Text, CameraShooter = cam.ShooterId.Text, HasOffsets = t.FocusOffsets.Count > 0 || cam.PseudoMono.Value, PseudoMono = cam.PseudoMono.Value };
             ft.Focuser = new RemoteState<FocuserState>(_node, EquipmentIds.State(DeviceKinds.Focuser, ft.FocuserId), EquipmentIds.GetState(DeviceKinds.Focuser, ft.FocuserId));
             await ft.Focuser.StartAsync();
             list.Add(ft);
@@ -298,6 +299,7 @@ public sealed class SmartScope : IAsyncDisposable
         await SetScope(s => { s.Phase = "Focusing"; s.Message = string.Join(", ", due.Select(d => $"{d.Train.TrainId}: {d.Why}")); });
         var results = await Task.WhenAll(due.Select(async d =>
         {
+            if (d.Train.PseudoMono) return (d.Train, State: await FocusColoursAsync(d.Train, ct));
             var r = await _node.CallFunctionAsync<AutofocusRequest, AutofocusState>(AutofocusIds.RunAndWait, new AutofocusRequest
             {
                 ShooterId = d.Train.CameraShooter, FocuserId = d.Train.FocuserId, ExposureSeconds = _def.FocusExposureSeconds.Value,
@@ -317,6 +319,42 @@ public sealed class SmartScope : IAsyncDisposable
             else if (st.Phase.Text != "Done") notes.Add($"{t.TrainId}: focus {st.Phase.Text.ToLowerInvariant()}: {st.Message.Text}");
         }
         if (notes.Count > 0) _guideNote = string.Join("; ", notes);
+    }
+
+    /// <summary>A pseudo mono camera is focused for each of its colours in turn (the reference, green, last): the focuser
+    /// ends at green's best position and the train's focus offsets R and B become the differences measured.</summary>
+    private async Task<AutofocusState?> FocusColoursAsync(FocusTrain t, CancellationToken ct)
+    {
+        var best = new Dictionary<string, int>();
+        AutofocusState? last = null;
+        foreach (string channel in new[] { "G", "R", "B" })
+        {
+            await SetScope(s => s.Message = $"{t.TrainId}: focusing {channel}");
+            // every colour starts from green's focus: the colours differ by a little, and the sweep is centred where it starts
+            if (best.TryGetValue("G", out int green) && t.Focuser is { } fz && fz.Latest?.Position.Value != green)
+            {
+                await Commands.CallAsync(_node, EquipmentIds.Command(DeviceKinds.Focuser, t.FocuserId, "MoveTo"), (BinaryConvertibleInt32)green);
+                try { await fz.WaitAsync(x => !x.Moving.Value && x.Position.Value == green, TimeSpan.FromSeconds(120), ct); } catch (TimeoutException) { }
+            }
+            var r = await _node.CallFunctionAsync<AutofocusRequest, AutofocusState>(AutofocusIds.RunAndWait, new AutofocusRequest
+            {
+                ShooterId = t.CameraShooter, FocuserId = t.FocuserId, ExposureSeconds = _def.FocusExposureSeconds.Value,
+                StepSize = _def.FocusStepSize.Value, Samples = _def.FocusSamples.Value, Channel = channel,
+            }, TimeSpan.FromMinutes(30), ct);
+            last = r?.FirstOrDefault();
+            if (last is null || last.Phase.Text != "Done") { if (last is not null) last.Message = $"{channel}: {last.Message.Text}"; return last; }
+            best[channel] = last.BestPosition.Value;
+        }
+        // back to green (what the shooter takes as its reference), and the colours' places relative to it
+        var offsets = new FocusOffsetList();
+        foreach (var (c, p) in best) offsets.Offsets.Add(new FilterFocusOffset { Filter = c, Steps = p - best["G"] });
+        var set = await Commands.CallAsync(_node, TrainIds.SetFocusOffsets(t.TrainId), offsets);
+        if (!set.Ok.Value) { last.Phase = "Error"; last.Message = "could not keep the focus offsets: " + set.Error.Text; return last; }
+        var home = await Commands.CallAsync(_node, EquipmentIds.Command(DeviceKinds.Focuser, t.FocuserId, "MoveTo"), (BinaryConvertibleInt32)best["G"]);
+        if (!home.Ok.Value) { last.Phase = "Error"; last.Message = "could not return to green focus: " + home.Error.Text; return last; }
+        if (t.Focuser is { } f) { try { await f.WaitAsync(x => !x.Moving.Value && x.Position.Value == best["G"], TimeSpan.FromSeconds(120), ct); } catch (TimeoutException) { } }
+        await SetScope(s => s.Message = $"{t.TrainId}: focus offsets R {offsets.Offsets.First(o => o.Filter.Text == "R").Steps.Value:+0;-0;0}, B {offsets.Offsets.First(o => o.Filter.Text == "B").Steps.Value:+0;-0;0} steps from green");
+        return last;
     }
 
     private sealed record Grade(string Quality, string Note, int Stars, double Hfr, double Elongation, double Background);
