@@ -2,6 +2,7 @@ using System.Net;
 using Event.CoreFunctionality;
 using Event.CoreFunctionality.EVentIDs;
 using EVent.Connections.Models.BaseBinaryConvertibles;
+using EVent.Connections;
 using EVent.Connections.TCP;
 
 namespace ELink.Core;
@@ -17,17 +18,18 @@ public static class ElinkNode
     /// synchronization context (a UI dispatcher, a test framework's limited scheduler) and every thread of that context is busy
     /// waiting, nothing can make progress until the start-up times out. So the node is always constructed on a pool thread with
     /// no synchronization context; the caller still gets it synchronously.</remarks>
-    public static TypeSafeEVentNode Create(string name, int port, IPAddress? listen = null) =>
+    /// <param name="extra">More transports the node serves besides TCP (a WebSocket server for browser leaves, say).</param>
+    public static TypeSafeEVentNode Create(string name, int port, IPAddress? listen = null, params ICommsProtocol[] extra) =>
         SynchronizationContext.Current is null && !Thread.CurrentThread.IsThreadPoolThread
-            ? Construct(name, port, listen)
-            : Task.Run(() => Construct(name, port, listen)).GetAwaiter().GetResult();
+            ? Construct(name, port, listen, extra)
+            : Task.Run(() => Construct(name, port, listen, extra)).GetAwaiter().GetResult();
 
     /// <summary>Same as <see cref="Create"/>, without blocking the caller.</summary>
-    public static Task<TypeSafeEVentNode> CreateAsync(string name, int port, IPAddress? listen = null) =>
-        Task.Run(() => Construct(name, port, listen));
+    public static Task<TypeSafeEVentNode> CreateAsync(string name, int port, IPAddress? listen = null, params ICommsProtocol[] extra) =>
+        Task.Run(() => Construct(name, port, listen, extra));
 
-    private static TypeSafeEVentNode Construct(string name, int port, IPAddress? listen) =>
-        new(name, new TCPServer(listen ?? IPAddress.Loopback, port, name));
+    private static TypeSafeEVentNode Construct(string name, int port, IPAddress? listen, ICommsProtocol[] extra) =>
+        new(name, [new TCPServer(listen ?? IPAddress.Loopback, port, name), .. extra]);
 
     public static async Task<MergeResult> JoinAsync(TypeSafeEVentNode node, string host, int port)
     {

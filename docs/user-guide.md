@@ -408,6 +408,13 @@ flowchart LR
 
 Only Light frames are used. The stack can be fetched as a 32-bit FITS with a WCS through `ELink.Automation.LiveStack.GetImage`.
 
+## From a phone or another computer (web interface)
+
+The station serves a page of its own at `http://127.0.0.1:8080/`: how far the image is (pause, resume, stop), what each scope is doing (stop a scope), the live picture with a flash where each new frame lands, and the session log with a box for notes. The page is a leaf of the same EVent mesh as the window; it knows only the IDs and contracts.
+
+- `--web-port` and `--ws-port` change the two ports (page and mesh link), `--no-web` turns it off.
+- By default it listens on this computer only. `--web-listen 0.0.0.0` lets other devices on your network open it, **with no login**: anyone who can reach those ports can stop your image. Do that only on a network you trust (a hotspot of your own, say).
+
 ## Troubleshooting
 
 | symptom | check |

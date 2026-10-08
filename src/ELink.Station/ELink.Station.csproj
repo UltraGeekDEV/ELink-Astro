@@ -7,6 +7,11 @@
     <PackageReference Include="Avalonia.Desktop" Version="11.3.22" />
   </ItemGroup>
   <ItemGroup>
+    <!-- The web interface: a page that is a JavaScript leaf of the mesh (EVent's own evn.js next to it) -->
+    <Content Include="web\**" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\EVent\js\evn.js" Link="web\evn.js" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
     <!-- The all-in-one process: the only place where UI and backend meet, and they still talk through EVent. -->
     <ProjectReference Include="..\ELink.UI\ELink.UI.csproj" />
     <ProjectReference Include="..\ELink.IndiBridge\ELink.IndiBridge.csproj" />

@@ -201,5 +201,6 @@ focus triggers/offsets -> live-stack rejection/calibration -> the rest.
 - [x] Session log: LogEntry events (`SessionLog.Info/Warn/Error/Note`), a service that writes one file per night through an EVent file endpoint (append over the mesh allowed, replace not), follows scopes/autofocus/centring/stack frames, Advanced › Session log page with notes and a copy-for-bug-report button
 - [ ] Services should write their own important lines (errors, device lost, flips, guiding lost) with `SessionLog`, not only phase changes
 - [ ] Log: filter by source/level, open the folder, attach the log to a saved night's folder
-- [ ] Web interface: the station serves a page with the JS leaf (WebSocketServer + WebEndpoint/FileEndpoint), live stack, scope states, log, stop button; mesh only, same contracts as the desktop UI
+- [x] Web interface: the station serves a page (src/ELink.Station/web) with the JS leaf over WebSocketServer + WebEndpoint/FileEndpoint: image progress with pause/resume/stop, scope cards, live picture with landing flashes, session log with notes; mesh only, same contracts as the desktop UI
+- [ ] Web interface: login (EVent auth) before it may be opened beyond loopback; mobile polish on a real phone; start an image from the page
 - [ ] Stream-style events (live previews, property streams) moved to `PublishEvent`

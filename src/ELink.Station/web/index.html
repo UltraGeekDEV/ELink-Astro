@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>ELink</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%230f131a' stroke='%236fb1ff' stroke-width='2'/%3E%3Ccircle cx='16' cy='16' r='4' fill='%236fb1ff'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>ELink</h1>
+    <span id="link" class="chip" data-state="connecting">connecting…</span>
+  </header>
+
+  <main>
+    <section id="image" class="card" hidden>
+      <div class="row between">
+        <h2 id="imageLabel">Image</h2>
+        <span id="imagePhase" class="chip">Idle</span>
+      </div>
+      <p id="imageMessage" class="hint"></p>
+      <div class="bar" aria-label="progress"><div id="imageBar"></div></div>
+      <p id="imageDepth" class="hint"></p>
+      <div class="row">
+        <button id="pause">Pause</button>
+        <button id="resume">Resume</button>
+        <button id="stop" class="danger">Stop</button>
+      </div>
+    </section>
+
+    <section id="scopes" class="grid"></section>
+    <p id="noScopes" class="hint" hidden>No scopes yet. Set one up in the desktop window (Rig › Set up).</p>
+
+    <section class="card" id="pictureCard">
+      <div class="row between">
+        <h2>Picture</h2>
+        <span id="pictureInfo" class="hint"></span>
+      </div>
+      <div id="picture" class="picture" title="Tap for full screen">
+        <img id="pictureImg" alt="the live stack" hidden>
+        <svg id="landing" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true"></svg>
+        <p id="pictureEmpty" class="hint">Nothing stacked yet. The picture appears as the first frames land.</p>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="row between"><h2>Session log</h2><span id="logFile" class="hint"></span></div>
+      <form id="noteForm" class="row">
+        <input id="note" type="text" placeholder="Add a note to the log" autocomplete="off">
+        <button class="primary">Add note</button>
+      </form>
+      <pre id="log" aria-live="polite"></pre>
+    </section>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
