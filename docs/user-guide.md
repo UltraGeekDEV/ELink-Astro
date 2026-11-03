@@ -410,7 +410,15 @@ Only Light frames are used. The stack can be fetched as a 32-bit FITS with a WCS
 
 ## From a phone or another computer (web interface)
 
-The station serves a page of its own at `http://127.0.0.1:8080/`: how far the image is (pause, resume, stop), what each scope is doing (stop a scope), the live picture with a flash where each new frame lands, and the session log with a box for notes. The page is a leaf of the same EVent mesh as the window; it knows only the IDs and contracts.
+The station serves a page of its own at `http://127.0.0.1:8080/`, enough to run a night from a phone with no desktop window anywhere (a headless Raspberry Pi, say). It is a leaf of the same EVent mesh as the window and knows only the IDs and contracts.
+
+- **Now**: the image being taken: its coverage map (dark = nothing yet, blue = some, green = done) with the frame being shot outlined, shots, depth and the thinnest spot, the pace in shots an hour, *done at* about when, and how long since the last shot (orange when it has been a while). Pause, Resume, Stop, and a new depth while it runs. Below, each scope, and the live picture with a flash where each frame lands (tap it for full screen).
+- **New image**: search the built-in list of about 500 objects (Messier, the bright NGC/IC, named nebulae) or type RA and Dec. *Fit the object* sizes the area around it, *Lens field* gives the field of a camera lens (150 mm on APS-C is 8.97° x 5.95°), *Match camera angle* turns the area to the camera so frames tile it with less overlap. Give the picture's size in MP and the scale is worked out. The preview draws the area with frames tiling it and says about how many shots and hours it takes and when every part has some data. It also says how high the target is, when it is highest and sets, and how far the Moon is. Then *Start*, *Add to queue* or *Go to centre*.
+- **Kept**: images started before, with how deep they are. *Continue* carries on (after a restart too), *Edit…* loads it into New image, *Delete* forgets it (the frames on disk stay).
+- **Queue**: the scheduler's list: on/off, priority, lowest altitude, only when dark, order; run or stop the queue.
+- **Rig**: the mount (unpark, park, tracking, stop a slew), the devices (connect, disconnect), driver profiles, a simple scope set up (mount + one camera, unguided), the site (or this phone's location), and where frames are saved.
+- **Log**: the session log, live, with notes.
+- The red dot in the corner switches to red light. The page reconnects by itself when Wi-Fi drops and catches up when it is back.
 
 - `--web-port` and `--ws-port` change the two ports (page and mesh link), `--no-web` turns it off.
 - By default it listens on this computer only. `--web-listen 0.0.0.0` lets other devices on your network open it, **with no login**: anyone who can reach those ports can stop your image. Do that only on a network you trust (a hotspot of your own, say).

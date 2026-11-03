@@ -202,5 +202,6 @@ focus triggers/offsets -> live-stack rejection/calibration -> the rest.
 - [ ] Services should write their own important lines (errors, device lost, flips, guiding lost) with `SessionLog`, not only phase changes
 - [ ] Log: filter by source/level, open the folder, attach the log to a saved night's folder
 - [x] Web interface: the station serves a page (src/ELink.Station/web) with the JS leaf over WebSocketServer + WebEndpoint/FileEndpoint: image progress with pause/resume/stop, scope cards, live picture with landing flashes, session log with notes; mesh only, same contracts as the desktop UI
-- [ ] Web interface: login (EVent auth) before it may be opened beyond loopback; mobile polish on a real phone; start an image from the page
+- [x] Web interface as a control interface: Now (coverage map, pace, ETA, depth change), New image (catalogue, lens field, fit object, match camera angle, MP to scale, preview with tiling and estimate, visibility, start/queue/go to), Kept, Queue, Rig (mount, devices, profiles, scope set up, site), red light; tested in headless Firefox (WebDriver BiDi) against the Pi
+- [ ] Web interface: login (EVent auth) before it may be opened beyond loopback; a real phone in the field; guided scope set up; layers/filters in New image; calibration frames
 - [ ] Stream-style events (live previews, property streams) moved to `PublishEvent`
