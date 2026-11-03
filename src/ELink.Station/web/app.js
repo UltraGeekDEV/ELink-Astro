@@ -551,7 +551,10 @@ function outSize() {
   const W = Number(F('Width').value), H = Number(F('Height').value), s = Number(F('Scale').value);
   if (W > 0 && H > 0 && s > 0) {
     const w = Math.round(W * 3600 / s), h = Math.round(H * 3600 / s);
-    $('outSize').textContent = `The picture: ${w} × ${h} px, ${(w * h / 1e6).toFixed(1)} MP, about ${Math.round(w * h * 12 / 1e6)} MB of stack in memory.`;
+    // the stack holds 3 colour sums, a weight and a sum of squares per pixel: 20 bytes
+    const mb = Math.round(w * h * 20 / 1e6);
+    $('outSize').textContent = `The picture: ${w} × ${h} px, ${(w * h / 1e6).toFixed(1)} MP, about ${mb} MB of stack in memory${mb > 300 ? ': too much for a 2 GB Raspberry Pi, pick a coarser scale or fewer MP' : ''}.`;
+    $('outSize').className = 'hint' + (mb > 300 ? ' warn' : '');
   } else $('outSize').textContent = s > 0 ? '' : 'At the camera\'s own scale (0): for a wide area pick a coarser scale, the stack is far smaller.';
 }
 outSize();

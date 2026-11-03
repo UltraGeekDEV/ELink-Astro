@@ -25,6 +25,7 @@ public sealed class SchedulerService : IAsyncDisposable
     private Schedule _schedule = new();
     private readonly Dictionary<string, ScheduleEntryState> _entryStates = new();
     private readonly Dictionary<string, DateTime> _failedAt = new();
+    private readonly Dictionary<string, int> _failures = new();     // in a row, by entry: the wait grows with them
     private string _phase = "Stopped", _running = "", _message = "";
     private CancellationTokenSource? _run;
     private Task _loop = Task.CompletedTask;
@@ -35,6 +36,15 @@ public sealed class SchedulerService : IAsyncDisposable
     public TimeSpan CheckEvery { get; set; } = TimeSpan.FromSeconds(60);
     /// <summary>An entry whose image failed is left alone this long before it is tried again.</summary>
     public TimeSpan RetryFailedAfter { get; set; } = TimeSpan.FromMinutes(30);
+
+    /// <summary>A first failure is often passing (devices still coming up after a restart): it is tried again soon, and only
+    /// failures in a row back off to <see cref="RetryFailedAfter"/>.</summary>
+    private TimeSpan WaitAfter(string label)
+    {
+        int n = _failures.TryGetValue(label, out var k) ? k : 1;
+        double minutes = RetryFailedAfter.TotalMinutes;
+        return TimeSpan.FromMinutes(n <= 1 ? Math.Min(2, minutes) : n == 2 ? Math.Min(10, minutes) : minutes);
+    }
 
     public SchedulerService(TypeSafeEVentNode node, string? file = null, string siteId = SiteIds.Default)
     {
@@ -198,7 +208,7 @@ public sealed class SchedulerService : IAsyncDisposable
                 }
                 else if (img is { Phase.Text: "Error" or "Aborted" })
                 {
-                    lock (_gate) { _failedAt[running] = DateTime.UtcNow; _running = ""; _message = $"{running}: {img.Message.Text}"; }
+                    lock (_gate) { _failedAt[running] = DateTime.UtcNow; _failures[running] = (_failures.TryGetValue(running, out var fr) ? fr : 0) + 1; _running = ""; _message = $"{running}: {img.Message.Text}"; }
                     running = "";
                 }
                 else if (mine is null || mine.Status is "Waiting" or "Disabled")
@@ -221,8 +231,8 @@ public sealed class SchedulerService : IAsyncDisposable
                     var r = await Commands.CallAsync(_node, ImagingIds.Start, req, TimeSpan.FromMinutes(5));
                     lock (_gate)
                     {
-                        if (r.Ok.Value) { _running = req.Label.Text; _message = $"{req.Label.Text}: {best.Reason}"; }
-                        else { _failedAt[req.Label.Text] = DateTime.UtcNow; _message = $"{req.Label.Text} could not start: {r.Error.Text}"; }
+                        if (r.Ok.Value) { _failures.Remove(req.Label.Text); _running = req.Label.Text; _message = $"{req.Label.Text}: {best.Reason}"; }
+                        else { _failedAt[req.Label.Text] = DateTime.UtcNow; _failures[req.Label.Text] = (_failures.TryGetValue(req.Label.Text, out var fs) ? fs : 0) + 1; _message = $"{req.Label.Text} could not start: {r.Error.Text}"; }
                     }
                 }
                 else lock (_gate) _message = verdicts.Count == 0 ? "the schedule is empty" : verdicts.All(v => v.Status is "Complete" or "Disabled") ? "everything is done" : "nothing can be taken now";
@@ -267,7 +277,7 @@ public sealed class SchedulerService : IAsyncDisposable
         if (!e.Enabled.Value) return new(e, "Disabled", "disabled", double.NaN, 0, complete);
         if (r.TargetSeconds.Value > 0 && complete >= 100 - 1e-6) return new(e, "Complete", "deep enough", double.NaN, 0, complete);
         lock (_gate)
-            if (_failedAt.TryGetValue(r.Label.Text, out var failed) && DateTime.UtcNow - failed < RetryFailedAfter && r.Label.Text != running)
+            if (_failedAt.TryGetValue(r.Label.Text, out var failed) && DateTime.UtcNow - failed < WaitAfter(r.Label.Text) && r.Label.Text != running)
                 return new(e, "Waiting", "failed recently: tried again later", double.NaN, 0, complete);
         if (site is not { Known.Value: true }) return new(e, "Waiting", "the site is not set (Rig › Site)", double.NaN, 0, complete);
         var now = DateTime.Parse(site.UtcNow.Text, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal);
