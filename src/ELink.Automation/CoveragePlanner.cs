@@ -50,6 +50,13 @@ public sealed class CoveragePlanner
     /// frame just touches the area).</summary>
     public double MarginShare { get; set; } = 1.0;
     public Pose? Last { get; private set; }
+    /// <summary>When every spot has the target: raise it by <see cref="KeepGoingStep"/> and carry on, evenly, until stopped.</summary>
+    public bool KeepGoing { get; set; }
+    /// <summary>How much deeper each time the target is reached while keeping going (seconds; 0 = about an hour of shots).</summary>
+    public double KeepGoingStep { get; set; }
+    /// <summary>The depth the pass in progress brings every spot up to: passes rise evenly from the thinnest spot to the target,
+    /// so a pass skips what is already that deep (after a restart it picks up where the image is thinnest, not at the top).</summary>
+    public double PassLevel { get; private set; } = double.NaN;
 
     /// <summary>The lattice hop the passes use (never smaller than <see cref="Stepover"/>); NaN in top-up mode.</summary>
     public double PassHop { get; private set; } = double.NaN;
@@ -67,6 +74,7 @@ public sealed class CoveragePlanner
     private double _margin => _reach * MarginShare;
     private IEnumerator<Pose>? _lattice;
     private int _passIndex;
+    private double _base;
     private readonly double _fullGain;
     private (double X, double Y) _heading = (0, 0);
 
@@ -95,11 +103,11 @@ public sealed class CoveragePlanner
 
     /// <summary>How good a shot at this pose would be, and (D) how much deficit it fills. With a target the score is
     /// D² / (D + penalty × waste): fills what is missing, pays for re-exposing finished spots, and is never negative.</summary>
-    private (double Score, double Deficit) Evaluate(Pose p)
+    private (double Score, double Deficit) Evaluate(Pose p, double level = double.NaN)
     {
         var fp = CoverageMap.Footprints(p, Frames, AreaAngle);
         if (TargetSeconds <= 0) { double g = Map.Gain(fp, Weight, Layer); return (g, g); }
-        Map.DeficitAndWaste(fp, TargetSeconds, out double d, out int w, Layer);
+        Map.DeficitAndWaste(fp, double.IsNaN(level) ? TargetSeconds : level, out double d, out int w, Layer);
         return d <= 0 ? (0, 0) : (d * d / (d + OverTargetPenalty * w), d);
     }
 
@@ -129,6 +137,7 @@ public sealed class CoveragePlanner
         int passes = Math.Max(Math.Max(1, Rotations.Count), Math.Max((int)Math.Ceiling(missing / perPassAtHop0 - 1e-9), Math.Min(byTime, thinnest)));
         PassHop = Math.Max(hop0, Math.Sqrt(ExposureSeconds * _frameArea * passes / missing));   // exactly `missing` after `passes` passes
         PassCount = passes; _passIndex = 0;
+        _base = Math.Min(Map.Min(Layer), TargetSeconds);
         _lattice = Passes(false).GetEnumerator();
     }
 
@@ -165,6 +174,7 @@ public sealed class CoveragePlanner
         for (int pass = 0; pass < total; pass++)
         {
             CurrentPass = pass + 1;
+            PassLevel = endless ? double.NaN : pass + 1 >= PassCount ? TargetSeconds : _base + (pass + 1) * (TargetSeconds - _base) / PassCount;
             double rot = Rotations[pass % Rotations.Count];
             var (hx, hy) = PassHops(rot, endless ? 0 : missing / PassCount, endless);
             PassHopX = hx; PassHopY = hy;
@@ -184,6 +194,23 @@ public sealed class CoveragePlanner
     /// <summary>Picks the next pose and paints it into <see cref="Map"/>. Null when the target is reached.</summary>
     public Pose? Next()
     {
+        var pose = NextOnce();
+        if (pose is null && KeepGoing && TargetSeconds > 0)
+        {
+            // deep enough everywhere: a step deeper, in fresh even passes
+            double step = KeepGoingStep > 0 ? KeepGoingStep : HourOfDepth();
+            TargetSeconds = Math.Max(TargetSeconds, Map.Min(Layer)) + step;
+            Plan();
+            pose = NextOnce();
+        }
+        return pose;
+    }
+
+    /// <summary>About how much depth an hour of shots gives every spot (at least one exposure).</summary>
+    public double HourOfDepth() => Math.Max(ExposureSeconds, PassSeconds / 1.2 / ExposureSeconds * _frameArea * ExposureSeconds / (Map.FovWidth * Map.FovHeight));
+
+    private Pose? NextOnce()
+    {
         if (Done) return null;
         if (TopUpOnly)
         {
@@ -198,7 +225,7 @@ public sealed class CoveragePlanner
         {
             if (!_lattice.MoveNext()) { _lattice.Dispose(); _lattice = null; break; }
             var pose = _lattice.Current;
-            var (score, deficit) = Evaluate(pose);
+            var (score, deficit) = Evaluate(pose, PassLevel);
             bool useful = TargetSeconds <= 0 ? deficit > 0 : deficit >= Math.Max(0.01, PassMinFill) * _fullGain && score > 0;   // skip poses that would mostly re-expose finished spots or hang in empty sky
             if (!useful) continue;
             Commit(pose);

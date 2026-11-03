@@ -179,4 +179,37 @@ public class CoveragePlannerTests(ITestOutputHelper output)
         double area = map.Seconds.Sum(v => v) * 0.01 * 0.01;
         Assert.Equal(0.2, area, 2);               // 1.0 x 0.2
     }
+
+    [Fact]
+    public void AfterARestartThePassPicksUpWhereTheImageIsThinnestNotAtTheTop()
+    {
+        var map = new CoverageMap(6, 4, 0.05);
+        var frames = new[] { new FrameSpec(0.5, 0.35, 0, 0, 0) };
+        var p = new CoveragePlanner(map, frames, [0.0], 0, 30, 600, 0.07);
+        Pose? last = null;
+        for (int i = 0; i < 15; i++) last = p.Next();                 // the top row or so of the first pass
+        Assert.True(last!.Value.Y > 1);
+        var again = new CoveragePlanner(map, frames, [0.0], 0, 30, 600, 0.07);    // the station started again, the same map
+        var next = again.Next()!.Value;
+        // further along the row it was in, or below it: never back at the start of the top row
+        bool along = Math.Abs(next.Y - last.Value.Y) < 0.05 && next.X >= last.Value.X - 1e-6,   // (at most the last shot again: its spots are not at the pass level until the next ones add to them)
+             below = next.Y < last.Value.Y - 0.05;
+        Assert.True(along || below, $"carried on at ({next.X:0.00}, {next.Y:0.00}), the last shot was at ({last.Value.X:0.00}, {last.Value.Y:0.00})");
+    }
+
+    [Fact]
+    public void UntilStoppedItDeepensAllOfItEvenlyPassAfterPass()
+    {
+        var map = new CoverageMap(4, 3, 0.05);
+        var frames = new[] { new FrameSpec(0.5, 0.35, 0, 0, 0) };
+        var p = new CoveragePlanner(map, frames, [0.0], 0, 30, 0, 0.07);
+        // depth 0: an hour's depth at a time, never done
+        p.KeepGoing = true; p.TargetSeconds = p.HourOfDepth(); p.Plan();
+        double step = p.TargetSeconds;
+        int shots = 0;
+        while (shots < 2000 && map.Min() < 3 * step) { Assert.NotNull(p.Next()); shots++; }
+        Assert.True(map.Min() >= 3 * step - 1e-6, $"min {map.Min()} after {shots} shots");
+        Assert.True(map.Max() < map.Min() + 3 * step, $"uneven: {map.Min()}..{map.Max()}");
+        Assert.True(p.TargetSeconds > 3 * step - 1e-6);
+    }
 }

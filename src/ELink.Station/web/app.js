@@ -499,10 +499,12 @@ function planScopes() {
 }
 const chosenScopes = () => [...$('planScopes').querySelectorAll('input:checked')].map(i => i.value);
 
-const PLAN_DEFAULTS = { Label: '', Ra: '', Dec: '', Width: '', Height: '', Pa: '0', Exposure: '30', Depth: '60', Filter: '', Gain: '', Iso: '', Bin: '0', Scale: '', LiveStack: true, Stepover: '0', Dither: '30', MaxVisits: '0', SkyWait: '120', SlewTimeout: '300', Resume: true };
+const PLAN_DEFAULTS = { Label: '', Ra: '', Dec: '', Width: '', Height: '', Pa: '0', Exposure: '30', Depth: '60', Filter: '', Gain: '', Iso: '', Bin: '0', Scale: '', LiveStack: true, Stepover: '0', Dither: '30', MaxVisits: '0', SkyWait: '120', SlewTimeout: '300', Resume: true, Endless: false };
 function formValues() { const o = {}; for (const k of Object.keys(PLAN_DEFAULTS)) { const el = F(k); o[k] = el.type === 'checkbox' ? el.checked : el.value; } return o; }
+function endlessUi() { F('Depth').disabled = F('Endless').checked; }
 function setForm(o) { for (const k of Object.keys(PLAN_DEFAULTS)) { const el = F(k); const v = o[k] ?? PLAN_DEFAULTS[k]; if (el.type === 'checkbox') el.checked = !!v; else el.value = v; } }
-setForm(store.get('plan', PLAN_DEFAULTS));
+setForm(store.get('plan', PLAN_DEFAULTS)); endlessUi();
+F('Endless').addEventListener('change', endlessUi);
 
 /** The form as an ImagingRequest, or a reason it is not one yet. */
 function request() {
@@ -520,7 +522,7 @@ function request() {
       Label: v.Label.trim(), Center: { RaHours: ra, DecDegrees: dec, Epoch: 'J2000' },
       WidthDegrees: n('Width') || 0, HeightDegrees: n('Height') || 0, PositionAngleDegrees: n('Pa') || 0, ScopeIds: scopes,
       Exposure: { Seconds: n('Exposure'), Filter: v.Filter.trim(), BinX: bin, BinY: bin, Gain: v.Gain === '' ? NaN_ : n('Gain'), Iso: v.Iso.trim() },
-      TargetSeconds: (n('Depth') || 0) * 60, StepoverDegrees: n('Stepover') || 0, DitherArcsec: n('Dither') || 0, MaxVisits: n('MaxVisits') | 0,
+      TargetSeconds: v.Endless ? 0 : (n('Depth') || 0) * 60, StepoverDegrees: n('Stepover') || 0, DitherArcsec: n('Dither') || 0, MaxVisits: n('MaxVisits') | 0,
       LiveStack: v.LiveStack, OutputPixelScaleArcsec: n('Scale') || 0, SlewTimeoutSeconds: n('SlewTimeout') || 300, SkyWaitSeconds: n('SkyWait') || 0, Resume: v.Resume,
     }),
   };
@@ -528,12 +530,12 @@ function request() {
 function loadRequest(r) {
   setForm({
     Label: r.Label, Ra: hms(r.Center.RaHours, true), Dec: hms(r.Center.DecDegrees, false), Width: r.WidthDegrees || '', Height: r.HeightDegrees || '', Pa: r.PositionAngleDegrees,
-    Exposure: r.Exposure.Seconds, Depth: r.TargetSeconds ? Math.round(r.TargetSeconds / 60) : 0, Filter: r.Exposure.Filter, Gain: fin(r.Exposure.Gain) ? r.Exposure.Gain : '', Iso: r.Exposure.Iso,
+    Exposure: r.Exposure.Seconds, Depth: r.TargetSeconds ? Math.round(r.TargetSeconds / 60) : 60, Endless: !(r.TargetSeconds > 0), Filter: r.Exposure.Filter, Gain: fin(r.Exposure.Gain) ? r.Exposure.Gain : '', Iso: r.Exposure.Iso,
     Bin: String(r.Exposure.BinX || 0), Scale: r.OutputPixelScaleArcsec || '', LiveStack: r.LiveStack, Stepover: r.StepoverDegrees, Dither: r.DitherArcsec, MaxVisits: r.MaxVisits,
     SkyWait: r.SkyWaitSeconds, SlewTimeout: r.SlewTimeoutSeconds, Resume: true,
   });
   for (const i of $('planScopes').querySelectorAll('input')) i.checked = r.ScopeIds.includes(i.value) || r.ScopeIds.length === 0;
-  picked = null; planChanged();
+  picked = null; endlessUi(); planChanged();
 }
 
 let preview = null, planTimer = null, planSeq = 0;
@@ -570,7 +572,8 @@ async function runPreview() {
 /** About how many shots and hours: the ideal (frames to tile the area, times the depth) and what the planner tends to need. */
 function estimate(p, req) {
   const frames = p.Workers.flatMap(w => w.Frames.map(f => ({ a: f.WidthDegrees * f.HeightDegrees, w })));
-  if (!frames.length || !(req.TargetSeconds > 0)) return '';
+  if (!frames.length) return '';
+  if (!(req.TargetSeconds > 0)) return '. It keeps going until you stop it: each pass of about an hour deepens all of it evenly.';
   const area = p.WidthDegrees * p.HeightDegrees, perShot = frames.reduce((s, f) => s + f.a, 0);
   const tiles = area / perShot, deep = Math.ceil(req.TargetSeconds / req.Exposure.Seconds);
   const scopes = Math.max(1, p.Workers.length);

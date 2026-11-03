@@ -353,7 +353,9 @@ public sealed partial class ImagingService : IAsyncDisposable
             double target; lock (_gate) target = TargetOf(l);
             var p = new CoveragePlanner(plan.Map, mine, [0.0], r.PositionAngleDegrees.Value, l.Exposure, target, plan.Stepover, l.Index)
             { TopUpOnly = fits, PaintFrames = masked.Where(f => f.Mask != 0).ToArray() };
-            if (fits) p.Plan();
+            // until stopped: deeper a step (about an hour of shots) at a time, in even passes over all of it
+            if (target <= 0) { p.KeepGoing = true; p.TargetSeconds = p.HourOfDepth(); p.Plan(); }
+            else if (fits) p.Plan();
             list.Add((l, p));
         }
         return list;
@@ -397,7 +399,8 @@ public sealed partial class ImagingService : IAsyncDisposable
                 {
                     // a new depth while running: this scope's plan is redone from what is still missing
                     foreach (var (l, p) in planners)
-                        if (p.TargetSeconds != TargetOf(l)) { p.TargetSeconds = TargetOf(l); p.Plan(); exhausted.Remove(p); }
+                        // a new depth asked for while running (a planner that keeps going only follows it upwards)
+                        if (p.KeepGoing ? TargetOf(l) > p.TargetSeconds : p.TargetSeconds != TargetOf(l)) { p.TargetSeconds = TargetOf(l); p.Plan(); exhausted.Remove(p); }
                     foreach (var candidate in Candidates(planners, exhausted, current))
                     {
                         pose = candidate.Planner.Next();
