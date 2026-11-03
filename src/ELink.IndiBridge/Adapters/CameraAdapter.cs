@@ -158,7 +158,7 @@ public sealed class CameraAdapter(AdapterContext ctx) : IndiDeviceAdapter<Camera
             await Node.FireEventAsync(EquipmentIds.Command(Kind, Id, "Frame"), new FrameEvent
             {
                 Device = Device, Format = format, ExposureSeconds = _lastExposure, FrameType = _lastFrameType,
-                Timestamp = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture), Data = new RawBytes(data),
+                Timestamp = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture), Data = RawBytes.Shared(data),   // by reference: every hop and subscriber here shares this one array
             });
         }
         catch (ObjectDisposedException) { }

@@ -23,6 +23,10 @@ public sealed class StorageService : IAsyncDisposable
     private readonly Dictionary<string, Action<ShotEvent>> _watching = new();
     private readonly Dictionary<string, int> _counters = new();
     private readonly SemaphoreSlim _writeLock = new(1, 1);
+    // frames are written one after the other off the event (a 48 MB write must not hold up the scope that relays the frame)
+    private readonly System.Threading.Channels.Channel<(string Id, ShotEvent Shot)> _queue = System.Threading.Channels.Channel.CreateUnbounded<(string, ShotEvent)>(new() { SingleReader = true });
+    private Task? _writer;
+    private int _queued;
     private string _directory;
     private int _saved;
     private string _lastFile = "", _message = "";
@@ -44,6 +48,19 @@ public sealed class StorageService : IAsyncDisposable
         await _commands.AddAsync<BinaryConvertibleString, CommandResult>(StorageIds.SetDirectory, SetDirectoryAsync, "where frames are saved");
         await _commands.AddAsync<StorageWatch, CommandResult>(StorageIds.Watch, WatchAsync, "start or stop saving the frames of a shooter");
         await _publisher.StartAsync();
+        _writer = Task.Run(WriteLoopAsync);
+    }
+
+    /// <summary>Frames waiting to be written.</summary>
+    public int Queued => Volatile.Read(ref _queued);
+
+    private async Task WriteLoopAsync()
+    {
+        await foreach (var (id, shot) in _queue.Reader.ReadAllAsync())
+        {
+            try { await SaveShotAsync(id, shot); }
+            finally { Interlocked.Decrement(ref _queued); }
+        }
     }
 
     private StorageState BuildState()
@@ -74,7 +91,7 @@ public sealed class StorageService : IAsyncDisposable
         if (w.Enabled.Value)
         {
             lock (_gate) if (_watching.ContainsKey(id)) return CommandResult.Success();
-            Action<ShotEvent> handler = shot => SaveShot(id, shot);
+            Action<ShotEvent> handler = shot => { Interlocked.Increment(ref _queued); _queue.Writer.TryWrite((id, shot)); };
             await _node.HookEventAsync(ShooterIds.Shot(id), handler, "frame storage");
             lock (_gate) _watching[id] = handler;
         }
@@ -88,9 +105,9 @@ public sealed class StorageService : IAsyncDisposable
         return CommandResult.Success();
     }
 
-    private void SaveShot(string watchId, ShotEvent shot)
+    private async Task SaveShotAsync(string watchId, ShotEvent shot)
     {
-        _writeLock.Wait();
+        await _writeLock.WaitAsync();
         try
         {
             string dir; lock (_gate) dir = _directory;
@@ -115,8 +132,9 @@ public sealed class StorageService : IAsyncDisposable
             do { n++; file = Path.Combine(nightDir, $"{stem}_{n:0000}{ext}"); } while (File.Exists(file));
             _counters[key] = n;
 
-            byte[] bytes = shot.Data.Data;
-            if (shot.PseudoChannel.Text != "" && ext is ".fits" or ".fit" && SplitPseudo(shot, nightDir, stem, ext, obj, planId) is { } pair)
+            byte[] bytes = await Frames.BytesAsync(_node, shot.Data);
+            byte[]? header = null; int dataStart = 0;
+            if (shot.PseudoChannel.Text != "" && ext is ".fits" or ".fit" && SplitPseudo(shot, bytes, obj, planId) is { } pair)
             {
                 SavePair(watchId, shot, dir, nightDir, pair, obj, planId, frame);
                 return;
@@ -137,24 +155,29 @@ public sealed class StorageService : IAsyncDisposable
                 if (shot.Quality.Text != "") cards["ELQUAL"] = FitsHeader.StringCard("ELQUAL", shot.Quality.Text, shot.QualityNote.Text == "" ? "frame grade" : shot.QualityNote.Text);
                 if (shot.Stars.Value >= 0) cards["ELSTARS"] = FitsHeader.NumberCard("ELSTARS", shot.Stars.Value, "stars found");
                 if (!double.IsNaN(shot.Hfr.Value)) cards["ELHFR"] = FitsHeader.NumberCard("ELHFR", shot.Hfr.Value, "median half-flux radius, px");
-                try { bytes = FitsHeader.Set(bytes, cards); }
+                try { header = FitsHeader.NewHeader(bytes, cards, out dataStart); }
                 catch (FormatException) { /* not a parsable FITS: store as received */ }
             }
             string tmp = file + ".part";
-            File.WriteAllBytes(tmp, bytes);
+            await using (var fs = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16, FileOptions.Asynchronous))
+            {
+                if (header is not null) await fs.WriteAsync(header);
+                await fs.WriteAsync(bytes.AsMemory(dataStart));
+            }
             File.Move(tmp, file);
+            int written = (header?.Length ?? 0) + bytes.Length - dataStart;
 
             var log = new
             {
                 time = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture), file = Path.GetRelativePath(dir, file), shooter = shot.Shooter.Text,
                 watched = watchId, frame, filter, exposure = shot.ExposureSeconds.Value, @object = obj, plan = planId,
-                raHours = Finite(shot.PointingRaHours.Value), decDegrees = Finite(shot.PointingDecDegrees.Value), bytes = bytes.Length,
+                raHours = Finite(shot.PointingRaHours.Value), decDegrees = Finite(shot.PointingDecDegrees.Value), bytes = written,
                 quality = shot.Quality.Text, qualityNote = shot.QualityNote.Text, stars = shot.Stars.Value, hfr = Finite(shot.Hfr.Value),
             };
             File.AppendAllText(Path.Combine(nightDir, "session.jsonl"), JsonSerializer.Serialize(log) + "\n", Encoding.UTF8);
 
             lock (_gate) { _saved++; _lastFile = file; _message = ""; }
-            _ = Announce(file, watchId, obj, frame, filter, shot.ExposureSeconds.Value, bytes.Length);
+            await Announce(file, watchId, obj, frame, filter, shot.ExposureSeconds.Value, written);   // in order, off the frame's event
         }
         catch (Exception ex)
         {
@@ -167,11 +190,11 @@ public sealed class StorageService : IAsyncDisposable
 
     /// <summary>Pseudo mono frames are saved as two mono frames: the channel that was in focus (folder <c>infocus</c>) and the mean of the
     /// other two (folder <c>oof</c>), each super-pixel debayered, so no channel is ever interpolated from another.</summary>
-    private static (byte[] InFocus, byte[] OutOfFocus)? SplitPseudo(ShotEvent shot, string nightDir, string stem, string ext, string obj, string planId)
+    private static (byte[] InFocus, byte[] OutOfFocus)? SplitPseudo(ShotEvent shot, byte[] bytes, string obj, string planId)
     {
         try
         {
-            var img = FitsImage.Parse(shot.Data.Data);
+            var img = FitsImage.Parse(bytes);
             string? pattern = Debayer.PatternOf(img);
             if (img.Channels != 1 || pattern is null) return null;
             var c = Debayer.SuperPixel(img.Data, img.Width, img.Height, pattern);
@@ -246,7 +269,8 @@ public sealed class StorageService : IAsyncDisposable
         List<(string id, Action<ShotEvent> h)> hooks;
         lock (_gate) { hooks = _watching.Select(w => (w.Key, w.Value)).ToList(); _watching.Clear(); }
         foreach (var (id, h) in hooks) { try { _node.UnhookEvent(ShooterIds.Shot(id), h); } catch (ObjectDisposedException) { } }
+        _queue.Writer.TryComplete();
+        if (_writer is not null) { try { await _writer.WaitAsync(TimeSpan.FromSeconds(30)); } catch (TimeoutException) { } }   // what arrived is still written
         _commands.Dispose(); _publisher.Dispose();
-        await Task.CompletedTask;
     }
 }

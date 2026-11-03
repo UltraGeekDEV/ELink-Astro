@@ -28,8 +28,12 @@ public static class ElinkNode
     public static Task<TypeSafeEVentNode> CreateAsync(string name, int port, IPAddress? listen = null, params ICommsProtocol[] extra) =>
         Task.Run(() => Construct(name, port, listen, extra));
 
-    private static TypeSafeEVentNode Construct(string name, int port, IPAddress? listen, ICommsProtocol[] extra) =>
-        new(name, [new TCPServer(listen ?? IPAddress.Loopback, port, name), .. extra]);
+    private static TypeSafeEVentNode Construct(string name, int port, IPAddress? listen, ICommsProtocol[] extra)
+    {
+        var node = new TypeSafeEVentNode(name, [new TCPServer(listen ?? IPAddress.Loopback, port, name), .. extra]);
+        Frames.Serve(node);     // frames handed out by reference can be fetched from here by other processes
+        return node;
+    }
 
     public static async Task<MergeResult> JoinAsync(TypeSafeEVentNode node, string host, int port)
     {

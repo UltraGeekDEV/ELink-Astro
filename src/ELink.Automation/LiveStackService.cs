@@ -59,7 +59,11 @@ public sealed class LiveStackService : IAsyncDisposable
     private int _rejected, _pending, _generation;
     private double _exposure, _lastScale = double.NaN;
 
-    private sealed record Item(byte[] Fits, string Source, double RaHours, double DecDegrees, double Seconds, int Generation, string Filter, string Pseudo = "", double Scale = double.NaN, double Angle = double.NaN);
+    private sealed record Item(ELink.Contracts.RawBytes Raw, string Source, double RaHours, double DecDegrees, double Seconds, int Generation, string Filter, string Pseudo = "", double Scale = double.NaN, double Angle = double.NaN)
+    {
+        /// <summary>The frame's bytes (fetched first when it came by reference from another process).</summary>
+        public byte[] Fits => Raw.Data;
+    }
 
     private readonly string? _dataDir;
     private string? _sessionDir;
@@ -194,10 +198,10 @@ public sealed class LiveStackService : IAsyncDisposable
         {
             if (_phase != "Stacking") return;
             // a scope relays its shooters' frames: the same frame may arrive under several ids
-            if (!_seen.Add((shot.Shooter.Text, shot.Timestamp.Text, Fingerprint(shot.Data.Data)))) return;
+            if (!_seen.Add((shot.Shooter.Text, shot.Timestamp.Text, shot.Data.Ref is { } key ? key.GetHashCode() : Fingerprint(shot.Data.Data)))) return;
             queue = _queue; gen = _generation; _pending++;
         }
-        var item = new Item(shot.Data.Data, shot.Shooter.Text, shot.PointingRaHours.Value, shot.PointingDecDegrees.Value, shot.ExposureSeconds.Value, gen, shot.Filter.Text, shot.PseudoChannel.Text, shot.PixelScaleArcsec.Value, shot.CameraAngleDegrees.Value);
+        var item = new Item(shot.Data, shot.Shooter.Text, shot.PointingRaHours.Value, shot.PointingDecDegrees.Value, shot.ExposureSeconds.Value, gen, shot.Filter.Text, shot.PseudoChannel.Text, shot.PixelScaleArcsec.Value, shot.CameraAngleDegrees.Value);
         if (!queue.Writer.TryWrite(item)) { lock (_gate) _pending--; Reject($"{shot.Shooter.Text}: queue full, frame skipped"); }
         else _ = Publish();
     }
@@ -219,8 +223,8 @@ public sealed class LiveStackService : IAsyncDisposable
             if (_request is null) return CommandResult.Fail("no stack: Start one first");
             queue = _queue; gen = _generation; _pending++;
         }
-        if (f.Image.Data.Length == 0) { lock (_gate) _pending--; return CommandResult.Fail("no image"); }
-        await queue.Writer.WriteAsync(new Item(f.Image.Data, f.Source.Text == "" ? "added" : f.Source.Text, f.PointingRaHours.Value, f.PointingDecDegrees.Value, double.NaN, gen, f.Filter.Text));
+        if (f.Image.Data.Length == 0 && !f.Image.Remote) { lock (_gate) _pending--; return CommandResult.Fail("no image"); }
+        await queue.Writer.WriteAsync(new Item(f.Image, f.Source.Text == "" ? "added" : f.Source.Text, f.PointingRaHours.Value, f.PointingDecDegrees.Value, double.NaN, gen, f.Filter.Text));
         await Publish();
         return CommandResult.Success();
     }
@@ -260,6 +264,7 @@ public sealed class LiveStackService : IAsyncDisposable
     {
         LiveStackRequest r;
         lock (_gate) { if (_request is null || item.Generation != _generation) return "!stack was replaced"; r = _request; }
+        if ((await Frames.BytesAsync(_node, item.Raw)).Length == 0) return "!the frame is no longer available";
         var img = FitsImage.Parse(item.Fits);
         string calibrated = "";
         if (r.Calibrate.Value) (img, calibrated) = await CalibrateAsync(img, item, ct);
@@ -495,7 +500,8 @@ public sealed class LiveStackService : IAsyncDisposable
             double scale; lock (_gate) scale = frameScale > 0 ? frameScale : !double.IsNaN(_lastScale) ? _lastScale : 0;   // hint: the frame's own scale, else what solved last
             var answers = await _node.CallFunctionAsync<SolveRequest, SolveResult>(SolveIds.Solve, new SolveRequest
             {
-                Image = new ELink.Contracts.RawBytes { Data = item.Fits }, HintRaHours = ra, HintDecDegrees = dec, HintRadiusDegrees = 5,
+                Image = item.Raw,   // by reference when it came that way: the solver here reads the same bytes
+                HintRaHours = ra, HintDecDegrees = dec, HintRadiusDegrees = 5,
                 ScaleLowArcsecPerPixel = scale > 0 ? scale * 0.8 : 0, ScaleHighArcsecPerPixel = scale > 0 ? scale * 1.25 : 0,
                 TimeoutSeconds = r.SolveTimeoutSeconds.Value,
             }, TimeSpan.FromSeconds(r.SolveTimeoutSeconds.Value + 30));

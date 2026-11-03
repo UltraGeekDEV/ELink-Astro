@@ -33,6 +33,22 @@ public sealed class CoveragePlanner
     public double RotationMalus { get; set; } = 0.4;
     /// <summary>Let the top-up turn the rotator too (default: only the passes do).</summary>
     public bool TopUpMayRotate { get; set; }
+    /// <summary>The widest lattice hop a pass may use (degrees; default ¾ of the smallest frame side, which still covers without
+    /// gaps at any turn of the frame). It decides how thin a pass is: a deep image is many thin passes, so every spot has some
+    /// data early and an interrupted night leaves an even image, not a finished top and an empty bottom.</summary>
+    public double PassHopMax { get; set; }
+    /// <summary>About how long one pass should take (seconds, counting a fifth on top of the exposures for the hops): a long
+    /// image is cut into passes of about this length, as thin as <see cref="PassHopMax"/> allows.</summary>
+    public double PassSeconds { get; set; } = 3600;
+    /// <summary>Every row of a pass runs the same way and every pass in the same order: each short hop arrives from the same
+    /// side, so an unguided mount's backlash is the same for all of them (only the start of a row comes from the other side).</summary>
+    public bool OneWay { get; set; } = true;
+    /// <summary>A lattice pose is shot only if it fills at least this share of a whole frame's worth of what is missing; the
+    /// edges that leaves short are finished by the top-up, which places frames to fill them.</summary>
+    public double PassMinFill { get; set; } = 0.01;
+    /// <summary>How far beyond the area the pass lattice reaches, as a share of a frame's half diagonal (1 = up to where a
+    /// frame just touches the area).</summary>
+    public double MarginShare { get; set; } = 1.0;
     public Pose? Last { get; private set; }
 
     /// <summary>The lattice hop the passes use (never smaller than <see cref="Stepover"/>); NaN in top-up mode.</summary>
@@ -47,7 +63,8 @@ public sealed class CoveragePlanner
 
     private readonly double _minFrame;
     private readonly double _frameArea;
-    private readonly double _margin;
+    private readonly double _reach;    // a frame's half diagonal plus its offset: beyond this from a pose, the frame cannot reach
+    private double _margin => _reach * MarginShare;
     private IEnumerator<Pose>? _lattice;
     private int _passIndex;
     private readonly double _fullGain;
@@ -62,7 +79,8 @@ public sealed class CoveragePlanner
         _fullGain = frames.Sum(f => 4 * f.HalfWidth * f.HalfHeight / (map.CellWidth * map.CellHeight));
         _frameArea = frames.Sum(f => 4 * f.HalfWidth * f.HalfHeight);
         // a cell at the very edge is covered by poses up to a frame's reach outside the area: that is the margin the lattice needs
-        _margin = frames.Max(f => Math.Sqrt(f.HalfWidth * f.HalfWidth + f.HalfHeight * f.HalfHeight) + Math.Sqrt(f.OffsetEast * f.OffsetEast + f.OffsetNorth * f.OffsetNorth));
+        _reach = frames.Max(f => Math.Sqrt(f.HalfWidth * f.HalfWidth + f.HalfHeight * f.HalfHeight) + Math.Sqrt(f.OffsetEast * f.OffsetEast + f.OffsetNorth * f.OffsetNorth));
+        PassHopMax = 0.75 * _minFrame;
         Plan();
     }
 
@@ -86,7 +104,7 @@ public sealed class CoveragePlanner
     }
 
     /// <summary>Poses may hang over the edge of the area (what falls outside costs nothing), up to the lattice margin.</summary>
-    private bool InArea(double x, double y) => Math.Abs(x) <= Map.FovWidth / 2 + _margin && Math.Abs(y) <= Map.FovHeight / 2 + _margin;
+    private bool InArea(double x, double y) => Math.Abs(x) <= Map.FovWidth / 2 + _reach && Math.Abs(y) <= Map.FovHeight / 2 + _reach;
 
     /// <summary>(Re)computes the passes from the target that is still missing. Called at the start and after a retarget.</summary>
     /// <summary>For an area that fits in one frame: no raster passes, every shot centred on it.</summary>
@@ -101,8 +119,14 @@ public sealed class CoveragePlanner
         if (TargetSeconds <= 0) { PassHop = hop0; PassCount = 0; _passIndex = 0; _lattice = Passes(true).GetEnumerator(); return; }   // endless
         double missing = TargetSeconds - Map.Mean(Layer);
         if (missing <= 0) return;
-        // at least one pass per allowed field rotation: the rotator turns between passes, never within one
-        int passes = Math.Max(Math.Max(1, Rotations.Count), (int)Math.Ceiling(missing / perPassAtHop0 - 1e-9));
+        // passes of about PassSeconds each, but none thinner than one at the widest gap-free hop and none deeper than the
+        // stepover allows; at least one per allowed field rotation: the rotator turns between passes, never within one
+        double widest = Math.Max(hop0, PassHopMax > 0 ? PassHopMax : hop0);
+        double perPassAtWidest = ExposureSeconds * _frameArea / (widest * widest);
+        double shots = missing * Map.FovWidth * Map.FovHeight / (ExposureSeconds * _frameArea);
+        int byTime = PassSeconds > 0 ? (int)Math.Ceiling(shots * ExposureSeconds * 1.2 / PassSeconds - 1e-9) : 1;
+        int thinnest = Math.Max(1, (int)Math.Floor(missing / perPassAtWidest + 1e-9));
+        int passes = Math.Max(Math.Max(1, Rotations.Count), Math.Max((int)Math.Ceiling(missing / perPassAtHop0 - 1e-9), Math.Min(byTime, thinnest)));
         PassHop = Math.Max(hop0, Math.Sqrt(ExposureSeconds * _frameArea * passes / missing));   // exactly `missing` after `passes` passes
         PassCount = passes; _passIndex = 0;
         _lattice = Passes(false).GetEnumerator();
@@ -151,8 +175,8 @@ public sealed class CoveragePlanner
             int cols = (int)Math.Floor((x1 - x0) / hx) + 2, rows = (int)Math.Floor((y0 - y1) / hy) + 2;     // one hop beyond: the lattice phase is arbitrary
             var order = new List<(int r, int c)>(rows * cols);
             for (int r = 0; r < rows; r++)
-                if (r % 2 == 0) for (int c = 0; c < cols; c++) order.Add((r, c)); else for (int c = cols - 1; c >= 0; c--) order.Add((r, c));
-            if (pass % 2 == 1) order.Reverse();       // every other pass runs the whole route backwards: no jump between passes
+                if (OneWay || r % 2 == 0) for (int c = 0; c < cols; c++) order.Add((r, c)); else for (int c = cols - 1; c >= 0; c--) order.Add((r, c));
+            if (!OneWay && pass % 2 == 1) order.Reverse();       // serpentine: every other pass runs the whole route backwards, no jump between passes
             foreach (var (r, c) in order) yield return new Pose(x0 + c * hx, y0 - r * hy, rot);
         }
     }
@@ -175,7 +199,7 @@ public sealed class CoveragePlanner
             if (!_lattice.MoveNext()) { _lattice.Dispose(); _lattice = null; break; }
             var pose = _lattice.Current;
             var (score, deficit) = Evaluate(pose);
-            bool useful = TargetSeconds <= 0 ? deficit > 0 : deficit >= 0.01 * _fullGain && score > 0;   // skip poses that would only re-expose finished spots or hang in empty sky
+            bool useful = TargetSeconds <= 0 ? deficit > 0 : deficit >= Math.Max(0.01, PassMinFill) * _fullGain && score > 0;   // skip poses that would mostly re-expose finished spots or hang in empty sky
             if (!useful) continue;
             Commit(pose);
             return pose;
@@ -232,7 +256,12 @@ public sealed class CoveragePlanner
     {
         double bonus = 1.0;
         double len = Math.Sqrt(dx * dx + dy * dy);
-        if (len > 1e-9 && (_heading.X != 0 || _heading.Y != 0)) bonus += 0.02 * ((dx * _heading.X + dy * _heading.Y) / len);
+        if (len > 1e-9 && (_heading.X != 0 || _heading.Y != 0))
+        {
+            double along = (dx * _heading.X + dy * _heading.Y) / len;
+            bonus += 0.02 * along;
+            if (OneWay && along < -0.3) bonus *= 0.5;      // turning back costs backlash: only when it is clearly better
+        }
         if (Math.Abs(NormalizeAngle(rot - last.FieldAngle)) > 1e-6) bonus *= RotationMalus;
         return bonus;
     }
@@ -245,7 +274,7 @@ public sealed class CoveragePlanner
     private Pose Global(Pose? from, out double deficit, out double discountedScore)
     {
         double spacing = Math.Max(Stepover, _minFrame / 4);
-        double gw = Map.FovWidth + 2 * _margin, gh = Map.FovHeight + 2 * _margin;
+        double gw = Map.FovWidth + 2 * _reach, gh = Map.FovHeight + 2 * _reach;
         int nx = Math.Max(1, (int)Math.Ceiling(gw / spacing)), ny = Math.Max(1, (int)Math.Ceiling(gh / spacing));
         Pose best = from ?? new Pose(0, 0, Rotations[0]); double bestScore = -1; deficit = 0; discountedScore = 0;
         foreach (double rot in TopUpAngles(from?.FieldAngle))

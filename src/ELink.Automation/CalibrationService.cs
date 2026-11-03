@@ -151,7 +151,7 @@ public sealed class CalibrationService : IAsyncDisposable
                 wait.CancelAfter(TimeSpan.FromSeconds(seconds + 120));
                 var shot = await frames.Reader.ReadAsync(wait.Token);
                 if (!shot.Format.Text.StartsWith(".fit", StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException($"calibration needs FITS frames, got {shot.Format.Text}");
-                return FitsImage.Parse(shot.Data.Data);
+                return FitsImage.Parse(await Frames.BytesAsync(_node, shot.Data));
             }
 
             double exposure = kind == "Bias" ? 0.001 : r.ExposureSeconds.Value;

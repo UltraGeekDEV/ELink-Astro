@@ -2,6 +2,7 @@ using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ELink.Contracts.Equipment;
+using ELink.Core;
 using ELink.UI.Infrastructure;
 using Event.Connections.Models.BaseBinaryConvertibles;
 using EVent.Connections.Models.BaseBinaryConvertibles;
@@ -43,7 +44,11 @@ public partial class CameraPanelViewModel(MeshSession mesh, string id, string di
         await f.StartAsync();
 
         _frameHook = frame =>
-            Preview.Show(frame.Data.Data, frame.Format.Text, $"{frame.FrameType.Text} {frame.ExposureSeconds.Value:0.###} s");
+        {
+            string text = $"{frame.FrameType.Text} {frame.ExposureSeconds.Value:0.###} s";
+            if (frame.Data.Remote) _ = Task.Run(async () => { var b = await Frames.BytesAsync(Mesh.Node, frame.Data); if (b.Length > 0) Preview.Show(b, frame.Format.Text, text); });
+            else Preview.Show(frame.Data.Data, frame.Format.Text, text);
+        };
         await Mesh.Node.HookEventAsync(EquipmentIds.Command(Kind, Id, "Frame"), _frameHook, "camera preview");
     }
 

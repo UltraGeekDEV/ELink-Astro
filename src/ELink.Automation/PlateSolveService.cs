@@ -49,7 +49,7 @@ public sealed class PlateSolveService : IAsyncDisposable
             try { image = await ShootAsync(r.ShooterId.Text, r.ExposureSeconds.Value); }
             catch (Exception ex) { result.Message = ex.Message; await Announce(result); return result; }
         }
-        else image = r.Image.Data;
+        else image = await Frames.BytesAsync(_node, r.Image);
         if (image.Length == 0) { result.Message = "no image"; return result; }
 
         await _one.WaitAsync();   // one solve at a time: it is CPU-bound
@@ -111,7 +111,7 @@ public sealed class PlateSolveService : IAsyncDisposable
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(seconds + 90));
             var shot = await frames.Reader.ReadAsync(cts.Token);
             if (!shot.Format.Text.StartsWith(".fit", StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException($"plate solving needs FITS, the shooter delivered {shot.Format.Text}");
-            return shot.Data.Data;
+            return await Frames.BytesAsync(_node, shot.Data);
         }
         catch (OperationCanceledException) { throw new TimeoutException($"no frame from {shooter}"); }
         finally { try { _node.UnhookEvent(ShooterIds.Shot(shooter), hook); } catch (ObjectDisposedException) { } }
