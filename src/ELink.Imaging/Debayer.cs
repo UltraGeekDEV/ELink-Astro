@@ -46,7 +46,7 @@ public static class Debayer
     }
 
     /// <summary>0 = R, 1 = G, 2 = B for every position of the 2x2 cell, indexed [y % 2 * 2 + x % 2].</summary>
-    private static int[] Cell(string pattern) => pattern.Select(c => c switch { 'R' => 0, 'G' => 1, _ => 2 }).ToArray();
+    internal static int[] Cell(string pattern) => pattern.Select(c => c switch { 'R' => 0, 'G' => 1, _ => 2 }).ToArray();
 
     public static ColorImage Apply(float[] raw, int width, int height, string pattern, DebayerMode mode) => mode switch
     {

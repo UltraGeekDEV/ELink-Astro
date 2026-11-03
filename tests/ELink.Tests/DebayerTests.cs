@@ -133,4 +133,24 @@ public class DebayerTests
         Assert.Equal(25 * 20 * 3, bin.Data.Length);
         Assert.Equal(30.0, bin.Data[2 * 500 + 7], 3);
     }
+
+    [Theory]
+    [InlineData("RGGB", 64, 48)]
+    [InlineData("GBRG", 65, 49)]     // odd sizes: the last row and column are left out, as by Debayer.SuperPixel
+    public void AFrameReadStraightIntoSuperPixelsIsTheSameAsReadThenSuperPixelled(string pattern, int w, int h)
+    {
+        var rnd = new Random(7);
+        var pixels = new ushort[w * h];
+        for (int i = 0; i < pixels.Length; i++) pixels[i] = (ushort)rnd.Next(0, 65536);
+        var fits = FitsImage.Write16(w, h, pixels, new Dictionary<string, string> { ["BAYERPAT"] = $"'{pattern}'", ["EXPTIME"] = "30" });
+        var full = FitsImage.Parse(fits);
+        var expected = Debayer.SuperPixel(full.Data, full.Width, full.Height, pattern);
+        var direct = FitsImage.Parse(fits, superPixel: pattern);
+        Assert.Equal((expected.Width, expected.Height, 3), (direct.Width, direct.Height, direct.Channels));
+        Assert.Equal(expected.Data, direct.Data);
+        Assert.Equal(full.Range, direct.Range);
+        var head = FitsImage.Parse(fits, headerOnly: true);
+        Assert.Equal((w, h, 1, 0), (head.Width, head.Height, head.Channels, head.Data.Length));
+        Assert.Equal("30", head.Get("EXPTIME"));
+    }
 }

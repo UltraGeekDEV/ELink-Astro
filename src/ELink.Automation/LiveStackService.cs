@@ -265,11 +265,22 @@ public sealed class LiveStackService : IAsyncDisposable
         LiveStackRequest r;
         lock (_gate) { if (_request is null || item.Generation != _generation) return "!stack was replaced"; r = _request; }
         if ((await Frames.BytesAsync(_node, item.Raw)).Length == 0) return "!the frame is no longer available";
-        var img = FitsImage.Parse(item.Fits);
-        string calibrated = "";
-        if (r.Calibrate.Value) (img, calibrated) = await CalibrateAsync(img, item, ct);
-        var (data, width, height, channels, bin, colour) = Prepare(img, r);
-        colour = calibrated + colour;
+        FitsImage img;
+        float[] data; int width, height, channels, bin; string colour;
+        if (await SuperPixelDirectAsync(r, item, ct) is { } direct)
+        {
+            // the frame straight into super pixels: the full-size frame is never made (a 24 MP frame: 96 MB less, which a Pi feels)
+            img = direct.Header;
+            (data, width, height, channels, bin, colour) = (direct.Pixels.Data, direct.Pixels.Width, direct.Pixels.Height, 3, 2, $", {direct.Pattern} super pixel");
+        }
+        else
+        {
+            img = FitsImage.Parse(item.Fits);
+            string calibrated = "";
+            if (r.Calibrate.Value) (img, calibrated) = await CalibrateAsync(img, item, ct);
+            (data, width, height, channels, bin, colour) = Prepare(img, r);
+            colour = calibrated + colour;
+        }
 
         var (rawWcs, how) = await RegisterAsync(r, img, item, ct);   // the raw frame is what gets solved
         if (rawWcs is null) return "!" + how;
@@ -541,17 +552,40 @@ public sealed class LiveStackService : IAsyncDisposable
     /// <summary>How long a library answer is trusted (so masters taken meanwhile are picked up).</summary>
     public TimeSpan MasterCacheTime { get; set; } = TimeSpan.FromMinutes(2);
 
-    /// <summary>The raw frame less its dark (or bias), divided by its flat, from the calibration library (when it has any).</summary>
-    private async Task<(FitsImage Image, string Note)> CalibrateAsync(FitsImage img, Item item, CancellationToken ct)
+    /// <summary>A raw colour frame that is only super-pixelled (no masters to apply, not split into pseudo-mono channels): its
+    /// header and its super pixels, read in one pass; null when the frame needs the full path.</summary>
+    private async Task<(FitsImage Header, FitsImage Pixels, string Pattern)?> SuperPixelDirectAsync(LiveStackRequest r, Item item, CancellationToken ct)
     {
-        if (img.Channels != 1 || img.Get("IMAGETYP") is { } t && t.StartsWith("Master", StringComparison.OrdinalIgnoreCase)) return (img, "");
+        if (r.Debayer.Text != nameof(DebayerMode.SuperPixel) || item.Pseudo != "") return null;
+        var head = FitsImage.Parse(item.Fits, headerOnly: true);
+        if (head.Channels != 1 || head.Width < 2 || head.Height < 2 || head.GetDouble("BITPIX") != 16) return null;
+        string? pattern = Debayer.Normalize(r.BayerPattern.Text) ?? Debayer.PatternOf(head);
+        if (pattern is null) return null;
+        if (r.Calibrate.Value && !(head.Get("IMAGETYP") is { } t && t.StartsWith("Master", StringComparison.OrdinalIgnoreCase)))
+        {
+            var q = QueryFor(head, item);
+            q.Kind = "Dark"; if ((await MasterAsync(q, ct)).Data is not null) return null;
+            q.Kind = "Flat"; if ((await MasterAsync(q, ct)).Data is not null) return null;
+        }
+        return (head, FitsImage.Parse(item.Fits, superPixel: pattern), pattern);
+    }
+
+    private static MasterQuery QueryFor(FitsImage img, Item item)
+    {
         string filter = item.Filter != "" ? item.Filter : (img.Get("FILTER") ?? "").Trim();
         double seconds = !double.IsNaN(item.Seconds) && item.Seconds > 0 ? item.Seconds : img.GetDouble("EXPTIME", img.GetDouble("EXPOSURE", 0));
-        var q = new MasterQuery
+        return new MasterQuery
         {
             ShooterId = item.Source, ExposureSeconds = seconds, Gain = img.GetDouble("GAIN"), Iso = (img.Get("ISOSPEED") ?? "").Trim(),
             TemperatureC = img.GetDouble("CCD-TEMP"), BinX = Math.Max(1, (int)img.GetDouble("XBINNING", 1)), Filter = filter, Width = img.Width, Height = img.Height,
         };
+    }
+
+    /// <summary>The raw frame less its dark (or bias), divided by its flat, from the calibration library (when it has any).</summary>
+    private async Task<(FitsImage Image, string Note)> CalibrateAsync(FitsImage img, Item item, CancellationToken ct)
+    {
+        if (img.Channels != 1 || img.Get("IMAGETYP") is { } t && t.StartsWith("Master", StringComparison.OrdinalIgnoreCase)) return (img, "");
+        var q = QueryFor(img, item);
         q.Kind = "Dark"; var dark = await MasterAsync(q, ct);
         q.Kind = "Flat"; var flat = await MasterAsync(q, ct);
         if (dark.Data is null && flat.Data is null) return (img, "");
