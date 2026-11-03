@@ -61,8 +61,10 @@ public sealed partial class ImagingService
     private async Task ResumeAsync(ImagingRequest r, CancellationToken ct)
     {
         string label = r.Label.Text, last = "";
+        try { await Task.Delay(TimeSpan.FromSeconds(2), ct); } catch (OperationCanceledException) { return; }   // the session log starts after this service
         SessionLog.Info(_node, "imaging", $"the station stopped while '{label}' was being taken: carrying on with it");
         var until = DateTime.UtcNow + ResumeTryFor;
+        int tries = 0;
         try
         {
             while (!ct.IsCancellationRequested)
@@ -80,7 +82,8 @@ public sealed partial class ImagingService
                 last = waiting;
                 await Set(s => { s.Phase = "Idle"; s.Label = label; s.Message = $"carrying on with '{label}' after a restart as soon as it can: {waiting}"; });
                 if (DateTime.UtcNow > until) break;
-                await Task.Delay(ResumeRetry, ct);
+                // services still starting are up within seconds; devices after a power cut take longer
+                await Task.Delay(++tries <= 6 ? TimeSpan.FromSeconds(Math.Min(5, ResumeRetry.TotalSeconds)) : ResumeRetry, ct);
             }
             if (ct.IsCancellationRequested) return;
             SessionLog.Error(_node, "imaging", $"gave up carrying on with '{label}' after the restart: {last}. It is kept: continue it by hand");

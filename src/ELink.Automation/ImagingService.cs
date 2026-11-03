@@ -561,6 +561,8 @@ public sealed partial class ImagingService : IAsyncDisposable
     /// <summary>Measure each mount's slack at the first image of the station's run (a few plate-solved moves each way, a few
     /// minutes); later images, and any mount that cannot be measured now, use the last measurement kept.</summary>
     public bool TrainBacklash { get; set; } = true;
+    /// <summary>A measurement younger than this is used as it is.</summary>
+    public TimeSpan BacklashMaxAge { get; set; } = TimeSpan.FromHours(12);
     private readonly Dictionary<string, BacklashMeasurement> _backlash = new();     // by scope
     private readonly HashSet<string> _trained = new();                               // mounts measured since the station started
 
@@ -577,7 +579,9 @@ public sealed partial class ImagingService : IAsyncDisposable
         {
             string mount = g.Key, scope = g.First().ScopeId;
             var m = known.Mounts.FirstOrDefault(x => x.MountId.Text == mount);
-            bool measure; lock (_gate) measure = TrainBacklash && _trained.Add(mount);
+            // once a night: a measurement of the last hours (a restart in the night) is still good
+            bool fresh = m is { Ok.Value: true } && DateTime.TryParse(m.MeasuredUtc.Text, null, System.Globalization.DateTimeStyles.RoundtripKind, out var at) && DateTime.UtcNow - at.ToUniversalTime() < BacklashMaxAge;
+            bool measure; lock (_gate) measure = TrainBacklash && !fresh && _trained.Add(mount);
             if (measure)
             {
                 foreach (var s in g) await SetWorker(s.ScopeId, w => { w.Phase = "Waiting"; w.Message = "measuring the mount's backlash (a few moves each way)"; });

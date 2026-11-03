@@ -408,6 +408,11 @@ flowchart LR
 
 Only Light frames are used. The stack can be fetched as a 32-bit FITS with a WCS through `ELink.Automation.LiveStack.GetImage`.
 
+## Unattended nights: restarts and backlash
+
+- **An image survives the station.** If the station stops while an image is being taken (a crash, a power cut, a restart), it carries on with it when it starts again. It waits for the live stack and the mounts to be up (a parked mount is waited for, never unparked) and keeps trying for 20 minutes. An image you stopped, or one that finished, does not come back. `--no-resume` turns this off.
+- **Backlash.** At the first image of the night, each mount's slack is measured (Rig › Backlash, or *Measure now*). The scope arrives at the same spot from both sides of each axis, twice, with a plate solve each time, which takes a few minutes and ends where it started. After that, on an axis with slack, every shot arrives from the same side as the row's hops: a move that would turn the axis round first goes a few times the slack past the target. An axis without slack is left alone, so dither hops back and forth cost nothing. A measurement from the last 12 hours is reused after a restart.
+
 ## From a phone or another computer (web interface)
 
 The station serves a page of its own at `http://127.0.0.1:8080/`, enough to run a night from a phone with no desktop window anywhere (a headless Raspberry Pi, say). It is a leaf of the same EVent mesh as the window and knows only the IDs and contracts.
