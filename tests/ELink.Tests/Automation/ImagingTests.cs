@@ -8,6 +8,7 @@ using ELink.Core.Astro;
 using ELink.Tests.Compose;
 using Event.CoreFunctionality;
 using Event.Connections.Models.BaseBinaryConvertibles;
+using EVent.Connections.Models.BaseBinaryConvertibles;
 using Xunit;
 
 namespace ELink.Tests.Automation;
@@ -169,12 +170,54 @@ public class ImagingTests : IAsyncLifetime
         await AddScopeAsync("good", 0.5, 0.35);
         await AddScopeAsync("bad", 0.5, 0.35);
         _pointers["bad"].StuckPhase = "Parked";
+        _svc.RetryPause = TimeSpan.FromMilliseconds(50); _svc.MaxFailuresInARow = 2;   // it tries again, then gives up
         Assert.True((await Commands.CallAsync(_node, ImagingIds.Start, Request(1, 0.7, 0.1, "good", "bad"), TimeSpan.FromSeconds(60))).Ok.Value);
         Assert.True(await Eventually(() => _last is { Phase.Text: "Done" or "Error" }), $"{_last?.Phase.Text} {_last?.Message.Text}");
         Assert.Equal("Done", _last!.Phase.Text);
         Assert.Contains("bad failed", _last.Message.Text);
         Assert.Equal("Failed", _last.Workers.First(w => w.ScopeId.Text == "bad").Phase.Text);
         Assert.True(_last.Workers.First(w => w.ScopeId.Text == "good").Visits.Value > 0);
+    }
+
+    [Fact]
+    public async Task AShotThatFailsOnceIsTriedAgainAndTheNightGoesOn()
+    {
+        await AddScopeAsync("solo", 0.5, 0.35);
+        _shooters["solo"].FailOn = n => n == 2;
+        _svc.RetryPause = TimeSpan.FromMilliseconds(50);
+        Assert.True((await Commands.CallAsync(_node, ImagingIds.Start, Request(0, 0, 0.25, "solo"), TimeSpan.FromSeconds(60))).Ok.Value);
+        Assert.True(await Eventually(() => _last is { Phase.Text: "Done" or "Error" }), $"{_last?.Phase.Text} {_last?.Message.Text}");
+        Assert.Equal("Done", _last!.Phase.Text);
+        var w = _last.Workers.Single();
+        Assert.Equal("Done", w.Phase.Text);
+        Assert.True(_last.MinSeconds.Value >= 0.25 - 1e-6);
+        Assert.Equal(w.Visits.Value + 1, _shooters["solo"].Exposures);        // one more exposure than good shots: the one that failed
+    }
+
+    [Fact]
+    public async Task WhereFramesReallyLandIsLearnedFromSolvesAndAimedOff()
+    {
+        // the mount lands 0.2° north of wherever it is sent; every frame is solved (as the next one exposes) and says so
+        await AddScopeAsync("solo", 0.5, 0.35);
+        _shooters["solo"].FrameMaker = n => SyntheticSky.Frame(visible: 1, frame: n);
+        int solves = 0;
+        await _fakes.AddAsync<NOTESVoid, BinaryConvertibleString>(SolveIds.Solvers, _ => Task.FromResult((BinaryConvertibleString)"fake"), "fake solvers");
+        await _fakes.AddAsync<SolveRequest, SolveResult>(SolveIds.Solve, q =>
+        {
+            Interlocked.Increment(ref solves);
+            var p = _pointers["solo"].Gotos.Last();
+            return Task.FromResult(new SolveResult { Solved = true, RaHours = p.RaHours.Value, DecDegrees = p.DecDegrees.Value + 0.2, PixelScale = 2 });
+        }, "fake solver");
+        var r = Request(0, 0, 0.6, "solo"); r.DitherArcsec = 0;
+        Assert.True((await Commands.CallAsync(_node, ImagingIds.Start, r, TimeSpan.FromSeconds(60))).Ok.Value);
+        Assert.True(await Eventually(() => _last is { Phase.Text: "Done" or "Error" }, 30000),
+            $"{_last?.Phase.Text} {_last?.Message.Text} visits {_last?.Visits.Value} min {_last?.MinSeconds.Value} mean {_last?.MeanSeconds.Value} solves {solves} gotos {string.Join(" ", _pointers["solo"].Gotos.Select(g => g.DecDegrees.Value.ToString("0.000")))} worker {_last?.Workers.FirstOrDefault()?.Phase.Text} {_last?.Workers.FirstOrDefault()?.Message.Text}");
+        Assert.Equal("Done", _last!.Phase.Text);
+        Assert.True(solves >= 3, $"{solves} solves");
+        // the first shots go to the target, the later ones 0.2° south of it, so they land on it
+        var gotos = _pointers["solo"].Gotos;
+        Assert.True(Math.Abs(gotos[0].DecDegrees.Value - 10) < 0.01, $"first goto {gotos[0].DecDegrees.Value}");
+        Assert.True(Math.Abs(gotos[^1].DecDegrees.Value - 9.8) < 0.02, $"last goto {gotos[^1].DecDegrees.Value}");
     }
 
     [Fact]

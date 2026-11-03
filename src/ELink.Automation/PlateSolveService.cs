@@ -15,6 +15,10 @@ public sealed class PlateSolveService : IAsyncDisposable
     private readonly IReadOnlyList<IPlateSolver> _solvers;
     private readonly CommandSet _commands;
     private readonly SemaphoreSlim _one = new(1, 1);
+    // solves of frames that came by reference, by their key: the live stack and the image request ask about the same frame,
+    // and one solve answers both (a second is waiting while the first runs)
+    private readonly Dictionary<string, Task<SolveResult>> _byFrame = new();
+    private readonly Queue<string> _byFrameOrder = new();
 
     public PlateSolveService(TypeSafeEVentNode node, params IPlateSolver[] solvers)
     {
@@ -40,7 +44,22 @@ public sealed class PlateSolveService : IAsyncDisposable
         return _solvers.OrderBy(x => (x.Name == "ASTAP") == hinted ? 0 : 1).ToList();
     }
 
-    public async Task<SolveResult> SolveAsync(SolveRequest r)
+    public Task<SolveResult> SolveAsync(SolveRequest r)
+    {
+        if (r.ShooterId.Text != "" || r.Image.Ref is not { } key) return SolveOnceAsync(r);
+        lock (_byFrame)
+        {
+            if (!_byFrame.TryGetValue(key, out var task))
+            {
+                _byFrame[key] = task = SolveOnceAsync(r);
+                _byFrameOrder.Enqueue(key);
+                while (_byFrameOrder.Count > 32) _byFrame.Remove(_byFrameOrder.Dequeue());
+            }
+            return task;
+        }
+    }
+
+    private async Task<SolveResult> SolveOnceAsync(SolveRequest r)
     {
         var result = new SolveResult { ShooterId = r.ShooterId.Text };
         byte[] image;

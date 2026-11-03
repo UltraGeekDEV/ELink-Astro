@@ -13,7 +13,7 @@ public sealed class AstapSolver : IPlateSolver
     public string Executable { get; }
     /// <summary>The star database folder; empty = ASTAP's own default.</summary>
     public string Database { get; set; } = "";
-    public int Downsample { get; set; } = 0;   // 0 = ASTAP decides
+    public int Downsample { get; set; } = 0;   // 0 = by the frame's size (see PlateSolver.Downsample)
 
     public AstapSolver(string executable) { Executable = executable; }
 
@@ -42,7 +42,7 @@ public sealed class AstapSolver : IPlateSolver
             int width = Int(header, "NAXIS1"), height = Int(header, "NAXIS2");
             string image = Path.Combine(dir, "frame.fits");
             await File.WriteAllBytesAsync(image, fits, ct);
-            var psi = new ProcessStartInfo(Executable) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, WorkingDirectory = dir };
+            var psi = Solving.Start(Executable, dir);
             void A(params string[] xs) { foreach (var x in xs) psi.ArgumentList.Add(x); }
             string F(double v) => v.ToString("0.######", CultureInfo.InvariantCulture);
             A("-f", image, "-wcs");
@@ -52,7 +52,7 @@ public sealed class AstapSolver : IPlateSolver
             // the field height in degrees: from the middle of the scale range (0 = ASTAP works it out from the header)
             double fov = scaleLow > 0 && scaleHigh >= scaleLow && height > 0 ? (scaleLow + scaleHigh) / 2 * height / 3600 : 0;
             A("-fov", F(fov));
-            if (Downsample > 0) A("-z", Downsample.ToString(CultureInfo.InvariantCulture));
+            A("-z", (Downsample > 0 ? Downsample : Solving.AutoDownsample(header)).ToString(CultureInfo.InvariantCulture));
             if (Database != "") A("-d", Database);
 
             using var p = Process.Start(psi) ?? throw new InvalidOperationException("could not start ASTAP");

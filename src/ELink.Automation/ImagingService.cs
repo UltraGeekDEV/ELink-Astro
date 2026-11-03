@@ -16,7 +16,7 @@ namespace ELink.Automation;
 /// dither, and paints the result. Spots another scope already covered are skipped, so the scopes share the work
 /// without ever being kept in step. Everything per scope (guiding, its own dithering, meridian flips, focus) happens inside
 /// the scope. A live stack of all their frames is the resulting image.</para></summary>
-public sealed class ImagingService : IAsyncDisposable
+public sealed partial class ImagingService : IAsyncDisposable
 {
     private sealed record ScopeFrames(string ScopeId, FrameSpec[] Frames, double FinestScale, string? Error, List<string> UnknownAngles, Dictionary<string, double> Scales);
     /// <summary>A layer as resolved: its place in the coverage map, the label and filter it goes by, and the shot that feeds it.</summary>
@@ -266,6 +266,10 @@ public sealed class ImagingService : IAsyncDisposable
                 FramePixelScaleArcsec = plan.Scopes.Select(s => s.FinestScale).Distinct().Count() == 1 && plan.Scopes[0].FinestScale > 0 ? plan.Scopes[0].FinestScale : 0,
                 SessionKey = runDir is null ? "" : r.Label.Text, Resume = r.Resume.Value,
             };
+            // an image at least twice as coarse as the frames gains nothing from interpolating the colours: each 2x2 cell is one
+            // colour pixel (a quarter of the memory and work, which a Raspberry Pi needs)
+            double finest = plan.Scopes.Select(s => s.FinestScale).Where(x => x > 0).DefaultIfEmpty(0).Min();
+            if (finest > 0 && plan.Scale >= 2 * finest) stack.Debayer = "SuperPixel";
             foreach (var sc in plan.Scopes) stack.ShooterIds.Add(sc.ScopeId);
             if (r.Layers.Count > 0)
                 foreach (var l in plan.Layers) stack.Layers.Add(new ImagingLayer { Label = l.Label, Filter = l.Filter, MinScaleArcsec = l.Def.MinScaleArcsec.Value, MaxScaleArcsec = l.Def.MaxScaleArcsec.Value });
@@ -355,7 +359,13 @@ public sealed class ImagingService : IAsyncDisposable
         using var state = new RemoteState<ScopeState>(_node, ScopeIds.State(id), ScopeIds.GetState(id));
         await state.StartAsync();
         double dither = r.DitherArcsec.Value / 3600;
-        int rejectedInARow = 0;
+        int rejectedInARow = 0, failedInARow = 0;
+        using var pointer = new RemoteState<PointerState>(_node, PointerIds.State(id), PointerIds.GetState(id));
+        await pointer.StartAsync();
+        // where the scope really lands is learned from its frames (solved while the next one exposes): a steady pointing error is
+        // aimed off, and the map is painted where the frames are, so what a shot missed is filled in later. No re-centring.
+        var landing = new Landing(this, r, plan, id, scope);
+        (double X, double Y)? lastSent = null;
         var exhausted = new HashSet<CoveragePlanner>();      // nothing left for a shot of this layer to improve (until its depth changes or a shot is rejected)
         (LayerPlan Layer, CoveragePlanner Planner)? current = null;
         if (planners.Count == 0) { await SetWorker(id, w => { w.Phase = "Done"; w.Message = "none of its cameras feeds a layer"; }); return; }
@@ -387,7 +397,14 @@ public sealed class ImagingService : IAsyncDisposable
             double a = _random.NextDouble() * 2 * Math.PI, rr = dither * Math.Sqrt(_random.NextDouble());
             var at = planned with { X = planned.X + rr * Math.Cos(a), Y = planned.Y + rr * Math.Sin(a) };
             await SetWorker(id, w => { w.Phase = "Shooting"; w.PoseX = at.X; w.PoseY = at.Y; w.Message = ""; });
-            string error = await ShootAsync(r, id, state, at, exposure, ct);
+            var (aimX, aimY) = landing.AimOff;
+            var sent = at with { X = at.X - aimX, Y = at.Y - aimY };
+            // backlash: short hops along a row arrive from the row's direction; anything else (a new row, a jump) first goes to a
+            // point a little before the target on that side, so this shot also arrives the same way
+            if (lastSent is { } ls && Approach(ls, sent) is { } lead)
+                await LeadInAsync(r, id, pointer, lead, ct);
+            lastSent = (sent.X, sent.Y);
+            var (error, frames) = await ShootAsync(r, id, state, sent, exposure, ct);
             double exp = planner.ExposureSeconds;
             if (error.StartsWith(RejectedMark))
             {
@@ -407,10 +424,22 @@ public sealed class ImagingService : IAsyncDisposable
             if (error != "")
             {
                 // give the spot back to the plan: another scope may take it
-                lock (_gate) plan.Map.Paint(planner.PaintFootprints(planned), -exp);
-                await SetWorker(id, w => { w.Phase = "Failed"; w.Message = error; });
-                return;
+                lock (_gate) { plan.Map.Paint(planner.PaintFootprints(planned), -exp); _visitsStarted--; exhausted.Clear(); }
+                failedInARow++;
+                if (failedInARow >= MaxFailuresInARow || ct.IsCancellationRequested)
+                {
+                    SessionLog.Error(_node, id, $"gave up on {r.Label.Text} after {failedInARow} failed shots in a row: {error}");
+                    await SetWorker(id, w => { w.Phase = "Failed"; w.Message = error; });
+                    return;
+                }
+                // a missed frame, a mount that did not answer, a camera that hiccupped: try again after a pause, the night is not over
+                SessionLog.Warn(_node, id, $"shot failed ({error}); trying again in {RetryPause.TotalSeconds:0} s ({failedInARow} of {MaxFailuresInARow})");
+                await SetWorker(id, w => { w.Phase = "Waiting"; w.Message = $"retrying after: {error}"; });
+                try { await Task.Delay(RetryPause, ct); } catch (OperationCanceledException) { break; }
+                lastSent = null;
+                continue;
             }
+            failedInARow = 0;
             lock (_gate)
             {
                 // the shot landed at the dithered spot: the plan learns where it really went, the real map gets it
@@ -419,10 +448,12 @@ public sealed class ImagingService : IAsyncDisposable
                 plan.Map.Paint(real, exp);
                 plan.Actual.Paint(real, exp);
             }
+            landing.Solve(frames, at, sent, planner, exp);
             await SetWorker(id, w => w.Visits = w.Visits.Value + 1);
             await Set(s => s.Visits = s.Visits.Value + 1);
             Keep(r, plan);
         }
+        await landing.DrainAsync();
         if (!ct.IsCancellationRequested) await SetWorker(id, w => { w.Phase = "Done"; w.Message = ""; });
     }
 
@@ -446,13 +477,41 @@ public sealed class ImagingService : IAsyncDisposable
 
     /// <summary>One shot through the scope. "" when done and good; RejectedMark + why when every frame of it was rejected by
     /// the scope's grading; anything else is an error.</summary>
-    private async Task<string> ShootAsync(ImagingRequest r, string scope, RemoteState<ScopeState> state, Pose at, ShooterExposure exposure, CancellationToken ct)
+    private async Task<(string Error, List<ShotEvent> Frames)> ShootAsync(ImagingRequest r, string scope, RemoteState<ScopeState> state, Pose at, ShooterExposure exposure, CancellationToken ct)
     {
         var frames = new List<ShotEvent>();
         Action<ShotEvent> onShot = s => { lock (frames) frames.Add(s); };
         await _node.HookEventAsync(ShooterIds.Shot(scope), onShot, "image request: frame grades");
-        try { return await ShootOnceAsync(r, scope, state, at, exposure, frames, ct); }
+        try { return (await ShootOnceAsync(r, scope, state, at, exposure, frames, ct), frames); }
         finally { try { _node.UnhookEvent(ShooterIds.Shot(scope), onShot); } catch (ObjectDisposedException) { } }
+    }
+
+    /// <summary>Failed shots in a row before a scope gives up on the image (each is retried after <see cref="RetryPause"/>).</summary>
+    public int MaxFailuresInARow { get; set; } = 5;
+    public TimeSpan RetryPause { get; set; } = TimeSpan.FromSeconds(30);
+    /// <summary>How far before the target a lead-in move stops (degrees; 0 = no lead-in).</summary>
+    public double ApproachDegrees { get; set; } = 0.2;
+
+    /// <summary>The point to go to first, when a move would not arrive the way a row's hops do (+x along the image); null when it does.</summary>
+    private (double X, double Y)? Approach((double X, double Y) from, Pose to)
+    {
+        if (!(ApproachDegrees > 0)) return null;
+        double dx = to.X - from.X, dy = to.Y - from.Y, len = Math.Sqrt(dx * dx + dy * dy);
+        if (len < 1e-6 || dx >= 0.8 * len) return null;
+        return (to.X - ApproachDegrees, to.Y);
+    }
+
+    private async Task LeadInAsync(ImagingRequest r, string scope, RemoteState<PointerState> pointer, (double X, double Y) lead, CancellationToken ct)
+    {
+        try
+        {
+            var (ra, dec) = PlanProjection.ToSky(r.Center.RaHours.Value, r.Center.DecDegrees.Value, r.PositionAngleDegrees.Value, lead.X, lead.Y);
+            var go = await Commands.CallAsync(_node, PointerIds.Goto(scope), new SkyTarget { RaHours = ra, DecDegrees = dec, Epoch = "J2000" });
+            if (!go.Ok.Value) return;                     // only a refinement: the shot goes ahead anyway
+            await Task.Delay(500, ct);
+            await pointer.WaitAsync(p => p.OnTarget.Value || p.Phase.Text is "Error" or "Parked" or "Disconnected", TimeSpan.FromSeconds(Math.Max(10, r.SlewTimeoutSeconds.Value)), ct);
+        }
+        catch (TimeoutException) { }
     }
 
     private async Task<string> ShootOnceAsync(ImagingRequest r, string scope, RemoteState<ScopeState> state, Pose at, ShooterExposure exposure, List<ShotEvent> frames, CancellationToken ct)

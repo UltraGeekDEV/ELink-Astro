@@ -66,6 +66,8 @@ public sealed class FakeShooter : IAsyncDisposable
     public bool Fits { get; set; }
     /// <summary>Makes the frame for exposure number n (from 1): e.g. a synthetic star field; overrides Fits.</summary>
     public Func<int, byte[]>? FrameMaker { get; set; }
+    /// <summary>Exposure number n (from 1) fails to start when this says so (a camera that hiccups).</summary>
+    public Func<int, bool>? FailOn { get; set; }
 
     public FakeShooter(TypeSafeEVentNode node, string id)
     {
@@ -78,7 +80,8 @@ public sealed class FakeShooter : IAsyncDisposable
     {
         await _cmds.AddAsync<ShooterExposure, CommandResult>(ShooterIds.Expose(_id), async e =>
         {
-            Requests.Add(e); Interlocked.Increment(ref Exposures);
+            Requests.Add(e); int n = Interlocked.Increment(ref Exposures);
+            if (FailOn?.Invoke(n) == true) return CommandResult.Fail("camera hiccup");
             _phase = "Exposing"; await _pub.PublishAsync();
             _ = Task.Run(async () =>
             {

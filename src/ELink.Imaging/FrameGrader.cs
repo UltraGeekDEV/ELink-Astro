@@ -3,6 +3,21 @@ namespace ELink.Imaging;
 /// <summary>What a frame looks like: how many stars, how big, how round, how bright the sky.</summary>
 public sealed record FrameMetrics(int Stars, double Hfr, double Elongation, double Background)
 {
+    /// <summary>Measures a FITS file. A raw colour frame, or any frame of 4 megapixels or more, is read as the brightness of its
+    /// 2x2 cells straight from the file (for a colour frame the same numbers as <see cref="Measure(FitsImage)"/> gives) at a
+    /// quarter of the memory: it is done for every frame. Sizes are given back in the sensor's pixels either way.</summary>
+    public static FrameMetrics Measure(byte[] fits)
+    {
+        var cells = FitsImage.Parse(fits, bin: 2);
+        bool bayer = Debayer.PatternOf(cells) is not null;
+        if (cells.Channels == 1 && (bayer || cells.Width * cells.Height >= 1_000_000) && cells.Width >= 4 && cells.Height >= 4)
+        {
+            var r = StarField.Detect(cells, 6, 300);
+            return new FrameMetrics(r.Count, r.MedianHfr * 2, r.MedianElongation, r.Background);
+        }
+        return Measure(FitsImage.Parse(fits));
+    }
+
     public static FrameMetrics Measure(FitsImage img)
     {
         // a raw colour frame is a mosaic: every star is sampled by pixels of different colours, which makes round stars look long and ragged.

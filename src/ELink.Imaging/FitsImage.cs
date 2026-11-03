@@ -32,7 +32,9 @@ public sealed class FitsImage
     public double GetDouble(string key, double fallback = double.NaN) =>
         Get(key) is { } s && double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var d) ? d : fallback;
 
-    public static FitsImage Parse(ReadOnlySpan<byte> bytes)
+    /// <param name="bin">Read a mono image binned bin x bin (the mean of each cell; a partial last row or column is left out), without
+    /// ever holding it at full size: a 24 MP frame binned 2x is 24 MB of floats instead of 96. Colour cubes are read whole.</param>
+    public static FitsImage Parse(ReadOnlySpan<byte> bytes, int bin = 1)
     {
         var header = new Dictionary<string, string>(StringComparer.Ordinal);
         int pos = 0; bool ended = false;
@@ -84,20 +86,34 @@ public sealed class FitsImage
         long count = (long)w * h * c;
         if (bytesPer == 0 || pos + count * bytesPer > bytes.Length) throw new FormatException("FITS data is truncated");
 
-        var data = new float[count];
         var src = bytes.Slice(pos);
-        for (long i = 0; i < count; i++)
+        if (bitpix is not (8 or 16 or 32 or -32 or -64)) throw new NotSupportedException($"BITPIX={bitpix}");
+        float At(ReadOnlySpan<byte> d, long i) => (float)(bzero + bscale * bitpix switch
         {
-            double raw = bitpix switch
+            8 => d[(int)i],
+            16 => BinaryPrimitives.ReadInt16BigEndian(d.Slice((int)i * 2, 2)),
+            32 => BinaryPrimitives.ReadInt32BigEndian(d.Slice((int)i * 4, 4)),
+            -32 => BinaryPrimitives.ReadSingleBigEndian(d.Slice((int)i * 4, 4)),
+            _ => BinaryPrimitives.ReadDoubleBigEndian(d.Slice((int)i * 8, 8)),
+        });
+        float[] data;
+        if (bin > 1 && c == 1 && w >= bin && h >= bin)
+        {
+            int bw = w / bin, bh = h / bin;
+            data = new float[(long)bw * bh];
+            float norm = 1f / (bin * bin);
+            for (int y = 0; y < bh * bin; y++)
             {
-                8 => src[(int)i],
-                16 => BinaryPrimitives.ReadInt16BigEndian(src.Slice((int)i * 2, 2)),
-                32 => BinaryPrimitives.ReadInt32BigEndian(src.Slice((int)i * 4, 4)),
-                -32 => BinaryPrimitives.ReadSingleBigEndian(src.Slice((int)i * 4, 4)),
-                -64 => BinaryPrimitives.ReadDoubleBigEndian(src.Slice((int)i * 8, 8)),
-                _ => throw new NotSupportedException($"BITPIX={bitpix}"),
-            };
-            data[i] = (float)(bzero + bscale * raw);
+                long row = (long)y * w; int by = y / bin;
+                for (int x = 0; x < bw * bin; x++) data[(long)by * bw + x / bin] += At(src, row + x);
+            }
+            for (long i = 0; i < data.Length; i++) data[i] *= norm;
+            w = bw; h = bh;
+        }
+        else
+        {
+            data = new float[count];
+            for (long i = 0; i < count; i++) data[i] = At(src, i);
         }
         double range = bitpix switch { 8 => 255, 16 => 65535, 32 => 4294967295.0, _ => 1 };
         if (bitpix < 0)
