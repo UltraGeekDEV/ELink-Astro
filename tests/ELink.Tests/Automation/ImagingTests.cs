@@ -276,6 +276,41 @@ public class ImagingTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AnImageTheStationStoppedUnderCarriesOnWhenItStartsAgainButNotOneAPersonStopped()
+    {
+        await AddScopeAsync("solo", 0.5, 0.35);
+        var r = Request(0, 0, 100, "solo"); r.Label = "Night";
+        Assert.True((await Commands.CallAsync(_node, ImagingIds.Start, r, TimeSpan.FromSeconds(60))).Ok.Value);
+        Assert.True(await Eventually(() => _last is { Visits.Value: >= 2 }), _last?.Phase.Text);
+        string running = Path.Combine(_data, "images", "running.bin");
+        Assert.True(File.Exists(running));
+
+        // the station stops (a crash, a restart): the image is still noted as running
+        await _svc.DisposeAsync();
+        Assert.True(File.Exists(running));
+
+        // it starts again with the scope missing at first (its devices still coming up): it waits, then carries on
+        var scope = _snap.Scopes.Single(); _snap.Scopes.Clear();
+        _last = null;
+        _svc = new ImagingService(_node, _data) { ResumeRetry = TimeSpan.FromMilliseconds(200) }; await _svc.StartAsync();
+        Assert.True(await Eventually(() => _last?.Message.Text.Contains("as soon as it can") == true, 10000), _last?.Message.Text);
+        _snap.Scopes.Add(scope);
+        Assert.True(await Eventually(() => _last is { Phase.Text: "Running" } && _last.Message.Text.Contains("kept from before"), 20000), _last?.Message.Text);
+
+        // a person stops it: it is crossed out and does not come back
+        Assert.True((await Commands.CallAsync(_node, ImagingIds.Abort, NOTESVoid.Void)).Ok.Value);
+        Assert.True(await Eventually(() => _last is { Phase.Text: "Aborted" }), _last?.Phase.Text);
+        Assert.False(File.Exists(running));
+        await _svc.DisposeAsync();
+        _last = null;
+        _svc = new ImagingService(_node, _data); await _svc.StartAsync();
+        await Task.Delay(1500);
+        Assert.True(_last is null || _last.Phase.Text != "Running" && !_last.Message.Text.Contains("after a restart"), _last?.Phase.Text + " " + _last?.Message.Text);
+        Assert.Equal(0, (await _node.CallFunctionAsync<NOTESVoid, ImagingState>(ImagingIds.GetState, NOTESVoid.Void))!.Single().Visits.Value);
+        Assert.Single(Assert.Single((await _node.CallFunctionAsync<NOTESVoid, SavedImages>(ImagingIds.ListSaved, NOTESVoid.Void))!).Images);   // still kept
+    }
+
+    [Fact]
     public async Task FramesAreLaidOutAtTheirCamerasLearnedAngles()
     {
         await AddScopeAsync("known", 0.5, 0.35, angle: 30);

@@ -71,6 +71,7 @@ public sealed partial class ImagingService : IAsyncDisposable
         await _commands.AddAsync<NOTESVoid, SavedImages>(ImagingIds.ListSaved, _ => Task.FromResult(ListSaved()), "images that were started and can be carried on");
         await _commands.AddAsync<BinaryConvertibleString, CommandResult>(ImagingIds.DeleteSaved, l => Task.FromResult(DeleteSaved(l.Text)), "forget a kept image");
         await _publisher.StartAsync();
+        StartResuming();
     }
 
     // ---- resolving a request ------------------------------------------------------------------------------------
@@ -248,6 +249,7 @@ public sealed partial class ImagingService : IAsyncDisposable
         {
             if (_cts is not null) return CommandResult.Fail("an image is already being taken");
             cts = _cts = new CancellationTokenSource();
+            _stoppedByPerson = false;
             _plan = plan; _target = r.TargetSeconds.Value; _paused = false; _visitsStarted = 0;
             _workers.Clear();
             foreach (var sc in plan.Scopes) _workers[sc.ScopeId] = Worker(sc);
@@ -279,6 +281,7 @@ public sealed partial class ImagingService : IAsyncDisposable
         await _publisher.PublishAsync();
         var copy = Copy(r);
         Keep(copy, plan);
+        MarkRunning(copy);
         _run = Task.Run(() => RunAsync(copy, plan, cts));
         return CommandResult.Success();
     }
@@ -314,6 +317,7 @@ public sealed partial class ImagingService : IAsyncDisposable
             weather?.Dispose();
             lock (_gate) { _cts = null; _paused = false; }
             cts.Dispose();
+            Ended(endPhase);
             await Set(s => { s.Phase = endPhase; s.Message = endMessage; });
         }
     }
@@ -659,7 +663,17 @@ public sealed partial class ImagingService : IAsyncDisposable
 
     private Task<CommandResult> AbortAsync()
     {
-        lock (_gate) { if (_cts is null) return Task.FromResult(CommandResult.Fail("nothing is being imaged")); try { _cts.Cancel(); } catch (ObjectDisposedException) { } }
+        lock (_gate)
+        {
+            if (_cts is null)
+            {
+                // stopping an image that waits to carry on after a restart: it does not
+                if (_resume is { IsCompleted: false }) { _life.Cancel(); ClearRunning(); _ = Set(s => s.Message = "it will not carry on by itself; it is kept"); return Task.FromResult(CommandResult.Success()); }
+                return Task.FromResult(CommandResult.Fail("nothing is being imaged"));
+            }
+            _stoppedByPerson = true;
+            try { _cts.Cancel(); } catch (ObjectDisposedException) { }
+        }
         return Task.FromResult(CommandResult.Success());
     }
 
@@ -730,8 +744,10 @@ public sealed partial class ImagingService : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        _life.Cancel();       // first: the image ends because the station stops, so it carries on when it starts again
         try { _cts?.Cancel(); } catch (ObjectDisposedException) { }
         if (_run is not null) await Task.WhenAny(_run, Task.Delay(3000));
+        if (_resume is not null) await Task.WhenAny(_resume, Task.Delay(3000));
         _commands.Dispose(); _publisher.Dispose();
     }
 }

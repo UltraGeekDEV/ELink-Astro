@@ -227,7 +227,8 @@ function showImage(s) {
   if (!rate.length || now - rate[rate.length - 1].t > 20000 || rate[rate.length - 1].label !== s.Label) rate.push({ t: now, mean: s.MeanSeconds, visits: s.Visits, label: s.Label });
   while (rate.length > 2 && (now - rate[0].t > 40 * 60000 || rate[0].label !== s.Label)) rate.shift();
   if (ACTIVE.includes(lastPhase) && s.Phase === 'Done') toast(`'${s.Label}' is done: ${s.Visits} shots`, 'ok');
-  if (lastPhase !== s.Phase && s.Phase === 'Error') toast(s.Message || 'the image stopped with an error', 'bad');
+  if (lastPhase !== s.Phase && s.Phase === 'Error') { toast(s.Message || 'the image stopped with an error', 'bad'); buzz(); }
+  for (const w of s.Workers ?? []) { if (w.Phase === 'Failed' && failed.get(w.ScopeId) !== 'Failed') { toast(`${w.ScopeId} failed: ${w.Message}`, 'bad'); buzz(); } failed.set(w.ScopeId, w.Phase); }
   if (lastPhase !== s.Phase && !ACTIVE.includes(lastPhase) && ACTIVE.includes(s.Phase)) paOfRunning();
   lastPhase = s.Phase;
 
@@ -251,6 +252,8 @@ function showImage(s) {
   document.title = active ? `${Math.round(part * 100)}% ${s.Label} · ELink` : 'ELink';
   if (!$('image').closest('[data-page]').hidden) drawNow();
 }
+const failed = new Map();
+const buzz = () => { try { navigator.vibrate?.([300, 150, 300]); } catch { } };
 const phaseName = p => ({ WaitingForSky: 'waiting for sky', WaitingForWeather: 'waiting for weather' }[p] ?? p);
 
 function imageStats(s) {
@@ -1039,5 +1042,7 @@ async function start() {
   refreshPicture();
   setInterval(() => { if (Date.now() - lastPicture > 120000 && !document.hidden && $('pictureAuto').checked) refreshPicture(); }, 30000);
   setInterval(() => { if (image && !document.hidden) stats($('imageStats'), imageStats(image)); }, 10000);
+  // a missed event (a Wi-Fi blip that did not drop the link) must not leave the page showing an old state for long
+  setInterval(() => { if (!document.hidden && leaf.connected !== false) reseed(); }, 60000);
 }
 start();
