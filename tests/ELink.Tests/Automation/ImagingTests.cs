@@ -310,6 +310,49 @@ public class ImagingTests : IAsyncLifetime
         Assert.Single(Assert.Single((await _node.CallFunctionAsync<NOTESVoid, SavedImages>(ImagingIds.ListSaved, NOTESVoid.Void))!).Images);   // still kept
     }
 
+    /// <summary>The mount's slack as a backlash service would give it (measured at the first image).</summary>
+    private async Task<List<string>> FakeBacklashAsync(double raArcsec, double decArcsec)
+    {
+        var measured = new List<string>();
+        var m = new BacklashMeasurement { MountId = "solo-mount", ScopeId = "solo", RaArcsec = raArcsec, DecArcsec = decArcsec, Ok = true };
+        await _fakes.AddAsync<NOTESVoid, BacklashState>(BacklashIds.GetState, _ => Task.FromResult(new BacklashState()), "fake backlash");
+        await _fakes.AddAsync<BinaryConvertibleString, BacklashMeasurement>(BacklashIds.Measure, s => { measured.Add(s.Text); return Task.FromResult(m); }, "fake backlash");
+        return measured;
+    }
+
+    [Fact]
+    public async Task WithDecSlackEveryShotArrivesFromBelowInDecAndAMountWithoutSlackGetsNoLeadIns()
+    {
+        await AddScopeAsync("solo", 0.5, 0.35);
+        var measured = await FakeBacklashAsync(0, 120);
+        var r = Request(1.6, 1.2, 0.15, "solo"); r.DitherArcsec = 60;
+        Assert.True((await Commands.CallAsync(_node, ImagingIds.Start, r, TimeSpan.FromSeconds(60))).Ok.Value);
+        Assert.True(await Eventually(() => _last is { Phase.Text: "Done" }), _last?.Phase.Text);
+        Assert.Equal(new[] { "solo" }, measured);                 // measured once, at the start
+        var g = _pointers["solo"].Gotos;
+        // at PA 0 a row's hops do not move Dec: arrivals are from below. A move down by more than a little (a new row, a dither
+        // back) is never where a shot is taken: the next move goes back up to it
+        int turns = 0;
+        for (int i = 1; i < g.Count; i++)
+            if (g[i].DecDegrees.Value - g[i - 1].DecDegrees.Value < -40.0 / 3600)
+            {
+                turns++;
+                Assert.True(i + 1 < g.Count && g[i + 1].DecDegrees.Value > g[i].DecDegrees.Value, $"goto {i} came down in Dec and a shot was taken there");
+            }
+        Assert.True(turns > 0);
+    }
+
+    [Fact]
+    public async Task AMountMeasuredWithoutSlackIsNotLedIn()
+    {
+        await AddScopeAsync("solo", 0.5, 0.35);
+        await FakeBacklashAsync(2, 3);
+        var r = Request(1.6, 1.2, 0.15, "solo");
+        Assert.True((await Commands.CallAsync(_node, ImagingIds.Start, r, TimeSpan.FromSeconds(60))).Ok.Value);
+        Assert.True(await Eventually(() => _last is { Phase.Text: "Done" }), _last?.Phase.Text);
+        Assert.Equal(_shooters["solo"].Exposures, _pointers["solo"].Gotos.Count);
+    }
+
     [Fact]
     public async Task FramesAreLaidOutAtTheirCamerasLearnedAngles()
     {

@@ -99,6 +99,8 @@ await using var site = new SiteService(node, Path.Combine(Path.GetDirectoryName(
 await site.StartAsync();
 await using var centering = new CenteringService(node, Path.Combine(Path.GetDirectoryName(compose)!, "centering.json"));
 await centering.StartAsync();
+await using var backlash = new BacklashService(node, Path.GetDirectoryName(compose)!);
+await backlash.StartAsync();
 await using var imaging = new ImagingService(node, Path.GetDirectoryName(compose)!) { ResumeAfterRestart = resume };
 await imaging.StartAsync();
 await using var liveStack = new LiveStackService(node, Path.GetDirectoryName(compose)!);

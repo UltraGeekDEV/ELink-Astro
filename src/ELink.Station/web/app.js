@@ -13,7 +13,7 @@ const IDS = {
   device: (kind, id) => `ELink.${kind}.${id}`, devices: 'ELink.Devices.List', devicesAnnounce: 'ELink.Devices.Announce',
   imaging: 'ELink.Automation.Imaging', scheduler: 'ELink.Automation.Scheduler',
   frameAdded: 'ELink.Automation.LiveStack.FrameAdded', process: 'ELink.Automation.Processing.Process',
-  site: 'ELink.Site.home', profiles: 'ELink.Profiles', storage: 'ELink.Automation.Storage', solvers: 'ELink.Automation.Solve.Solvers',
+  site: 'ELink.Site.home', backlash: 'ELink.Automation.Backlash', profiles: 'ELink.Profiles', storage: 'ELink.Automation.Storage', solvers: 'ELink.Automation.Solve.Solvers',
   logEntry: 'ELink.Log.Entry', logTail: 'ELink.Log.Tail',
 };
 
@@ -773,6 +773,7 @@ let devices = [];
 const deviceState = new Map();
 async function loadRig() {
   loadDevices(); loadProfiles(); showTrains(); loadSite(); loadStation();
+  fillSelect($('blScope'), composition.Scopes.map(s => ({ Id: s.Id, DisplayName: s.DisplayName || s.Id })));
 }
 async function loadDevices() {
   try { devices = ((await leaf.call(IDS.devices, null)) ?? []).flatMap(l => l.Devices ?? []); } catch { devices = []; }
@@ -964,6 +965,28 @@ $('siteHere').onclick = () => {
   }, err => toast('no location: ' + err.message, 'bad'), { enableHighAccuracy: true, timeout: 15000 });
 };
 
+function showBacklash(b) {
+  $('blPhase').textContent = b.Phase; $('blPhase').className = 'chip ' + phaseClass(b.Phase);
+  $('blMessage').textContent = b.Message || '';
+  const box = $('blList'); box.textContent = '';
+  if (!b.Mounts.length) box.innerHTML = '<p class="hint">Not measured yet.</p>';
+  for (const m of b.Mounts) {
+    const el = document.createElement('div'); el.className = 'item';
+    const arc = (v, sp) => fin(v) ? `${Math.round(v)}″${fin(sp) && sp > 0 ? ` ±${Math.round(sp)}″` : ''}` : '—';
+    el.innerHTML = `<div class="row between"><b>${esc(m.MountId)}</b><span class="hint">${esc(utc(m.MeasuredUtc)?.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) ?? '')}</span></div>
+      <p class="hint">RA ${arc(m.RaArcsec, m.RaSpreadArcsec)} · Dec ${arc(m.DecArcsec, m.DecSpreadArcsec)}${fin(m.DecDegrees) ? ` · at Dec ${m.DecDegrees.toFixed(0)}°` : ''}</p>`;
+    box.append(el);
+  }
+}
+$('blMeasure').onclick = e => busy(e.target, async () => {
+  const id = $('blScope').value;
+  if (!id) return;
+  if (image && ACTIVE.includes(image.Phase)) { toast('not while an image is being taken: it is measured at the start of one', 'bad'); return; }
+  toast('measuring: a few moves each way, a few minutes');
+  const m = await ask(`${IDS.backlash}.Measure`, id, 20 * 60000);
+  if (m?.Ok) toast(`backlash: ${m.Message}`, 'ok'); else toast('not measured: ' + (m?.Message ?? 'no answer'), 'bad');
+});
+
 async function loadStation() {
   const [st, solvers] = await Promise.all([ask(`${IDS.storage}.GetState`), ask(IDS.solvers)]);
   stats($('stationStats'), [
@@ -1031,6 +1054,7 @@ async function start() {
   follow(`${IDS.imaging}.State`, `${IDS.imaging}.GetState`, showImage).then(paOfRunning);
   follow(`${IDS.scheduler}.State`, `${IDS.scheduler}.GetState`, showSchedState);
   follow(`${IDS.site}.State`, `${IDS.site}.GetState`, showSite);
+  follow(`${IDS.backlash}.State`, `${IDS.backlash}.GetState`, showBacklash);
   for (let i = 0; i < 30; i++) {
     try { await leaf.hook(IDS.composeChanged, showComposition); showComposition(await leaf.call(IDS.composeSnapshot, null)); break; } catch { await sleep(2000); }
   }

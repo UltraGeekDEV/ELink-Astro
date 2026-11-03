@@ -37,6 +37,13 @@ public class TypedBridgeTests(IndiServerFixture server) : IAsyncLifetime
         _bridge.Dispose();
     }
 
+    private static async Task<bool> Eventually(Func<Task<bool>> cond, int ms)
+    {
+        var until = DateTime.UtcNow.AddMilliseconds(ms);
+        while (DateTime.UtcNow < until) { if (await cond()) return true; await Task.Delay(250); }
+        return await cond();
+    }
+
     private static async Task<bool> Eventually(Func<bool> cond, int ms = 20000)
     {
         var until = DateTime.UtcNow.AddMilliseconds(ms);
@@ -168,7 +175,9 @@ public class TypedBridgeTests(IndiServerFixture server) : IAsyncLifetime
         foreach (var (k, i) in new[] { ("Focuser", "Focuser_Simulator"), ("FilterWheel", "Filter_Simulator"), ("Rotator", "Rotator_Simulator") })
             Assert.True((await Cmd(k, i, "Connect", (BinaryConvertibleBool)true)).Ok.Value);
 
-        Assert.True((await Cmd("Focuser", "Focuser_Simulator", "MoveTo", (BinaryConvertibleInt32)51000)).Ok.Value);
+        // the simulator defines its properties a moment after it connects
+        CommandResult mv = null!;
+        Assert.True(await Eventually(async () => (mv = await Cmd("Focuser", "Focuser_Simulator", "MoveTo", (BinaryConvertibleInt32)51000)).Ok.Value, 15000), mv?.Error.Text);
         Assert.True(await Eventually(() => foc()?.Position.Value == 51000 && !foc()!.Moving.Value, 60000));
         Assert.False((await Cmd("Focuser", "Focuser_Simulator", "MoveTo", (BinaryConvertibleInt32)9_999_999)).Ok.Value);
 

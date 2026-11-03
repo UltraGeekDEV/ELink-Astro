@@ -250,6 +250,7 @@ public sealed partial class ImagingService : IAsyncDisposable
             if (_cts is not null) return CommandResult.Fail("an image is already being taken");
             cts = _cts = new CancellationTokenSource();
             _stoppedByPerson = false;
+            _backlash.Clear();
             _plan = plan; _target = r.TargetSeconds.Value; _paused = false; _visitsStarted = 0;
             _workers.Clear();
             foreach (var sc in plan.Scopes) _workers[sc.ScopeId] = Worker(sc);
@@ -257,7 +258,17 @@ public sealed partial class ImagingService : IAsyncDisposable
             if (kept is not null) _state.Message = $"carrying on: {kept.Visits} shots kept from before";
             _runDir = runDir;
         }
-        if (r.LiveStack.Value)
+        await _publisher.PublishAsync();
+        var copy = Copy(r);
+        Keep(copy, plan);
+        MarkRunning(copy);
+        _run = Task.Run(() => RunAsync(copy, plan, cts));
+        return CommandResult.Success();
+    }
+
+    private async Task StartStackAsync(ImagingRequest r, Plan plan, string? runDir)
+    {
+        if (!r.LiveStack.Value) return;
         {
             var stack = new LiveStackRequest
             {
@@ -278,12 +289,6 @@ public sealed partial class ImagingService : IAsyncDisposable
             var started = await Commands.CallAsync(_node, LiveStackIds.Start, stack);
             if (!started.Ok.Value) await Set(s => s.Message = "no live stack: " + started.Error.Text);
         }
-        await _publisher.PublishAsync();
-        var copy = Copy(r);
-        Keep(copy, plan);
-        MarkRunning(copy);
-        _run = Task.Run(() => RunAsync(copy, plan, cts));
-        return CommandResult.Success();
     }
 
     private async Task RunAsync(ImagingRequest r, Plan plan, CancellationTokenSource cts)
@@ -295,6 +300,9 @@ public sealed partial class ImagingService : IAsyncDisposable
         try
         {
             if (weather is not null) await weather.StartAsync();
+            // the mounts' slack first (its shots are no part of the image), then the stack
+            await TrainBacklashAsync(plan, ct);
+            await StartStackAsync(r, plan, _runDir);
             // one planner per scope and layer it can feed (its own frames), all painting the same map: a spot one scope covered is skipped by the others
             var planners = plan.Scopes.ToDictionary(s => s.ScopeId, s => PlannersOf(r, plan, s));
             await Task.WhenAll(plan.Scopes.Select(s => Task.Run(() => WorkAsync(r, plan, s, planners[s.ScopeId], weather, ct))));
@@ -405,7 +413,7 @@ public sealed partial class ImagingService : IAsyncDisposable
             var sent = at with { X = at.X - aimX, Y = at.Y - aimY };
             // backlash: short hops along a row arrive from the row's direction; anything else (a new row, a jump) first goes to a
             // point a little before the target on that side, so this shot also arrives the same way
-            if (lastSent is { } ls && Approach(ls, sent) is { } lead)
+            if (lastSent is { } ls && Approach(r, id, ls, sent) is { } lead)
                 await LeadInAsync(r, id, pointer, lead, ct);
             lastSent = (sent.X, sent.Y);
             var (error, frames) = await ShootAsync(r, id, state, sent, exposure, ct);
@@ -496,26 +504,90 @@ public sealed partial class ImagingService : IAsyncDisposable
     /// <summary>How far before the target a lead-in move stops (degrees; 0 = no lead-in).</summary>
     public double ApproachDegrees { get; set; } = 0.2;
 
-    /// <summary>The point to go to first, when a move would not arrive the way a row's hops do (+x along the image); null when it does.</summary>
-    private (double X, double Y)? Approach((double X, double Y) from, Pose to)
+    /// <summary>The point on the sky to go to first, when a move would not arrive the way a row's hops do (+x along the image);
+    /// null when it does. With the mount's backlash measured, this is decided axis by axis: an axis with slack that would turn
+    /// round by more than a little gets a lead-in from a few times its slack before the target, and one without slack is not
+    /// bothered (dither hops back and forth cost nothing there). Unmeasured, it is decided along the image's rows.</summary>
+    private (double RaHours, double DecDegrees)? Approach(ImagingRequest r, string scope, (double X, double Y) from, Pose to)
     {
         if (!(ApproachDegrees > 0)) return null;
-        double dx = to.X - from.X, dy = to.Y - from.Y, len = Math.Sqrt(dx * dx + dy * dy);
-        if (len < 1e-6 || dx >= 0.8 * len) return null;
-        return (to.X - ApproachDegrees, to.Y);
+        double ra0 = r.Center.RaHours.Value, dec0 = r.Center.DecDegrees.Value, pa = r.PositionAngleDegrees.Value;
+        BacklashMeasurement? b; lock (_gate) _backlash.TryGetValue(scope, out b);
+        if (b is null)
+        {
+            double dx = to.X - from.X, dy = to.Y - from.Y, len = Math.Sqrt(dx * dx + dy * dy);
+            if (len < 1e-6 || dx >= 0.8 * len) return null;
+            return PlanProjection.ToSky(ra0, dec0, pa, to.X - ApproachDegrees, to.Y);
+        }
+        var (raF, decF) = PlanProjection.ToSky(ra0, dec0, pa, from.X, from.Y);
+        var (raT, decT) = PlanProjection.ToSky(ra0, dec0, pa, to.X, to.Y);
+        var (sRa, sDec) = RowSigns(r);
+        double dRa = (((raT - raF + 12) % 24 + 24) % 24 - 12) * 15, dDec = decT - decF;      // degrees of each axis
+        double slackRa = Math.Abs(b.RaArcsec.Value), slackDec = Math.Abs(b.DecArcsec.Value);
+        bool ra = double.IsFinite(slackRa) && slackRa >= MinSlackArcsec, dec = double.IsFinite(slackDec) && slackDec >= MinSlackArcsec;
+        bool turns = ra && dRa * sRa < -Math.Max(10, slackRa / 4) / 3600 || dec && dDec * sDec < -Math.Max(10, slackDec / 4) / 3600;
+        if (!turns) return null;
+        double aRa = ra ? Math.Max(3 * slackRa / 3600, 0.02) : 0, aDec = dec ? Math.Max(3 * slackDec / 3600, 0.02) : 0;
+        return (((raT - sRa * aRa / 15) % 24 + 24) % 24, decT - sDec * aDec);
     }
 
-    private async Task LeadInAsync(ImagingRequest r, string scope, RemoteState<PointerState> pointer, (double X, double Y) lead, CancellationToken ct)
+    /// <summary>Slack below this (arcseconds) is not worth a lead-in: it is about what the solves measure it to.</summary>
+    public double MinSlackArcsec { get; set; } = 8;
+
+    /// <summary>Which way a row's hops (+x) move each mount axis (+1 or -1; +1 when they hardly move it).</summary>
+    private static (int Ra, int Dec) RowSigns(ImagingRequest r)
+    {
+        double ra0 = r.Center.RaHours.Value, dec0 = r.Center.DecDegrees.Value, pa = r.PositionAngleDegrees.Value;
+        var a = PlanProjection.ToSky(ra0, dec0, pa, 0, 0);
+        var c = PlanProjection.ToSky(ra0, dec0, pa, 0.1, 0);
+        double dRa = (((c.RaHours - a.RaHours + 12) % 24 + 24) % 24 - 12) * 15 * Math.Cos(dec0 * Math.PI / 180), dDec = c.DecDegrees - a.DecDegrees;
+        return (dRa < -0.005 ? -1 : 1, dDec < -0.005 ? -1 : 1);
+    }
+
+    private async Task LeadInAsync(ImagingRequest r, string scope, RemoteState<PointerState> pointer, (double RaHours, double DecDegrees) lead, CancellationToken ct)
     {
         try
         {
-            var (ra, dec) = PlanProjection.ToSky(r.Center.RaHours.Value, r.Center.DecDegrees.Value, r.PositionAngleDegrees.Value, lead.X, lead.Y);
-            var go = await Commands.CallAsync(_node, PointerIds.Goto(scope), new SkyTarget { RaHours = ra, DecDegrees = dec, Epoch = "J2000" });
+            var go = await Commands.CallAsync(_node, PointerIds.Goto(scope), new SkyTarget { RaHours = lead.RaHours, DecDegrees = lead.DecDegrees, Epoch = "J2000" });
             if (!go.Ok.Value) return;                     // only a refinement: the shot goes ahead anyway
             await Task.Delay(500, ct);
             await pointer.WaitAsync(p => p.OnTarget.Value || p.Phase.Text is "Error" or "Parked" or "Disconnected", TimeSpan.FromSeconds(Math.Max(10, r.SlewTimeoutSeconds.Value)), ct);
         }
         catch (TimeoutException) { }
+    }
+
+    // ---- backlash -------------------------------------------------------------------------------------------------
+
+    /// <summary>Measure each mount's slack at the first image of the station's run (a few plate-solved moves each way, a few
+    /// minutes); later images, and any mount that cannot be measured now, use the last measurement kept.</summary>
+    public bool TrainBacklash { get; set; } = true;
+    private readonly Dictionary<string, BacklashMeasurement> _backlash = new();     // by scope
+    private readonly HashSet<string> _trained = new();                               // mounts measured since the station started
+
+    private async Task TrainBacklashAsync(Plan plan, CancellationToken ct)
+    {
+        BacklashState? known;
+        try { known = (await _node.CallFunctionAsync<NOTESVoid, BacklashState>(BacklashIds.GetState, NOTESVoid.Void, TimeSpan.FromSeconds(5), ct))?.FirstOrDefault(); }
+        catch (Exception) when (!ct.IsCancellationRequested) { known = null; }
+        if (known is null) return;                       // no backlash service on the mesh
+        CompositionSnapshot snap;
+        try { snap = await SnapshotAsync(); } catch (Exception) { return; }
+        var byMount = plan.Scopes.GroupBy(s => snap.Scopes.FirstOrDefault(d => d.Id.Text == s.ScopeId) is { Pointers.Count: > 0 } d ? d.Pointers[0].Text : s.ScopeId);
+        await Task.WhenAll(byMount.Select(async g =>
+        {
+            string mount = g.Key, scope = g.First().ScopeId;
+            var m = known.Mounts.FirstOrDefault(x => x.MountId.Text == mount);
+            bool measure; lock (_gate) measure = TrainBacklash && _trained.Add(mount);
+            if (measure)
+            {
+                foreach (var s in g) await SetWorker(s.ScopeId, w => { w.Phase = "Waiting"; w.Message = "measuring the mount's backlash (a few moves each way)"; });
+                var got = (await _node.CallFunctionAsync<BinaryConvertibleString, BacklashMeasurement>(BacklashIds.Measure, scope, TimeSpan.FromMinutes(20), ct))?.FirstOrDefault();
+                if (got is { Ok.Value: true }) m = got;
+                else if (m is not null) SessionLog.Info(_node, scope, $"using the backlash measured {m.MeasuredUtc.Text}: {m.Message.Text}");
+                foreach (var s in g) await SetWorker(s.ScopeId, w => w.Message = "");
+            }
+            if (m is { Ok.Value: true }) lock (_gate) foreach (var s in g) _backlash[s.ScopeId] = m;
+        }));
     }
 
     private async Task<string> ShootOnceAsync(ImagingRequest r, string scope, RemoteState<ScopeState> state, Pose at, ShooterExposure exposure, List<ShotEvent> frames, CancellationToken ct)
