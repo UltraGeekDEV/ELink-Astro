@@ -244,7 +244,12 @@ public sealed class LiveStackService : IAsyncDisposable
                 string result;
                 try { result = await StackOneAsync(item, ct); }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested) { return; }
-                catch (Exception ex) { result = "!" + ex.Message; }
+                catch (Exception ex)
+                {
+                    // not a frame the stack turned down: a fault, and the trace is what finds it
+                    result = "!" + ex.Message;
+                    Console.Error.WriteLine($"[stack] {item.Source}: {ex}");
+                }
                 lock (_gate)
                 {
                     if (item.Generation != _generation) continue;

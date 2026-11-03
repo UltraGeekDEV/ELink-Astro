@@ -80,14 +80,14 @@ public sealed partial class ImagingService
                 }
                 if (waiting != last) SessionLog.Warn(_node, "imaging", $"'{label}' cannot carry on yet: {waiting}");
                 last = waiting;
-                await Set(s => { s.Phase = "Idle"; s.Label = label; s.Message = $"carrying on with '{label}' after a restart as soon as it can: {waiting}"; });
+                await Set(s => { s.Phase = "Resuming"; s.Label = label; s.Message = $"carrying on with '{label}' after a restart as soon as it can: {waiting}"; });
                 if (DateTime.UtcNow > until) break;
                 // services still starting are up within seconds; devices after a power cut take longer
                 await Task.Delay(++tries <= 6 ? TimeSpan.FromSeconds(Math.Min(5, ResumeRetry.TotalSeconds)) : ResumeRetry, ct);
             }
             if (ct.IsCancellationRequested) return;
             SessionLog.Error(_node, "imaging", $"gave up carrying on with '{label}' after the restart: {last}. It is kept: continue it by hand");
-            await Set(s => s.Message = $"could not carry on with '{label}' after the restart: {last}. It is kept: continue it by hand");
+            await Set(s => { s.Phase = "Idle"; s.Message = $"could not carry on with '{label}' after the restart: {last}. It is kept: continue it by hand"; });
             ClearRunning();
         }
         catch (OperationCanceledException) { }

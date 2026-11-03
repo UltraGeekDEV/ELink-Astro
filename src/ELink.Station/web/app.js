@@ -142,7 +142,7 @@ const store = {
 };
 
 const phaseClass = p => ['Error', 'Failed'].includes(p) ? 'bad' : ['Idle', 'Done', 'OnTarget', 'Aborted', 'Stopped', '—', ''].includes(p) ? '' : p === 'Paused' || p.startsWith('Waiting') ? 'warn' : 'busy';
-const ACTIVE = ['Running', 'Paused', 'WaitingForSky', 'WaitingForWeather', 'Starting'];
+const ACTIVE = ['Running', 'Paused', 'WaitingForSky', 'WaitingForWeather', 'Starting', 'Resuming'];
 
 // ---------------------------------------------------------------------------------------------------- tabs, red light
 function showTab(name) {
@@ -254,7 +254,7 @@ function showImage(s) {
 }
 const failed = new Map();
 const buzz = () => { try { navigator.vibrate?.([300, 150, 300]); } catch { } };
-const phaseName = p => ({ WaitingForSky: 'waiting for sky', WaitingForWeather: 'waiting for weather' }[p] ?? p);
+const phaseName = p => ({ WaitingForSky: 'waiting for sky', WaitingForWeather: 'waiting for weather', Resuming: 'carrying on after a restart' }[p] ?? p);
 
 function imageStats(s) {
   const out = [];

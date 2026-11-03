@@ -149,21 +149,24 @@ public sealed class SchedulerService : IAsyncDisposable
         Schedule schedule; string running;
         lock (_gate) { schedule = _schedule; running = _running; }
         var site = _site?.Latest;
-        var saved = await KeptAsync();
-        var verdicts = new List<Verdict>();
-        foreach (var e in schedule.Entries) verdicts.Add(await JudgeAsync(e, site, saved, running, schedule.MinRunMinutes.Value));
-
         if (decide)
         {
-            var img = _imaging?.Latest;
+            var now = _imaging?.Latest;
+            // the imaging service is about to carry on an image after a restart: that is what runs, not something the queue starts
+            if (running == "" && now is { Phase.Text: "Resuming" })
+            {
+                lock (_gate) { _message = $"'{now.Label.Text}' carries on after the restart: the queue waits for it"; _phase = "Waiting"; }
+                await Publish();
+                return;
+            }
             // an image being taken that this did not start (a restart carried it on, or a person started it): one of the queue's
             // is adopted; another is left to finish before the queue starts anything
-            if (running == "" && img is { Phase.Text: "Running" or "Paused" or "WaitingForSky" or "WaitingForWeather" })
+            if (running == "" && now is { Phase.Text: "Running" or "Paused" or "WaitingForSky" or "WaitingForWeather" })
             {
-                string label = img.Label.Text;
+                string label = now.Label.Text;
                 if (schedule.Entries.Any(e => e.Request.Label.Text == label))
                 {
-                    lock (_gate) { _running = label; _message = $"{label}: carrying on"; }
+                    lock (_gate) { _running = label; _failedAt.Remove(label); _message = $"{label}: carrying on"; }
                     running = label;
                 }
                 else
@@ -173,6 +176,14 @@ public sealed class SchedulerService : IAsyncDisposable
                     return;
                 }
             }
+        }
+        var saved = await KeptAsync();
+        var verdicts = new List<Verdict>();
+        foreach (var e in schedule.Entries) verdicts.Add(await JudgeAsync(e, site, saved, running, schedule.MinRunMinutes.Value));
+
+        if (decide)
+        {
+            var img = _imaging?.Latest;
             if (running != "")
             {
                 var mine = verdicts.FirstOrDefault(v => v.Entry.Request.Label.Text == running);

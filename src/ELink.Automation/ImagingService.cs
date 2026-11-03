@@ -300,6 +300,8 @@ public sealed partial class ImagingService : IAsyncDisposable
         try
         {
             if (weather is not null) await weather.StartAsync();
+            // every shot is kept on disk, whoever asked for saving before (a restart forgets it)
+            await KeepFramesAsync(plan);
             // the mounts' slack first (its shots are no part of the image), then the stack
             await TrainBacklashAsync(plan, ct);
             await StartStackAsync(r, plan, _runDir);
@@ -326,6 +328,8 @@ public sealed partial class ImagingService : IAsyncDisposable
             lock (_gate) { _cts = null; _paused = false; }
             cts.Dispose();
             Ended(endPhase);
+            // the scopes stop with the image: none is left showing a shot it no longer takes
+            lock (_gate) foreach (var w in _workers.Values) if (w.Phase.Text is not ("Done" or "Failed")) { w.Phase = endPhase == "Done" ? "Done" : "Stopped"; w.Message = ""; }
             await Set(s => { s.Phase = endPhase; s.Message = endMessage; });
         }
     }
@@ -566,6 +570,20 @@ public sealed partial class ImagingService : IAsyncDisposable
     private readonly Dictionary<string, BacklashMeasurement> _backlash = new();     // by scope
     private readonly HashSet<string> _trained = new();                               // mounts measured since the station started
 
+    private async Task KeepFramesAsync(Plan plan)
+    {
+        foreach (var sc in plan.Scopes)
+        {
+            try
+            {
+                var answers = await _node.CallFunctionAsync<StorageWatch, CommandResult>(StorageIds.Watch, new StorageWatch { ShooterId = sc.ScopeId, Enabled = true }, TimeSpan.FromSeconds(10));
+                if (answers is null || answers.Count == 0) SessionLog.Warn(_node, sc.ScopeId, "no storage on the mesh: this image's frames are not saved to disk");
+                else if (answers.FirstOrDefault(a => !a.Ok.Value) is { } bad) SessionLog.Warn(_node, sc.ScopeId, "frames are not saved: " + bad.Error.Text);
+            }
+            catch (Exception ex) { SessionLog.Warn(_node, sc.ScopeId, "frames may not be saved: " + ex.Message); }
+        }
+    }
+
     private async Task TrainBacklashAsync(Plan plan, CancellationToken ct)
     {
         BacklashState? known;
@@ -744,7 +762,7 @@ public sealed partial class ImagingService : IAsyncDisposable
             if (_cts is null)
             {
                 // stopping an image that waits to carry on after a restart: it does not
-                if (_resume is { IsCompleted: false }) { _life.Cancel(); ClearRunning(); _ = Set(s => s.Message = "it will not carry on by itself; it is kept"); return Task.FromResult(CommandResult.Success()); }
+                if (_resume is { IsCompleted: false }) { _life.Cancel(); ClearRunning(); _ = Set(s => { s.Phase = "Idle"; s.Message = "it will not carry on by itself; it is kept"; }); return Task.FromResult(CommandResult.Success()); }
                 return Task.FromResult(CommandResult.Fail("nothing is being imaged"));
             }
             _stoppedByPerson = true;
