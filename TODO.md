@@ -205,6 +205,8 @@ focus triggers/offsets -> live-stack rejection/calibration -> the rest.
 - [x] Web interface as a control interface: Now (coverage map, pace, ETA, depth change), New image (catalogue, lens field, fit object, match camera angle, MP to scale, preview with tiling and estimate, visibility, start/queue/go to), Kept, Queue, Rig (mount, devices, profiles, scope set up, site), red light; tested in headless Firefox (WebDriver BiDi) against the Pi
 - [x] Images survive the station (running note, carry on after a crash/restart once the stack and mounts are up); backlash training at the first image of a night, axis-by-axis lead-ins
 - [x] Scheduler: remembers it was running and runs again after a restart; adopts its image already being taken, waits for one a person started
+- [x] Pi memory: live stack reads super pixels straight from the raw frame; GC ConserveMemory 9 in the runtime config; heap figures in the log every 5 min
+- [ ] Pi: an hour-plus soak with the shipped settings; station start takes 8-11 s on the Pi (0.8 s on a laptop): find out where
 - [ ] Backlash: compensate by overshoot instead of lead-ins for mounts with large slack; RA vs tracking direction (finish slews westward)
 - [ ] Web interface: login (EVent auth) before it may be opened beyond loopback; a real phone in the field; guided scope set up; layers/filters in New image; calibration frames
 - [ ] Stream-style events (live previews, property streams) moved to `PublishEvent`
