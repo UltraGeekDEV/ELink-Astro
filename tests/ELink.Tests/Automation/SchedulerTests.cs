@@ -139,6 +139,49 @@ public class SchedulerTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ARunningQueueRunsAgainAfterARestartAndAdoptsTheImageBeingTaken()
+    {
+        var s = new Schedule { MinRunMinutes = 30 };
+        s.Entries.Add(Entry("NCP", 2.5, 85));
+        Assert.True((await Commands.CallAsync(_node, SchedulerIds.SetSchedule, s)).Ok.Value);
+        Assert.True((await Commands.CallAsync(_node, SchedulerIds.Start, NOTESVoid.Void)).Ok.Value);
+        Assert.True(await Eventually(() => _last is { Phase.Text: "Imaging", Running.Text: "NCP" }), _last?.Message.Text);
+
+        // the station stops; the image carried on by itself (the imaging service resumes it): the queue takes it up again
+        await _scheduler.DisposeAsync();
+        _last = null;
+        _scheduler = new SchedulerService(_node, _file) { CheckEvery = TimeSpan.FromMilliseconds(300), ResumeDelay = TimeSpan.FromMilliseconds(100) };
+        await _scheduler.StartAsync();
+        Assert.True(await Eventually(() => _last is { Phase.Text: "Imaging", Running.Text: "NCP" }), $"{_last?.Phase.Text} {_last?.Message.Text}");
+        Assert.Equal(new[] { "NCP" }, _imaging.Started);          // adopted, not started a second time
+
+        // stopped by a person: it stays stopped after the next restart
+        Assert.True((await Commands.CallAsync(_node, SchedulerIds.Stop, NOTESVoid.Void)).Ok.Value);
+        await _scheduler.DisposeAsync();
+        _last = null;
+        _scheduler = new SchedulerService(_node, _file) { CheckEvery = TimeSpan.FromMilliseconds(300), ResumeDelay = TimeSpan.FromMilliseconds(100) };
+        await _scheduler.StartAsync();
+        await Task.Delay(1500);
+        var st = Assert.Single((await _node.CallFunctionAsync<NOTESVoid, SchedulerState>(SchedulerIds.GetState, NOTESVoid.Void))!);
+        Assert.Equal("Stopped", st.Phase.Text);
+    }
+
+    [Fact]
+    public async Task AnImageNotFromTheQueueIsLeftToFinish()
+    {
+        var s = new Schedule();
+        s.Entries.Add(Entry("NCP", 2.5, 85));
+        Assert.True((await Commands.CallAsync(_node, SchedulerIds.SetSchedule, s)).Ok.Value);
+        var mine = new ImagingRequest { Label = "Mine" }; mine.ScopeIds.Add("rig");
+        Assert.True((await Commands.CallAsync(_node, ImagingIds.Start, mine)).Ok.Value);
+        Assert.True((await Commands.CallAsync(_node, SchedulerIds.Start, NOTESVoid.Void)).Ok.Value);
+        Assert.True(await Eventually(() => _last?.Message.Text.Contains("not from the queue") == true), _last?.Message.Text);
+        Assert.Equal(new[] { "Mine" }, _imaging.Started);
+        await _imaging.FinishAsync();
+        Assert.True(await Eventually(() => _last is { Running.Text: "NCP" }), _last?.Message.Text);
+    }
+
+    [Fact]
     public async Task SchedulesNeedNamesAndScopes()
     {
         var s = new Schedule();

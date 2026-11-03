@@ -59,7 +59,19 @@ public sealed class SchedulerService : IAsyncDisposable
         await _commands.AddAsync<NOTESVoid, CommandResult>(SchedulerIds.Start, _ => StartRunAsync(), "run the schedule");
         await _commands.AddAsync<NOTESVoid, CommandResult>(SchedulerIds.Stop, async _ => { await StopRunAsync(); return CommandResult.Success(); }, "stop running the schedule");
         await _publisher.StartAsync();
+        // it was running when the station stopped (a crash, a power cut, a restart): it runs again
+        if (RunningFile is { } f && File.Exists(f))
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(ResumeDelay);
+                SessionLog.Info(_node, "queue", "the station stopped while the queue was running: running it again");
+                await StartRunAsync();
+            });
     }
+
+    /// <summary>Waited before the queue runs again after a restart (the site and the imaging come up first).</summary>
+    public TimeSpan ResumeDelay { get; set; } = TimeSpan.FromSeconds(3);
+    private string? RunningFile => _file is null ? null : _file + ".running";
 
     private Schedule Copy()
     {
@@ -92,6 +104,7 @@ public sealed class SchedulerService : IAsyncDisposable
             var ct = _run.Token;
             _loop = Task.Run(() => LoopAsync(ct));
         }
+        try { if (RunningFile is { } f) File.WriteAllText(f, DateTime.UtcNow.ToString("o")); } catch { }
         await Publish();
         return CommandResult.Success();
     }
@@ -100,6 +113,7 @@ public sealed class SchedulerService : IAsyncDisposable
     {
         CancellationTokenSource? run; Task loop; string running;
         lock (_gate) { run = _run; _run = null; loop = _loop; running = _running; _running = ""; _phase = "Stopped"; }
+        try { if (RunningFile is { } f) File.Delete(f); } catch { }
         if (run is null) return;
         run.Cancel();
         try { await loop.WaitAsync(TimeSpan.FromSeconds(10)); } catch { }
@@ -142,6 +156,23 @@ public sealed class SchedulerService : IAsyncDisposable
         if (decide)
         {
             var img = _imaging?.Latest;
+            // an image being taken that this did not start (a restart carried it on, or a person started it): one of the queue's
+            // is adopted; another is left to finish before the queue starts anything
+            if (running == "" && img is { Phase.Text: "Running" or "Paused" or "WaitingForSky" or "WaitingForWeather" })
+            {
+                string label = img.Label.Text;
+                if (schedule.Entries.Any(e => e.Request.Label.Text == label))
+                {
+                    lock (_gate) { _running = label; _message = $"{label}: carrying on"; }
+                    running = label;
+                }
+                else
+                {
+                    lock (_gate) { _message = $"'{label}' is being taken (not from the queue): the queue waits for it to end"; _phase = "Waiting"; }
+                    await Publish();
+                    return;
+                }
+            }
             if (running != "")
             {
                 var mine = verdicts.FirstOrDefault(v => v.Entry.Request.Label.Text == running);
