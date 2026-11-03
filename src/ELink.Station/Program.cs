@@ -147,6 +147,14 @@ if (web)
     else Console.WriteLine("web interface: the web folder is missing next to the program");
 }
 
+// what the managed heap is doing, now and then: on a small computer (a 2 GB Raspberry Pi) this is what to look at first
+using var memoryLog = new Timer(_ =>
+{
+    var g = GC.GetGCMemoryInfo();
+    long loh = g.GenerationInfo.Length > 3 ? g.GenerationInfo[3].SizeAfterBytes : 0;
+    Console.WriteLine(FormattableString.Invariant($"memory: heap {g.HeapSizeBytes >> 20} MB (large objects {loh >> 20} MB, fragmented {g.FragmentedBytes >> 20} MB), committed {g.TotalCommittedBytes >> 20} MB, process {Environment.WorkingSet >> 20} MB, gen2 collections {GC.CollectionCount(2)}, paused {g.PauseTimePercentage:0.0}%"));
+}, null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(5));
+
 int exit = 0;
 if (ui)
 {
