@@ -401,7 +401,12 @@ public sealed partial class ImagingService : IAsyncDisposable
                     // a new depth while running: this scope's plan is redone from what is still missing
                     foreach (var (l, p) in planners)
                         // a new depth asked for while running (a planner that keeps going only follows it upwards)
-                        if (p.KeepGoing ? TargetOf(l) > p.TargetSeconds : p.TargetSeconds != TargetOf(l)) { p.TargetSeconds = TargetOf(l); p.Plan(); exhausted.Remove(p); }
+                        if (TargetOf(l) <= 0 && !p.KeepGoing)
+                        {
+                            // switched to "until stopped": keep going a step at a time from here
+                            p.KeepGoing = true; p.TargetSeconds = Math.Max(p.Map.Min(p.Layer), 0) + p.HourOfDepth(); p.Plan(); exhausted.Remove(p);
+                        }
+                        else if (p.KeepGoing ? TargetOf(l) > p.TargetSeconds : p.TargetSeconds != TargetOf(l)) { p.KeepGoing = false; p.TargetSeconds = TargetOf(l); p.Plan(); exhausted.Remove(p); }
                     foreach (var candidate in Candidates(planners, exhausted, current))
                     {
                         pose = candidate.Planner.Next();

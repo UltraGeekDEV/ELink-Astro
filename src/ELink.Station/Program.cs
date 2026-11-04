@@ -65,6 +65,7 @@ Directory.CreateDirectory(Path.GetDirectoryName(compose)!);
 Event.CoreFunctionality.TypeSafeEVentNode node;
 try { node = web ? ElinkNode.Create("Station", port, listen, WebGateway.Transport(webListen, wsPort)) : ElinkNode.Create("Station", port, listen); }   // created here, off any UI thread
 catch (Exception ex) when (web) { Console.WriteLine($"web interface: not started ({ex.Message})"); web = false; node = ElinkNode.Create("Station", port, listen); }
+ElinkNode.DropSilentPeers(node);
 using var nodeLife = node;
 var directory = new DeviceDirectory(node);
 await directory.StartAsync();

@@ -40,7 +40,7 @@ public sealed class StatePublisher<T> : IDisposable where T : IBinaryConvertible
             byte[] bytes = state.ToBytes();
             if (_last is not null && bytes.AsSpan().SequenceEqual(_last)) return;
             _last = bytes;
-            try { await _node.FireEventAsync(_stateId, state); }
+            try { await _node.FireEventAsync(_stateId, state, ElinkNode.StateDelivery); }
             catch (ObjectDisposedException) { }
             catch (Exception ex) { Console.Error.WriteLine($"[state] {_stateId}: {ex.Message}"); }
         }

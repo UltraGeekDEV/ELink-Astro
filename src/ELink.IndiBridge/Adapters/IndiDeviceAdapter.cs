@@ -120,7 +120,7 @@ public abstract class IndiDeviceAdapter<TState> : IEquipmentAdapter where TState
             byte[] bytes = state.ToBytes();
             if (_lastState is not null && bytes.AsSpan().SequenceEqual(_lastState)) return;
             _lastState = bytes;
-            try { await Node.FireEventAsync(StateId, state); }
+            try { await Node.FireEventAsync(StateId, state, ELink.Core.ElinkNode.StateDelivery); }
             catch (ObjectDisposedException) { }
             catch (Exception ex) { Console.Error.WriteLine($"[{Kind}:{Id}] state publish failed: {ex.Message}"); }
         }
