@@ -50,7 +50,7 @@
             <button id="stop" class="danger">Stop</button>
           </span>
           <span class="row tight" id="depthRow">
-            <label class="inline">Depth <input id="depthNow" type="number" min="0" step="5" inputmode="decimal"> min</label>
+            <label class="inline">Depth <input id="depthNow" type="number" min="0" step="any" inputmode="decimal"> min</label>
             <button id="depthSet">Set</button>
           </span>
         </div>
@@ -92,9 +92,9 @@
 
         <h2>Area</h2>
         <div class="fields">
-          <label>Width ° <input name="Width" type="number" step="0.01" min="0" inputmode="decimal"></label>
-          <label>Height ° <input name="Height" type="number" step="0.01" min="0" inputmode="decimal"></label>
-          <label>Up points to (PA °) <input name="Pa" type="number" step="0.1" inputmode="decimal"></label>
+          <label>Width ° <input name="Width" type="number" step="any" min="0" inputmode="decimal"></label>
+          <label>Height ° <input name="Height" type="number" step="any" min="0" inputmode="decimal"></label>
+          <label>Up points to (PA °) <input name="Pa" type="number" step="any" inputmode="decimal"></label>
         </div>
         <div class="row">
           <button type="button" id="fitObject">Fit the object</button>
@@ -107,19 +107,20 @@
 
         <h2>Shots</h2>
         <div class="fields">
-          <label>Exposure s <input name="Exposure" type="number" step="1" min="0.1" inputmode="decimal"></label>
-          <label>Depth min <input name="Depth" type="number" step="1" min="0" inputmode="decimal" title="every spot of the area gets this much"></label>
+          <label>Exposure s <input name="Exposure" type="number" step="any" min="0.001" inputmode="decimal"></label>
+          <label>Depth min <input name="Depth" type="number" step="any" min="0" inputmode="decimal" title="every spot of the area gets this much"></label>
           <label class="check"><input name="Endless" type="checkbox"> until I stop it</label>
           <label>Filter <input name="Filter" placeholder="none"></label>
           <label>Gain <input name="Gain" type="number" step="1" placeholder="camera's"></label>
           <label>ISO <input name="Iso" placeholder="camera's"></label>
-          <label>Binning <select name="Bin"><option value="0">camera's</option><option value="1">1×1</option><option value="2">2×2</option><option value="3">3×3</option><option value="4">4×4</option></select></label>
+          <label>Binning <input name="Bin" list="binChoices" inputmode="decimal" title="0 = the camera's; whole numbers bin in the camera; a fraction like 1.5 makes the image at 1.5× the frames' scale (the subs stay as taken)"></label>
+          <datalist id="binChoices"><option value="0">camera's</option><option value="1"></option><option value="1.5"></option><option value="2"></option><option value="2.5"></option><option value="3"></option><option value="4"></option></datalist>
         </div>
 
         <h2>Picture</h2>
         <div class="fields">
-          <label>Scale ″/px <input name="Scale" type="number" step="0.1" min="0" inputmode="decimal" title="0 = the camera's"></label>
-          <label>or size MP <input id="mp" type="number" step="0.5" min="0.5" inputmode="decimal"></label>
+          <label>Scale ″/px <input name="Scale" type="number" step="any" min="0" inputmode="decimal" title="0 = the camera's"></label>
+          <label>or size MP <input id="mp" type="number" step="any" min="0.1" inputmode="decimal"></label>
           <label class="check"><input name="LiveStack" type="checkbox"> live stack</label>
         </div>
         <p id="outSize" class="hint"></p>
@@ -130,7 +131,7 @@
         <details>
           <summary>More</summary>
           <div class="fields">
-            <label>Stepover ° <input name="Stepover" type="number" step="0.01" min="0" title="0 = a tenth of the frame"></label>
+            <label>Stepover ° <input name="Stepover" type="number" step="any" min="0" title="0 = a tenth of the frame"></label>
             <label>Dither ″ <input name="Dither" type="number" step="1" min="0"></label>
             <label>Stop after shots <input name="MaxVisits" type="number" step="1" min="0" title="0 = no limit"></label>
             <label>Wait for sky s <input name="SkyWait" type="number" step="10" min="0"></label>
@@ -211,7 +212,7 @@
           <label>Camera <select name="Camera"></select></label>
           <label>Focal length mm <input name="Focal" type="number" min="1" step="1" required></label>
           <label>Aperture mm <input name="Aperture" type="number" min="0" step="1"></label>
-          <label>Pixel µm <input name="Pixel" type="number" min="0" step="0.01" placeholder="camera's"></label>
+          <label>Pixel µm <input name="Pixel" type="number" min="0" step="any" placeholder="camera's"></label>
           <label class="check"><input name="Grade" type="checkbox" checked> reject bad frames</label>
           <label class="check"><input name="Center" type="checkbox"> centre by plate solve after each slew</label>
           <label class="check"><input name="Flip" type="checkbox" checked> meridian flip</label>
@@ -232,8 +233,8 @@
         <h2>Site</h2>
         <form id="siteForm" class="fields" autocomplete="off">
           <label>Name <input name="Label"></label>
-          <label>Latitude ° <input name="Lat" type="number" step="0.0001" min="-90" max="90" required></label>
-          <label>Longitude ° (east +) <input name="Lon" type="number" step="0.0001" min="-180" max="360" required></label>
+          <label>Latitude ° <input name="Lat" type="number" step="any" min="-90" max="90" required></label>
+          <label>Longitude ° (east +) <input name="Lon" type="number" step="any" min="-180" max="360" required></label>
           <label>Elevation m <input name="Elev" type="number" step="1"></label>
           <label>Lowest altitude ° <input name="MinAlt" type="number" step="1" min="0" max="80"></label>
           <label class="check"><input name="Push" type="checkbox" checked> tell the mounts</label>

@@ -25,7 +25,20 @@ public sealed partial class ImagingService : IAsyncDisposable
         public bool Fits(FrameSpec f) => (Def.MinScaleArcsec.Value <= 0 || f.Scale >= Def.MinScaleArcsec.Value * (1 - 1e-6))
                                          && (Def.MaxScaleArcsec.Value <= 0 || f.Scale > 0 && f.Scale <= Def.MaxScaleArcsec.Value * (1 + 1e-6));
     }
-    private sealed record Plan(CoverageMap Map, CoverageMap Actual, List<ScopeFrames> Scopes, double Width, double Height, double Stepover, double Scale, List<LayerPlan> Layers);
+    private sealed record Plan(CoverageMap Map, CoverageMap Actual, List<ScopeFrames> Scopes, double Width, double Height, double Stepover, double Scale, List<LayerPlan> Layers)
+    {
+        /// <summary>Why the image is coarser than the frames, when the station chose that (said in the preview and the state).</summary>
+        public string ScaleNote { get; init; } = "";
+        /// <summary>Colour frames are stacked as 2x2 super pixels: for the scale, or because a full debayer does not fit in memory.</summary>
+        public bool SuperPixel { get; init; }
+        /// <summary>The image carries on a kept one (and so does its live stack).</summary>
+        public bool CarriedOn { get; init; }
+        /// <summary>How far (degrees, each side) the frames at the area's edges reach beyond it: the sky gathered around it.</summary>
+        public double OverX { get; init; }
+        public double OverY { get; init; }
+        /// <summary>The coverage of everything the frames reached, the area in its middle (shown; the planning uses only the area's).</summary>
+        public CoverageMap? Gathered { get; init; }
+    }
 
     private readonly TypeSafeEVentNode _node;
     private readonly CommandSet _commands;
@@ -183,10 +196,11 @@ public sealed partial class ImagingService : IAsyncDisposable
         var all = scopes.SelectMany(s => s.Frames).ToList();
         double minFrame = all.Min(f => 2 * Math.Min(f.HalfWidth, f.HalfHeight));
         var smallest = all.OrderBy(f => f.HalfWidth * f.HalfHeight).First();
-        // a target with no size is one frame of the smallest train
-        // (a little smaller than the frame, so dithered shots still cover all of it)
-        double w = r.WidthDegrees.Value > 0 ? r.WidthDegrees.Value : 2 * smallest.HalfWidth * 0.9;
-        double h = r.HeightDegrees.Value > 0 ? r.HeightDegrees.Value : 2 * smallest.HalfHeight * 0.9;
+        // a target with no size is one frame of the smallest train as it is turned on the sky, a little smaller so dithered shots
+        // still cover all of it (a camera at 90° stands its frame on end: the frame's unturned size left corners no shot reached)
+        var (upW, upH) = InscribedUpright(smallest, smallest.Rotation - r.PositionAngleDegrees.Value);
+        double w = r.WidthDegrees.Value > 0 ? r.WidthDegrees.Value : upW * 0.9;
+        double h = r.HeightDegrees.Value > 0 ? r.HeightDegrees.Value : upH * 0.9;
         if (Math.Abs(r.Center.DecDegrees.Value) + Math.Max(w, h) / 2 + 2 * all.Max(f => Math.Max(f.HalfWidth, f.HalfHeight)) > 89.5)
             return (null, "the area reaches a celestial pole, where the tiling is undefined");
         double stepover = r.StepoverDegrees.Value > 0 ? r.StepoverDegrees.Value : 0.1 * minFrame;
@@ -199,9 +213,92 @@ public sealed partial class ImagingService : IAsyncDisposable
             if (Math.Abs(kept.Width - w) > 1e-9 || Math.Abs(kept.Height - h) > 1e-9) return (null, $"the kept image '{r.Label.Text}' covers another area ({kept.Width:0.###}° x {kept.Height:0.###}°): start it afresh or use another name");
             map = CoverageMap.Restore(w, h, kept.Cols, kept.Rows, kept.Seconds, layers.Count);
         }
+        // the frames at the area's edges hang over it (that is how its edges get their depth): all the sky they reach is gathered,
+        // shown with the area outlined in it, and stacked. A frame touching the area is at most its own extent (as it is turned)
+        // beyond the edge, and reaches as far again. A kept image goes on with the field its stack was started on.
+        double overX = 0, overY = 0, pa = r.PositionAngleDegrees.Value, dither = Math.Max(0, r.DitherArcsec.Value) / 3600;
+        foreach (var f in all)
+        {
+            double t = (f.Rotation - pa) * Math.PI / 180, c = Math.Abs(Math.Cos(t)), s = Math.Abs(Math.Sin(t)), off = Math.Abs(f.OffsetEast) + Math.Abs(f.OffsetNorth);
+            overX = Math.Max(overX, 2 * (f.HalfWidth * c + f.HalfHeight * s) + off + dither);
+            overY = Math.Max(overY, 2 * (f.HalfWidth * s + f.HalfHeight * c) + off + dither);
+        }
+        // a tangent grid cannot reach far round the sphere: a wide-angle lens on a wide area gathers no more than MaxGatheredDegrees
+        overX = Math.Min(overX, Math.Max(0, (MaxGatheredDegrees - w) / 2)); overY = Math.Min(overY, Math.Max(0, (MaxGatheredDegrees - h) / 2));
+        if (kept is not null) (overX, overY) = (Math.Max(0, kept.OverX), Math.Max(0, kept.OverY));
+        double sw = w + 2 * overX, sh = h + 2 * overY;      // the gathered field: what the live stack holds
         double scale = r.OutputPixelScaleArcsec.Value > 0 ? r.OutputPixelScaleArcsec.Value : scopes.Where(s => !double.IsNaN(s.FinestScale)).Select(s => s.FinestScale).DefaultIfEmpty(0).Min();
-        return (new Plan(map, map.Clone(), scopes, w, h, stepover, scale, layers), null);
+        string note = "";
+        bool superPixel = false;
+        if (r.LiveStack.Value && scale > 0)
+        {
+            // no scale asked for: the live stack is the night's picture, not the final image (every sub is kept on disk at full
+            // resolution, for a stacker on a proper computer), so it is light: at least twice the frames' scale, where colour frames
+            // are read straight into 2x2 super pixels (the cheapest way through the stacker), and no more than a few megapixels
+            if (r.OutputPixelScaleArcsec.Value <= 0 && DefaultStackMegapixels > 0)
+            {
+                double frames = scale;
+                long preview = (long)(DefaultStackMegapixels * 1e6) * StackBytesPerPixel * Math.Max(1, layers.Count);
+                scale = Math.Max(2 * frames, StackBytes(sw, sh, scale, layers.Count) > preview ? CoarserToFit(scale, StackBytes(sw, sh, scale, layers.Count), preview) : scale);
+                note = FormattableString.Invariant($" (the live picture; the subs are kept at the frames' {frames:0.##}\"/px)");
+            }
+            // the stacks (one per layer) and the frame being stacked must fit in memory. A colour frame debayered at full size is
+            // ~16 bytes a sensor pixel (~400 MB for 24 MP): beside the rest a 2 GB Pi could not hold it, and every frame failed to
+            // stack while the image went on as if all was well. Read in 2x2 super pixels it is a quarter of that.
+            double finest = scopes.Select(s => s.FinestScale).Where(x => x > 0).DefaultIfEmpty(0).Min();
+            long budget = ImageBudgetBytes, full = FrameBytes(scopes, 16), packed = FrameBytes(scopes, 4);
+            superPixel = finest > 0 && scale >= 2 * finest;           // the stacker reads frames so anyway at that scale
+            long stack = StackBytes(sw, sh, scale, layers.Count);
+            if (stack + (superPixel ? packed : full) > budget)
+            {
+                if (!superPixel && stack + packed <= budget)
+                {
+                    superPixel = true;
+                    note += FormattableString.Invariant($" (colour read in 2x2 super pixels: a full debayer of the frames needs {full >> 20} MB, more than this station has)");
+                }
+                else
+                {
+                    long room = budget - packed;
+                    double fits = room > 0 ? CoarserToFit(scale, stack, room) : double.NaN;
+                    if (r.OutputPixelScaleArcsec.Value > 0 || !(fits > 0))
+                        return (null, FormattableString.Invariant($"at {scale:0.##}\"/px the image needs {(stack + packed) >> 20} MB for its stack and frames, more than the {budget >> 20} MB this station has for it") + (fits > 0 ? FormattableString.Invariant($": use {fits:0.##}\"/px or coarser (or a smaller area)") : ""));
+                    note = FormattableString.Invariant($" (the frames' {scale:0.##}\"/px would need {(stack + packed) >> 20} MB for the stack and frames, more than the {budget >> 20} MB this station has)");
+                    scale = fits; superPixel = true;
+                }
+            }
+        }
+        // the gathered coverage: kept with the image, or (an image kept before there was one) just the area's
+        return (new Plan(map, map.Clone(), scopes, w, h, stepover, scale, layers) { ScaleNote = note, SuperPixel = superPixel, CarriedOn = kept is not null, OverX = overX, OverY = overY, Gathered = kept?.Gathered is { } kg ? CoverageMap.Restore(sw, sh, kept.GatheredCols, kept.GatheredRows, kg, layers.Count)
+            : kept is not null && overX <= 0 && overY <= 0 ? map.Clone() : new CoverageMap(sw, sh, cell, layers.Count) }, null);
     }
+
+    /// <summary>The widest the gathered field (the area and the sky its edge frames reach around it) gets, in degrees a side.</summary>
+    public double MaxGatheredDegrees { get; set; } = 90;
+
+    /// <summary>Bytes a live stack takes per pixel: three colour sums, a weight and a sum of squares, as floats.</summary>
+    internal const int StackBytesPerPixel = 20;
+
+    /// <summary>The bytes the largest frame of these scopes takes while it is stacked, at so many bytes a sensor pixel.</summary>
+    private static long FrameBytes(List<ScopeFrames> scopes, int perPixel) =>
+        (long)scopes.SelectMany(s => s.Frames).Where(f => f.Scale > 0).Select(f => 2 * f.HalfWidth * 3600 / f.Scale * (2 * f.HalfHeight * 3600 / f.Scale)).DefaultIfEmpty(0).Max() * perPixel;
+
+    /// <summary>The share of the memory this process may use (the runtime's limit: a cgroup's, or the machine's) that an image's
+    /// stacks and the frame being stacked may take; the rest is for the frames on their way, grading, solving, saving.</summary>
+    public double ImageMemoryFraction { get; set; } = 0.5;
+
+    /// <summary>The most megapixels a layer of the live stack has when a request names no scale (0 = the frames' own scale, if it fits).</summary>
+    public double DefaultStackMegapixels { get; set; } = 4;
+
+    /// <summary>The scale, rounded up to 0.01"/px, at which a stack of <paramref name="need"/> bytes at <paramref name="scale"/> fits in <paramref name="budget"/>.</summary>
+    private static double CoarserToFit(double scale, long need, long budget) => Math.Ceiling(scale * Math.Sqrt((double)need / budget) * 100) / 100;
+
+    /// <summary>For tests: the memory the stacks and the frame being stacked may take, instead of a share of what the runtime may use.</summary>
+    public long? ImageBudgetOverride { get; set; }
+
+    private long ImageBudgetBytes => ImageBudgetOverride ?? (long)(GC.GetGCMemoryInfo().TotalAvailableMemoryBytes * ImageMemoryFraction);
+
+    private static long StackBytes(double width, double height, double scale, int stacks) =>
+        (long)(PlanProjection.TangentSpan(width) * 3600 / scale * (PlanProjection.TangentSpan(height) * 3600 / scale)) * StackBytesPerPixel * Math.Max(1, stacks);
 
     private async Task<ImagingState> PreviewAsync(ImagingRequest r)
     {
@@ -210,9 +307,25 @@ public sealed partial class ImagingService : IAsyncDisposable
         if (plan is null) return s;
         s.WidthDegrees = plan.Width; s.HeightDegrees = plan.Height;
         foreach (var sc in plan.Scopes) s.Workers.Add(Worker(sc));
-        s.Message = FormattableString.Invariant($"{plan.Width:0.###}° x {plan.Height:0.###}°, stepover {plan.Stepover:0.####}°") + (plan.Scale > 0 ? FormattableString.Invariant($", image at {plan.Scale:0.##}\"/px") : "")
-            + (plan.Layers.Count > 1 ? $", {plan.Layers.Count} layers" : "");
+        s.Message = FormattableString.Invariant($"{plan.Width:0.###}° x {plan.Height:0.###}°, stepover {plan.Stepover:0.####}°") + (plan.Scale > 0 ? FormattableString.Invariant($", image at {plan.Scale:0.##}\"/px") + plan.ScaleNote : "")
+            + (plan.Layers.Count > 1 ? $", {plan.Layers.Count} layers" : "") + SubsPerHour(plan);
         return s;
+    }
+
+    /// <summary>"; about 5.5 GB of subs an hour": what the kept frames cost on disk, from the cameras' pixels (16 bits), shots back
+    /// to back with a few seconds between them, and lossless compression where the station has it.</summary>
+    private static string SubsPerHour(Plan plan)
+    {
+        double bytes = 0;
+        foreach (var sc in plan.Scopes)
+        {
+            double pixels = sc.Frames.Where(f => f.Scale > 0).Sum(f => 2 * f.HalfWidth * 3600 / f.Scale * (2 * f.HalfHeight * 3600 / f.Scale));
+            double seconds = plan.Layers.Min(l => l.Exposure) + 6;
+            bytes += pixels * 2 * 3600 / seconds;
+        }
+        if (bytes <= 0) return "";
+        bool packed = ELink.Imaging.FitsCompressor.Available;
+        return FormattableString.Invariant($"; about {bytes * (packed ? 0.6 : 1) / 1e9:0.#} GB of subs an hour{(packed ? " (compressed)" : "")}");
     }
 
     private static ImagingWorker Worker(ScopeFrames sc)
@@ -257,6 +370,7 @@ public sealed partial class ImagingService : IAsyncDisposable
             foreach (var sc in plan.Scopes) _workers[sc.ScopeId] = Worker(sc);
             _state = new ImagingState { Phase = "Running", Label = r.Label.Text, WidthDegrees = plan.Width, HeightDegrees = plan.Height, Visits = kept?.Visits ?? 0 };
             if (kept is not null) _state.Message = $"carrying on: {kept.Visits} shots kept from before";
+            else if (plan.ScaleNote != "") _state.Message = FormattableString.Invariant($"image at {plan.Scale:0.##}\"/px") + plan.ScaleNote;
             _runDir = runDir;
         }
         await _publisher.PublishAsync();
@@ -275,15 +389,19 @@ public sealed partial class ImagingService : IAsyncDisposable
             {
                 Label = r.Label.Text, Center = new SkyTarget { RaHours = r.Center.RaHours.Value, DecDegrees = r.Center.DecDegrees.Value, Epoch = "J2000" },
                 // the stack is a tangent grid: it must be as wide as the area's edges are on the tangent plane (see PlanProjection)
-                FovWidthDegrees = PlanProjection.TangentSpan(plan.Width), FovHeightDegrees = PlanProjection.TangentSpan(plan.Height), PositionAngleDegrees = r.PositionAngleDegrees.Value, PixelScaleArcsec = plan.Scale,
+                FovWidthDegrees = PlanProjection.TangentSpan(plan.Width + 2 * plan.OverX), FovHeightDegrees = PlanProjection.TangentSpan(plan.Height + 2 * plan.OverY), PositionAngleDegrees = r.PositionAngleDegrees.Value, PixelScaleArcsec = plan.Scale,
                 // with one kind of frame, its scale lets frames be placed by their pointing when they cannot be solved
                 FramePixelScaleArcsec = plan.Scopes.Select(s => s.FinestScale).Distinct().Count() == 1 && plan.Scopes[0].FinestScale > 0 ? plan.Scopes[0].FinestScale : 0,
-                SessionKey = runDir is null ? "" : r.Label.Text, Resume = r.Resume.Value,
+                // only an image that carries on carries its stack on: a stack left from an image that was deleted (or started afresh)
+                // under the same name is not this one, and refused to start on its other field
+                SessionKey = runDir is null ? "" : r.Label.Text, Resume = r.Resume.Value && plan.CarriedOn,
+                // the plan already fits the stacks in this station's memory (ResolveAsync); a big machine may hold more than the default
+                MaxMegapixels = Math.Max(40, ImageBudgetBytes / (double)StackBytesPerPixel / 1e6),
             };
             // an image at least twice as coarse as the frames gains nothing from interpolating the colours: each 2x2 cell is one
             // colour pixel (a quarter of the memory and work, which a Raspberry Pi needs)
             double finest = plan.Scopes.Select(s => s.FinestScale).Where(x => x > 0).DefaultIfEmpty(0).Min();
-            if (finest > 0 && plan.Scale >= 2 * finest) stack.Debayer = "SuperPixel";
+            if (plan.SuperPixel || finest > 0 && plan.Scale >= 2 * finest) stack.Debayer = "SuperPixel";
             foreach (var sc in plan.Scopes) stack.ShooterIds.Add(sc.ScopeId);
             if (r.Layers.Count > 0)
                 foreach (var l in plan.Layers) stack.Layers.Add(new ImagingLayer { Label = l.Label, Filter = l.Filter, MinScaleArcsec = l.Def.MinScaleArcsec.Value, MaxScaleArcsec = l.Def.MaxScaleArcsec.Value });
@@ -316,6 +434,12 @@ public sealed partial class ImagingService : IAsyncDisposable
                 if (ws.All(w => w.Phase.Text == "Failed")) { endPhase = "Error"; endMessage = string.Join("; ", ws.Select(w => $"{w.ScopeId.Text}: {w.Message.Text}")); }
                 else if (ws.Any(w => w.Phase.Text == "Failed")) endMessage = "done, but " + string.Join("; ", ws.Where(w => w.Phase.Text == "Failed").Select(w => $"{w.ScopeId.Text} failed: {w.Message.Text}"));
             }
+            // shots were taken but the stack (the image itself) has none of them: not done, whatever the map says
+            if (endPhase == "Done" && r.LiveStack.Value && await StackProblemAsync() is { } stackProblem)
+            {
+                endMessage = endMessage == "" ? stackProblem : endMessage + "; " + stackProblem;
+                SessionLog.Error(_node, "imaging", $"'{r.Label.Text}': {stackProblem}");
+            }
         }
         catch (OperationCanceledException)
         {
@@ -335,6 +459,22 @@ public sealed partial class ImagingService : IAsyncDisposable
         }
     }
 
+    /// <summary>What is wrong with the live stack at the end of an image, or null: no frames in it although frames came, or most
+    /// of them failed.</summary>
+    private async Task<string?> StackProblemAsync()
+    {
+        try
+        {
+            var answers = await _node.CallFunctionAsync<NOTESVoid, LiveStackState>(LiveStackIds.GetState, NOTESVoid.Void, TimeSpan.FromSeconds(10));
+            if (answers?.FirstOrDefault() is not { } s) return null;
+            int stacked = s.FramesStacked.Value, rejected = s.FramesRejected.Value;
+            if (stacked == 0 && rejected > 0) return $"the live stack holds none of the frames ({rejected} rejected: {s.Message.Text})";
+            if (rejected > 2 * stacked) return $"the live stack rejected most frames ({rejected} rejected, {stacked} stacked: {s.Message.Text})";
+            return null;
+        }
+        catch (Exception) { return null; }
+    }
+
     private double TargetOf(LayerPlan l) => l.Def.TargetSeconds.Value > 0 ? l.Def.TargetSeconds.Value : _target;
 
     /// <summary>A scope's planners, one for each layer one of its cameras feeds. A shot goes through one filter: the frames that
@@ -349,8 +489,8 @@ public sealed partial class ImagingService : IAsyncDisposable
             var masked = Masked();
             var mine = masked.Where(f => (f.Mask >> l.Index & 1) != 0).ToArray();
             if (mine.Length == 0) continue;
-            // an area that fits in this scope's frames is best served by centred shots, not raster passes
-            bool fits = mine.Any(f => f.OffsetEast == 0 && f.OffsetNorth == 0 && plan.Width <= 2 * f.HalfWidth && plan.Height <= 2 * f.HalfHeight);
+            // an area that fits in this scope's frames (as they are turned against it) is best served by centred shots, not raster passes
+            bool fits = mine.Any(f => f.OffsetEast == 0 && f.OffsetNorth == 0 && Covers(f, f.Rotation - r.PositionAngleDegrees.Value, plan.Width, plan.Height));
             double target; lock (_gate) target = TargetOf(l);
             var p = new CoveragePlanner(plan.Map, mine, [0.0], r.PositionAngleDegrees.Value, l.Exposure, target, plan.Stepover, l.Index)
             { TopUpOnly = fits, PaintFrames = masked.Where(f => f.Mask != 0).ToArray() };
@@ -360,6 +500,23 @@ public sealed partial class ImagingService : IAsyncDisposable
             list.Add((l, p));
         }
         return list;
+    }
+
+    /// <summary>Whether a frame turned <paramref name="thetaDegrees"/> against the area's axes covers a centred area of that size whole.</summary>
+    public static bool Covers(FrameSpec f, double thetaDegrees, double width, double height)
+    {
+        double t = thetaDegrees * Math.PI / 180, c = Math.Abs(Math.Cos(t)), s = Math.Abs(Math.Sin(t));
+        return width / 2 * c + height / 2 * s <= f.HalfWidth * (1 + 1e-9) && width / 2 * s + height / 2 * c <= f.HalfHeight * (1 + 1e-9);
+    }
+
+    /// <summary>The largest area upright on the area's axes, of the frame's proportions (turned a quarter when the frame lies more
+    /// across than along), that a frame turned <paramref name="thetaDegrees"/> against those axes covers whole.</summary>
+    public static (double Width, double Height) InscribedUpright(FrameSpec f, double thetaDegrees)
+    {
+        double t = thetaDegrees * Math.PI / 180, c = Math.Abs(Math.Cos(t)), s = Math.Abs(Math.Sin(t));
+        double w0 = c >= s ? f.HalfWidth : f.HalfHeight, h0 = c >= s ? f.HalfHeight : f.HalfWidth;
+        double k = Math.Min(f.HalfWidth / (w0 * c + h0 * s), f.HalfHeight / (w0 * s + h0 * c));
+        return (2 * k * w0, 2 * k * h0);
     }
 
     private ShooterExposure ExposureOf(ImagingRequest r, LayerPlan l)
@@ -472,6 +629,7 @@ public sealed partial class ImagingService : IAsyncDisposable
                 plan.Map.Paint(planner.PaintFootprints(planned), -exp);
                 plan.Map.Paint(real, exp);
                 plan.Actual.Paint(real, exp);
+                plan.Gathered?.Paint(real, exp);
             }
             landing.Solve(frames, at, sent, planner, exp);
             await SetWorker(id, w => w.Visits = w.Visits.Value + 1);
@@ -681,16 +839,17 @@ public sealed partial class ImagingService : IAsyncDisposable
 
     // ---- keeping images for another night ------------------------------------------------------------------------
 
-    private sealed record Kept(ImagingRequest Request, double Width, double Height, int Cols, int Rows, float[] Seconds, int Visits, string UpdatedUtc, int Layers);
-    private sealed record KeptMeta(double Width, double Height, int Cols, int Rows, int Visits, string UpdatedUtc, int Layers = 1);
+    private sealed record Kept(ImagingRequest Request, double Width, double Height, int Cols, int Rows, float[] Seconds, int Visits, string UpdatedUtc, int Layers, double OverX = 0, double OverY = 0, int GatheredCols = 0, int GatheredRows = 0, float[]? Gathered = null);
+    // OverX/OverY: how far the live stack reaches beyond the area (0 in images kept before the stack held the overhang)
+    private sealed record KeptMeta(double Width, double Height, int Cols, int Rows, int Visits, string UpdatedUtc, int Layers = 1, double OverX = 0, double OverY = 0, int GatheredCols = 0, int GatheredRows = 0);
 
     private static string Safe(string label) => new(label.Trim().Select(c => char.IsLetterOrDigit(c) || c is '-' or '_' ? c : '_').ToArray());
 
     /// <summary>After every good shot: the request, the real coverage and the count, written aside and moved in place.</summary>
     private void Keep(ImagingRequest r, Plan plan)
     {
-        string? dir; int visits; float[] seconds;
-        lock (_gate) { dir = _runDir; visits = _state.Visits.Value; seconds = plan.Actual.Flatten(); }
+        string? dir; int visits; float[] seconds; float[]? gathered;
+        lock (_gate) { dir = _runDir; visits = _state.Visits.Value; seconds = plan.Actual.Flatten(); gathered = plan.Gathered?.Flatten(); }
         if (dir is null) return;
         try
         {
@@ -698,8 +857,9 @@ public sealed partial class ImagingService : IAsyncDisposable
             void Write(string name, byte[] bytes) { string p = Path.Combine(dir, name); File.WriteAllBytes(p + ".part", bytes); File.Move(p + ".part", p, true); }
             Write("request.bin", r.ToBytes());
             Write("coverage.bin", System.Runtime.InteropServices.MemoryMarshal.AsBytes(seconds.AsSpan()).ToArray());
+            if (gathered is not null) Write("gathered.bin", System.Runtime.InteropServices.MemoryMarshal.AsBytes(gathered.AsSpan()).ToArray());
             Write("image.json", System.Text.Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(
-                new KeptMeta(plan.Width, plan.Height, plan.Actual.Cols, plan.Actual.Rows, visits, DateTime.UtcNow.ToString("o"), plan.Actual.Layers))));
+                new KeptMeta(plan.Width, plan.Height, plan.Actual.Cols, plan.Actual.Rows, visits, DateTime.UtcNow.ToString("o"), plan.Actual.Layers, plan.OverX, plan.OverY, plan.Gathered?.Cols ?? 0, plan.Gathered?.Rows ?? 0))));
         }
         catch (Exception ex) { lock (_gate) _state.Message = "could not keep the image: " + ex.Message; }
     }
@@ -714,7 +874,14 @@ public sealed partial class ImagingService : IAsyncDisposable
             var bytes = File.ReadAllBytes(Path.Combine(dir, "coverage.bin"));
             var seconds = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, float>(bytes).ToArray();
             if (seconds.Length != meta.Cols * meta.Rows * Math.Max(1, meta.Layers)) return null;
-            return new Kept(r, meta.Width, meta.Height, meta.Cols, meta.Rows, seconds, meta.Visits, meta.UpdatedUtc, Math.Max(1, meta.Layers));
+            float[]? gathered = null;
+            string g = Path.Combine(dir, "gathered.bin");
+            if (meta.GatheredCols > 0 && File.Exists(g))
+            {
+                gathered = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, float>(File.ReadAllBytes(g)).ToArray();
+                if (gathered.Length != meta.GatheredCols * meta.GatheredRows * Math.Max(1, meta.Layers)) gathered = null;
+            }
+            return new Kept(r, meta.Width, meta.Height, meta.Cols, meta.Rows, seconds, meta.Visits, meta.UpdatedUtc, Math.Max(1, meta.Layers), meta.OverX, meta.OverY, meta.GatheredCols, meta.GatheredRows, gathered);
         }
         catch (Exception) { return null; }
     }
@@ -825,6 +992,13 @@ public sealed partial class ImagingService : IAsyncDisposable
                 if (map.Layers == 1) bytes = map.Render(Math.Max(TargetOf(layers[0]), map.Max()), 96, 64, out cols, out rows);
                 else bytes = map.RenderProgress(layers.Select(TargetOf).ToList(), 96, 64, out cols, out rows);
                 s.MapCols = cols; s.MapRows = rows; s.Map = new RawBytes(bytes);
+                if (_plan.Gathered is { } all)
+                {
+                    // all the sky the frames reached, on the same scale of depth as the area's map
+                    double top = map.Layers == 1 ? Math.Max(TargetOf(layers[0]), map.Max()) : Math.Max(layers.Max(TargetOf), map.Max());
+                    var gb = all.Render(top, 128, 96, out int gc, out int gr);
+                    s.GatheredWidthDegrees = all.FovWidth; s.GatheredHeightDegrees = all.FovHeight; s.GatheredCols = gc; s.GatheredRows = gr; s.Gathered = new RawBytes(gb);
+                }
                 if (layers.Count > 1 || layers[0].Label != "")
                     foreach (var l in layers)
                         s.Layers.Add(new ImagingLayerState

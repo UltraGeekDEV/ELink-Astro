@@ -56,7 +56,7 @@ public sealed class LiveStackService : IAsyncDisposable
     private double _scale = double.NaN;     // all stacks share one grid once the scale is known
     private FilterStack? Primary => _stacks.Values.OrderByDescending(s => s.Counted).ThenByDescending(s => s.Stack.Frames).FirstOrDefault();
     private string _phase = "Idle", _message = "", _last = "";
-    private int _rejected, _pending, _generation;
+    private int _rejected, _pending, _generation, _faults;
     private double _exposure, _lastScale = double.NaN;
 
     private sealed record Item(ELink.Contracts.RawBytes Raw, string Source, double RaHours, double DecDegrees, double Seconds, int Generation, string Filter, string Pseudo = "", double Scale = double.NaN, double Angle = double.NaN)
@@ -143,7 +143,7 @@ public sealed class LiveStackService : IAsyncDisposable
         lock (_gate)
         {
             _request = r; _stacks.Clear(); _references.Clear(); _scale = r.PixelScaleArcsec.Value > 0 ? r.PixelScaleArcsec.Value : double.NaN;
-            _rejected = 0; _pending = 0; _exposure = 0; _lastScale = double.NaN; _last = ""; _seen.Clear();
+            _rejected = 0; _pending = 0; _faults = 0; _exposure = 0; _lastScale = double.NaN; _last = ""; _seen.Clear();
             _sessionDir = dir; _framesSaved = 0;
             if (restored is not null)
             {
@@ -249,6 +249,10 @@ public sealed class LiveStackService : IAsyncDisposable
                     // not a frame the stack turned down: a fault, and the trace is what finds it
                     result = "!" + ex.Message;
                     Console.Error.WriteLine($"[stack] {item.Source}: {ex}");
+                    // and the session log says so (only the journal did: frames failed all night with the image looking fine)
+                    int n = Interlocked.Increment(ref _faults);
+                    if (n == 1 || n % 10 == 0)
+                        SessionLog.Error(_node, "stack", $"a frame from {item.Source} could not be stacked: {(ex is OutOfMemoryException ? "out of memory (use a coarser image scale)" : ex.Message)} ({n} so far)");
                 }
                 lock (_gate)
                 {

@@ -34,6 +34,21 @@ public sealed class StorageService : IAsyncDisposable
     /// <summary>The night changes at local noon, so a whole night lands in one folder.</summary>
     public Func<DateTime> LocalNow { get; set; } = () => DateTime.Now;
 
+    /// <summary>Light frames are kept tile-compressed (lossless Rice, <c>.fits.fz</c>) where cfitsio is installed.</summary>
+    public bool CompressLights { get; set; } = FitsCompressor.Available;
+
+    /// <summary>Below this much free space frames are no longer saved (the live stack goes on): a full disk also stops the schedule,
+    /// the kept images and the session log being written.</summary>
+    public long StopBelowBytes { get; set; } = 2L << 30;
+    /// <summary>The session log warns when the free space lasts less than this at the pace frames are being saved.</summary>
+    public TimeSpan WarnBelow { get; set; } = TimeSpan.FromHours(2);
+    /// <summary>Free space where frames go (bytes); replaceable for tests.</summary>
+    public Func<string, long> FreeBytes { get; set; } = dir => new DriveInfo(Path.GetFullPath(dir)).AvailableFreeSpace;
+
+    private readonly Queue<(DateTime At, long Bytes)> _recent = new();      // the last saves, for the pace
+    private DateTime _warnedAt = DateTime.MinValue, _stoppedAt = DateTime.MinValue;
+    private int _skipped;
+
     public StorageService(TypeSafeEVentNode node, string directory)
     {
         _node = node; _directory = directory;
@@ -117,6 +132,7 @@ public sealed class StorageService : IAsyncDisposable
             bool rejected = shot.Quality.Text == "Rejected";
             if (rejected) nightDir = Path.Combine(nightDir, "rejected");   // kept, but out of the way of stacking software
             Directory.CreateDirectory(nightDir);
+            if (!RoomFor(nightDir, shot.Data.Data.Length)) return;
 
             string obj = shot.ObjectName.Text, planId = shot.PlanId.Text;   // stamped by the scope that ran the observation
 
@@ -129,7 +145,7 @@ public sealed class StorageService : IAsyncDisposable
             string key = Path.Combine(nightDir, stem);
             if (!_counters.TryGetValue(key, out int n)) n = Directory.GetFiles(nightDir, stem + "_*").Length;
             string file;
-            do { n++; file = Path.Combine(nightDir, $"{stem}_{n:0000}{ext}"); } while (File.Exists(file));
+            do { n++; file = Path.Combine(nightDir, $"{stem}_{n:0000}{ext}"); } while (File.Exists(file) || File.Exists(file + ".fz"));
             _counters[key] = n;
 
             byte[] bytes = await Frames.BytesAsync(_node, shot.Data);
@@ -158,14 +174,39 @@ public sealed class StorageService : IAsyncDisposable
                 try { header = FitsHeader.NewHeader(bytes, cards, out dataStart); }
                 catch (FormatException) { /* not a parsable FITS: store as received */ }
             }
-            string tmp = file + ".part";
-            await using (var fs = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16, FileOptions.Asynchronous))
+            int written = -1;
+            if (CompressLights && frame == "Light" && ext is ".fits" or ".fit")
             {
-                if (header is not null) await fs.WriteAsync(header);
-                await fs.WriteAsync(bytes.AsMemory(dataStart));
+                // lossless: the same pixels and header, in about half the space
+                // it needs a second copy of the frame; when memory is short the sub is written uncompressed instead of lost
+                string fz = file + ".fz";
+                try
+                {
+                    byte[] whole = header is null ? bytes : [.. header, .. bytes.AsSpan(dataStart)];
+                    if (await Task.Run(() => FitsCompressor.TryWrite(whole, fz + ".part")))
+                    {
+                        File.Move(fz + ".part", fz);
+                        file = fz; written = (int)new FileInfo(fz).Length;
+                    }
+                }
+                catch (OutOfMemoryException)
+                {
+                    try { File.Delete(fz + ".part"); } catch (IOException) { }
+                    Console.Error.WriteLine("[storage] not enough memory to compress a frame: saved uncompressed");
+                }
             }
-            File.Move(tmp, file);
-            int written = (header?.Length ?? 0) + bytes.Length - dataStart;
+            if (written < 0)
+            {
+                string tmp = file + ".part";
+                await using (var fs = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16, FileOptions.Asynchronous))
+                {
+                    if (header is not null) await fs.WriteAsync(header);
+                    await fs.WriteAsync(bytes.AsMemory(dataStart));
+                }
+                File.Move(tmp, file);
+                written = (header?.Length ?? 0) + bytes.Length - dataStart;
+            }
+            lock (_gate) { _recent.Enqueue((DateTime.UtcNow, written)); while (_recent.Count > 20) _recent.Dequeue(); }
 
             var log = new
             {
@@ -253,6 +294,40 @@ public sealed class StorageService : IAsyncDisposable
             { Path = file, ShooterId = shooter, ObjectName = obj, FrameType = frame, Filter = filter, ExposureSeconds = seconds, Bytes = bytes });
         }
         catch (ObjectDisposedException) { }
+    }
+
+    /// <summary>Whether there is room to save a frame of about <paramref name="size"/> bytes; says so in the session log (and the
+    /// state) when the space runs short at the pace frames are coming, and stops saving before the disk is full.</summary>
+    private bool RoomFor(string dir, long size)
+    {
+        long free;
+        try { free = FreeBytes(dir); } catch (Exception) { return true; }     // cannot tell: save, as before
+        double perHour;
+        lock (_gate)
+        {
+            var span = _recent.Count >= 2 ? _recent.Last().At - _recent.First().At : TimeSpan.Zero;
+            perHour = span > TimeSpan.Zero ? _recent.Skip(1).Sum(r => r.Bytes) / span.TotalHours : 0;
+        }
+        var now = DateTime.UtcNow;
+        if (free - size < StopBelowBytes)
+        {
+            int skipped;
+            lock (_gate) { skipped = ++_skipped; _message = $"the disk is nearly full ({free >> 20} MB free): frames are not saved"; }
+            if (now - _stoppedAt > TimeSpan.FromMinutes(30))
+            {
+                _stoppedAt = now;
+                SessionLog.Error(_node, "storage", $"the disk where frames go is nearly full ({free >> 20} MB free): frames are no longer saved (the live stack goes on); {skipped} not saved so far");
+            }
+            _ = _publisher.PublishAsync();
+            return false;
+        }
+        lock (_gate) if (_skipped > 0) { _skipped = 0; _message = ""; }
+        if (perHour > 0 && free / perHour < WarnBelow.TotalHours && now - _warnedAt > TimeSpan.FromMinutes(30))
+        {
+            _warnedAt = now;
+            SessionLog.Warn(_node, "storage", FormattableString.Invariant($"{free / 1e9:0.#} GB free where frames go: about {free / perHour:0.#} h of frames at this pace ({perHour / 1e9:0.#} GB an hour); saving stops at {StopBelowBytes / 1e9:0.#} GB"));
+        }
+        return true;
     }
 
     private static double? Finite(double v) => double.IsNaN(v) || double.IsInfinity(v) ? null : v;

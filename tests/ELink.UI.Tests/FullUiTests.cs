@@ -75,7 +75,7 @@ public class FullUiTests : IClassFixture<IndiServerFixture>
         PlateSolveService? solveSvc = PlateSolver.Locate() is { } sf ? new PlateSolveService(hostNode, new PlateSolver(sf)) : null;
         if (solveSvc is not null) await solveSvc.StartAsync();
         string saveDir = Path.Combine(Path.GetTempPath(), "elink-ui-save-" + Guid.NewGuid().ToString("N"));
-        await using var storage = new StorageService(hostNode, saveDir); await storage.StartAsync();
+        await using var storage = new StorageService(hostNode, saveDir) { CompressLights = false }; await storage.StartAsync();
         await using var processingSvc = new ProcessingService(hostNode, Path.Combine(saveDir, "pictures")); await processingSvc.StartAsync();
         await using var calibrationSvc = new CalibrationService(hostNode, saveDir); await calibrationSvc.StartAsync();
 

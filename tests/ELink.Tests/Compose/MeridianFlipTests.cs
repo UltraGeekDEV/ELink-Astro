@@ -48,7 +48,7 @@ public class MeridianFlipTests(ITestOutputHelper log) : IAsyncLifetime
 
     private sealed record Rig(TypeSafeEVentNode Node, IndiClient Client, FakeShooter Shooter, IAsyncDisposable[] Owned) : IAsyncDisposable
     {
-        public async ValueTask DisposeAsync() { foreach (var o in Owned.Reverse()) await o.DisposeAsync(); Node.Dispose(); }
+        public async ValueTask DisposeAsync() { foreach (var o in Owned.AsEnumerable().Reverse()) await o.DisposeAsync(); Node.Dispose(); }
     }
 
     private async Task<Rig> StartAsync()

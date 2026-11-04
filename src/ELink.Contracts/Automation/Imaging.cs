@@ -188,6 +188,11 @@ public class ImagingState : IBinaryConvertible
     public RawBytes Map { get; set; } = new();
     public BinaryConvertibleCollection<ImagingWorker> Workers { get; set; } = new();
     public BinaryConvertibleCollection<ImagingLayerState> Layers { get; set; } = new();
+    public BinaryConvertibleDouble GatheredWidthDegrees { get; set; } = 0.0;
+    public BinaryConvertibleDouble GatheredHeightDegrees { get; set; } = 0.0;
+    public BinaryConvertibleInt32 GatheredCols { get; set; } = 0;
+    public BinaryConvertibleInt32 GatheredRows { get; set; } = 0;
+    public RawBytes Gathered { get; set; } = new();
 
     public override string Name => "ImagingState";
     private static readonly NOTESDescriptor d = new();
@@ -209,6 +214,11 @@ public class ImagingState : IBinaryConvertible
         d.RegisterField("Map", (ImagingState x) => x.Map).Description("coverage, one byte per cell (0..255 of the target), row-major from the north-west");
         d.RegisterField("Workers", (ImagingState x) => x.Workers, maxCount: 16);
         d.RegisterField("Layers", (ImagingState x) => x.Layers, maxCount: 8).Description("how far each layer has got (with several layers the Map shows the least advanced one at each spot)");
+        d.RegisterField("GatheredWidthDegrees", (ImagingState x) => x.GatheredWidthDegrees).Description("all the sky the frames reach, the area in its middle (frames at the edges hang over it; the live stack has it all)");
+        d.RegisterField("GatheredHeightDegrees", (ImagingState x) => x.GatheredHeightDegrees);
+        d.RegisterField("GatheredCols", (ImagingState x) => x.GatheredCols);
+        d.RegisterField("GatheredRows", (ImagingState x) => x.GatheredRows);
+        d.RegisterField("Gathered", (ImagingState x) => x.Gathered).Description("coverage of all of it, as Map (0..255 of the target)");
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();

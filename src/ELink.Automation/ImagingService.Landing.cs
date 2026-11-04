@@ -80,6 +80,7 @@ public sealed partial class ImagingService
                     var was = planner.PaintFootprints(at); var real = planner.PaintFootprints(landed);
                     plan.Map.Paint(was, -exposure); plan.Map.Paint(real, exposure);
                     plan.Actual.Paint(was, -exposure); plan.Actual.Paint(real, exposure);
+                    plan.Gathered?.Paint(was, -exposure); plan.Gathered?.Paint(real, exposure);
                 }
                 (double X, double Y) aim;
                 lock (_offsets)

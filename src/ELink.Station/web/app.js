@@ -299,12 +299,21 @@ function drawNow() {
   const s = image, canvas = $('cover');
   if (!s || !(s.WidthDegrees > 0)) { canvas.parentElement.hidden = true; return; }
   canvas.parentElement.hidden = false;
-  drawArea(canvas, s.WidthDegrees, s.HeightDegrees, ({ g, P, x0, y0, aw, ah }) => {
-    const map = blob(s.Map);
-    if (s.MapCols > 0 && map.length === s.MapCols * s.MapRows) {
+  // all the sky the frames reached (the edge frames hang over the area), with the planned area outlined in it
+  const all = s.GatheredCols > 0 && s.GatheredWidthDegrees > 0;
+  const W = all ? s.GatheredWidthDegrees : s.WidthDegrees, H = all ? s.GatheredHeightDegrees : s.HeightDegrees;
+  drawArea(canvas, W, H, ({ g, P, x0, y0, aw, ah }) => {
+    const map = blob(all ? s.Gathered : s.Map), cols = all ? s.GatheredCols : s.MapCols, rows = all ? s.GatheredRows : s.MapRows;
+    if (cols > 0 && map.length === cols * rows) {
       g.imageSmoothingEnabled = false;
-      g.drawImage(mapImage(map, s.MapCols, s.MapRows), x0, y0, aw, ah);
+      g.drawImage(mapImage(map, cols, rows), x0, y0, aw, ah);
     } else { g.fillStyle = css('--panel2'); g.fillRect(x0, y0, aw, ah); }
+    if (all) {
+      const [ax, ay] = P([-s.WidthDegrees / 2, s.HeightDegrees / 2]), [bx, by] = P([s.WidthDegrees / 2, -s.HeightDegrees / 2]);
+      g.setLineDash([6, 4]); g.strokeStyle = css('--text'); g.lineWidth = 1.5;
+      g.strokeRect(Math.round(ax) + .5, Math.round(ay) + .5, Math.round(bx - ax), Math.round(by - ay));
+      g.setLineDash([]);
+    }
     for (const w of s.Workers ?? []) {
       if (!fin(w.PoseX) || !fin(w.PoseY)) continue;
       for (const pts of footprints(w.PoseX, w.PoseY, w.Frames ?? [], imagePa)) {
@@ -520,14 +529,21 @@ function request() {
   if (!(n('Exposure') > 0)) return { problem: 'an exposure of more than 0 s' };
   const scopes = chosenScopes();
   if (scopes.length === 0) return { problem: 'choose a scope' };
-  const bin = n('Bin') | 0;
+  // binning: a camera bins in whole steps; a fraction (1.5) is the image made at that many times the frames' scale, by the
+  // stack's resampling (the subs are kept as the camera took them, to be stacked again at any scale)
+  const binText = String(v.Bin ?? '').trim(), binN = binText === '' ? 0 : Number(binText);
+  if (!(binN >= 0 && binN <= 16)) return { problem: "binning is 0 (the camera's), a whole number, or a fraction like 1.5" };
+  const bin = Number.isInteger(binN) ? binN : 0, soft = Number.isInteger(binN) ? 0 : binN;
+  if (soft && soft < 1) return { problem: 'a fractional binning is more than 1 (1.5, 2.5, ...)' };
+  if (soft && !(n('Scale') > 0) && !(frameScale > 0)) return { problem: `the frames' scale is not known yet, so ${soft}× cannot be worked out: connect the camera, or give a Scale` };
+  const scale = n('Scale') > 0 ? n('Scale') : soft ? Math.round(frameScale * soft * 1000) / 1000 : 0;
   return {
     req: make('ImagingRequest', {
       Label: v.Label.trim(), Center: { RaHours: ra, DecDegrees: dec, Epoch: 'J2000' },
       WidthDegrees: n('Width') || 0, HeightDegrees: n('Height') || 0, PositionAngleDegrees: n('Pa') || 0, ScopeIds: scopes,
       Exposure: { Seconds: n('Exposure'), Filter: v.Filter.trim(), BinX: bin, BinY: bin, Gain: v.Gain === '' ? NaN_ : n('Gain'), Iso: v.Iso.trim() },
       TargetSeconds: v.Endless ? 0 : (n('Depth') || 0) * 60, StepoverDegrees: n('Stepover') || 0, DitherArcsec: n('Dither') || 0, MaxVisits: n('MaxVisits') | 0,
-      LiveStack: v.LiveStack, OutputPixelScaleArcsec: n('Scale') || 0, SlewTimeoutSeconds: n('SlewTimeout') || 300, SkyWaitSeconds: n('SkyWait') || 0, Resume: v.Resume,
+      LiveStack: v.LiveStack, OutputPixelScaleArcsec: scale, SlewTimeoutSeconds: n('SlewTimeout') || 300, SkyWaitSeconds: n('SkyWait') || 0, Resume: v.Resume,
     }),
   };
 }
@@ -543,7 +559,21 @@ function loadRequest(r) {
 }
 
 let preview = null, planTimer = null, planSeq = 0;
-function planChanged() { store.set('plan', formValues()); outSize(); planSoon(); }
+/** The finest pixel scale of the chosen scopes' imaging cameras (″/px), for a fractional binning; NaN until known. */
+let frameScale = NaN_;
+async function refreshFrameScale() {
+  let finest = NaN_;
+  for (const sid of chosenScopes()) {
+    const def = composition.Scopes.find(s => s.Id === sid);
+    for (const sh of def?.Shooters ?? []) {
+      const t = await ask(`${IDS.train(sh.Id)}.GetState`);
+      for (const c of t?.Cameras ?? []) if (c.Role === 'Imaging' && c.PixelScaleArcsec > 0 && !(c.PixelScaleArcsec >= finest)) finest = c.PixelScaleArcsec;
+    }
+  }
+  const was = frameScale; frameScale = finest;
+  if (finest !== was && !Number.isInteger(Number(F('Bin').value))) planSoon();
+}
+function planChanged() { store.set('plan', formValues()); outSize(); refreshFrameScale().catch(ignore); planSoon(); }
 function planSoon() { clearTimeout(planTimer); planTimer = setTimeout(runPreview, 400); }
 form.addEventListener('input', e => { if (e.target.id !== 'find' && e.target.id !== 'lensMm' && e.target.id !== 'mp') planChanged(); });
 form.addEventListener('change', e => { if (e.target.id !== 'find' && e.target.id !== 'mp') planChanged(); });

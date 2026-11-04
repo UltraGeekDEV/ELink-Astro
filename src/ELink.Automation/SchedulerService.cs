@@ -26,6 +26,11 @@ public sealed class SchedulerService : IAsyncDisposable
     private readonly Dictionary<string, ScheduleEntryState> _entryStates = new();
     private readonly Dictionary<string, DateTime> _failedAt = new();
     private readonly Dictionary<string, int> _failures = new();     // in a row, by entry: the wait grows with them
+    // entries whose image ended Done, with the depth they were asked for: complete, whatever the kept coverage says (an image the
+    // imaging service called done was started again at once, over and over, when its thinnest spot stayed short of the depth)
+    private readonly Dictionary<string, double> _finished = new(StringComparer.OrdinalIgnoreCase);
+    // entries whose image a person stopped while the queue ran it: left alone until the queue is started again or the entry is changed
+    private readonly HashSet<string> _stoppedByPerson = new(StringComparer.OrdinalIgnoreCase);
     private string _phase = "Stopped", _running = "", _message = "";
     private CancellationTokenSource? _run;
     private Task _loop = Task.CompletedTask;
@@ -94,7 +99,18 @@ public sealed class SchedulerService : IAsyncDisposable
         if (labels.Any(l => l == "")) return CommandResult.Fail("every entry needs a name (its image's label)");
         if (labels.Distinct(StringComparer.OrdinalIgnoreCase).Count() != labels.Count) return CommandResult.Fail("two entries have the same name");
         if (s.Entries.Any(e => e.Request.ScopeIds.Count == 0)) return CommandResult.Fail("every entry needs at least one scope");
-        lock (_gate) { _schedule = s; _entryStates.Clear(); _failedAt.Clear(); }
+        // what can never run is said now, not found out at the start (and tried again and again)
+        foreach (var e in s.Entries)
+            if (Problem(e) is { } bad) return CommandResult.Fail($"'{e.Request.Label.Text.Trim()}': {bad}");
+        lock (_gate)
+        {
+            // a finished or hand-stopped entry stays so only while it is the same request
+            var old = _schedule.Entries.ToDictionary(e => e.Request.Label.Text, e => RequestKey(e.Request), StringComparer.OrdinalIgnoreCase);
+            var same = s.Entries.Where(e => old.TryGetValue(e.Request.Label.Text, out var b) && b == RequestKey(e.Request)).Select(e => e.Request.Label.Text).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            foreach (var l in _finished.Keys.Where(l => !same.Contains(l)).ToList()) _finished.Remove(l);
+            _stoppedByPerson.RemoveWhere(l => !same.Contains(l));
+            _schedule = s; _entryStates.Clear(); _failedAt.Clear();
+        }
         if (_file is not null)
         {
             try { Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(_file))!); File.WriteAllBytes(_file + ".part", s.ToBytes()); File.Move(_file + ".part", _file, true); }
@@ -108,6 +124,7 @@ public sealed class SchedulerService : IAsyncDisposable
     {
         lock (_gate)
         {
+            _stoppedByPerson.Clear();     // starting the queue is the person taking those up again
             if (_run is not null) return CommandResult.Success();
             _run = new CancellationTokenSource();
             _phase = "Waiting"; _message = "";
@@ -199,15 +216,27 @@ public sealed class SchedulerService : IAsyncDisposable
                 var mine = verdicts.FirstOrDefault(v => v.Entry.Request.Label.Text == running);
                 if (img is { Phase.Text: "Done" })
                 {
-                    // reached its depth (or its shot limit): complete once the kept coverage says so
-                    lock (_gate) { _running = ""; _message = $"{running} finished"; }
-                    SessionLog.Info(_node, "queue", $"'{running}' finished");
+                    // reached its depth (or its shot limit): the imaging says so, and that is final for this depth
+                    double depth = schedule.Entries.FirstOrDefault(e => e.Request.Label.Text == running)?.Request.TargetSeconds.Value ?? 0;
+                    lock (_gate) { _running = ""; _message = $"{running} finished"; _finished[running] = depth; }
+                    string shortBy = saved.TryGetValue(running, out var k) && depth > 0 && k.MinSeconds.Value < depth - 1e-6
+                        ? FormattableString.Invariant($" (its thinnest spot has {k.MinSeconds.Value:0.#} s of {depth:0.#} s)") : "";
+                    SessionLog.Info(_node, "queue", $"'{running}' finished{shortBy}");
                     running = "";
                     saved = await KeptAsync();
                     verdicts = new List<Verdict>();
                     foreach (var e in schedule.Entries) verdicts.Add(await JudgeAsync(e, site, saved, "", schedule.MinRunMinutes.Value));
                 }
-                else if (img is { Phase.Text: "Error" or "Aborted" })
+                else if (img is { Phase.Text: "Aborted" })
+                {
+                    // the queue stops its own images itself (below): this one a person stopped, which means leave it, not try it again
+                    lock (_gate) { _stoppedByPerson.Add(running); _running = ""; _message = $"{running} was stopped by hand: the queue leaves it (start the queue again to take it up)"; }
+                    SessionLog.Info(_node, "queue", $"'{running}' was stopped by hand: the queue goes on without it");
+                    running = "";
+                    verdicts = new List<Verdict>();      // judged again: it was judged as the one running, which is never held
+                    foreach (var e in schedule.Entries) verdicts.Add(await JudgeAsync(e, site, saved, "", schedule.MinRunMinutes.Value));
+                }
+                else if (img is { Phase.Text: "Error" })
                 {
                     lock (_gate) { _failedAt[running] = DateTime.UtcNow; _failures[running] = (_failures.TryGetValue(running, out var fr) ? fr : 0) + 1; _running = ""; _message = $"{running}: {img.Message.Text}"; }
                     SessionLog.Warn(_node, "queue", $"'{running}' ended: {img.Phase.Text} ({img.Message.Text})");
@@ -282,6 +311,12 @@ public sealed class SchedulerService : IAsyncDisposable
         if (!e.Enabled.Value) return new(e, "Disabled", "disabled", double.NaN, 0, complete);
         if (r.TargetSeconds.Value > 0 && complete >= 100 - 1e-6) return new(e, "Complete", "deep enough", double.NaN, 0, complete);
         lock (_gate)
+        {
+            if ((r.TargetSeconds.Value > 0 || r.MaxVisits.Value > 0) && _finished.TryGetValue(r.Label.Text, out var depth) && Math.Abs(depth - r.TargetSeconds.Value) < 1e-9)
+                return new(e, "Complete", "finished", double.NaN, 0, complete);
+            if (_stoppedByPerson.Contains(r.Label.Text) && r.Label.Text != running) return new(e, "Waiting", "stopped by hand", double.NaN, 0, complete);
+        }
+        lock (_gate)
             if (_failedAt.TryGetValue(r.Label.Text, out var failed) && DateTime.UtcNow - failed < WaitAfter(r.Label.Text) && r.Label.Text != running)
                 return new(e, "Waiting", "failed recently: tried again later", double.NaN, 0, complete);
         if (site is not { Known.Value: true }) return new(e, "Waiting", "the site is not set (Rig › Site)", double.NaN, 0, complete);
@@ -309,6 +344,30 @@ public sealed class SchedulerService : IAsyncDisposable
         // the one already running keeps going until it really stops being possible
         if (r.Label.Text != running && hours * 60 < minRunMinutes) return new(e, "Waiting", $"only {hours * 60:0} min left tonight", o.Altitude.Value, hours, complete);
         return new(e, "Possible", $"up at {o.Altitude.Value:0}°, {hours:0.#} h left", o.Altitude.Value, hours, complete);
+    }
+
+    /// <summary>A request's identity: its bytes, with Resume as the queue starts it (it always carries an image on).</summary>
+    private static string RequestKey(ImagingRequest r)
+    {
+        Span<byte> b = r.ToBytes(); var c = new ImagingRequest(); c.FromBytes(ref b); c.Resume = true;
+        return Convert.ToBase64String(c.ToBytes());
+    }
+
+    /// <summary>Why an entry could never be taken, or null. The imaging checks the rest when it starts.</summary>
+    private static string? Problem(ScheduleEntry e)
+    {
+        var r = e.Request;
+        double ra = r.Center.RaHours.Value, dec = r.Center.DecDegrees.Value;
+        if (double.IsNaN(ra) || ra < 0 || ra >= 24 || double.IsNaN(dec) || Math.Abs(dec) > 90) return "its centre is not on the sky";
+        if (r.Center.Epoch.Text != "J2000") return "its centre must be J2000";
+        if (!(r.Exposure.Seconds.Value > 0)) return "the exposure must be longer than zero";
+        if (r.TargetSeconds.Value < 0 || double.IsNaN(r.TargetSeconds.Value)) return "the depth cannot be negative";
+        DateTime? from = null, to = null;
+        if (e.NotBeforeUtc.Text.Trim() != "" && (from = Parse(e.NotBeforeUtc.Text)) is null) return $"'{e.NotBeforeUtc.Text}' is not a time (not before)";
+        if (e.NotAfterUtc.Text.Trim() != "" && (to = Parse(e.NotAfterUtc.Text)) is null) return $"'{e.NotAfterUtc.Text}' is not a time (not after)";
+        if (from is { } f && to is { } t && t <= f) return "its window ends before it begins";
+        if (e.MinAltitudeDegrees.Value > 90) return "its lowest altitude is above the zenith";
+        return null;
     }
 
     private static DateTime? Parse(string iso) =>

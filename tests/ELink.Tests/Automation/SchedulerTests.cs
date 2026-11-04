@@ -59,6 +59,13 @@ public sealed class FakeImaging : IAsyncDisposable
         _phase = "Done"; await _pub.PublishAsync();
     }
 
+    /// <summary>The running image ends Done although its thinnest spot is still short of the depth (a frame that never covered the
+    /// area's corners, a shot limit).</summary>
+    public async Task FinishShortAsync() { _phase = "Done"; await _pub.PublishAsync(); }
+
+    /// <summary>A person presses Stop on the running image.</summary>
+    public async Task StoppedByPersonAsync() { _phase = "Aborted"; await _pub.PublishAsync(); }
+
     public string Phase => _phase;
     public ValueTask DisposeAsync() { _cmds.Dispose(); _pub.Dispose(); return ValueTask.CompletedTask; }
 }
@@ -216,5 +223,60 @@ public class SchedulerTests : IAsyncLifetime
         Assert.False((await Commands.CallAsync(_node, SchedulerIds.SetSchedule, s)).Ok.Value);    // same name
         var noScope = new Schedule(); var e = Entry("B", 5, 0); e.Request.ScopeIds.Clear(); noScope.Entries.Add(e);
         Assert.False((await Commands.CallAsync(_node, SchedulerIds.SetSchedule, noScope)).Ok.Value);
+    }
+
+    [Fact]
+    public async Task EntriesThatCanNeverRunAreRefused()
+    {
+        async Task<string> Refused(Action<ScheduleEntry> change)
+        {
+            var e = Entry("X", 5, 0); change(e);
+            var s = new Schedule(); s.Entries.Add(e);
+            var r = await Commands.CallAsync(_node, SchedulerIds.SetSchedule, s);
+            Assert.False(r.Ok.Value);
+            return r.Error.Text;
+        }
+        Assert.Contains("not on the sky", await Refused(e => e.Request.Center.DecDegrees = 95));
+        Assert.Contains("not a time", await Refused(e => e.NotBeforeUtc = "tomorrow evening"));
+        Assert.Contains("ends before it begins", await Refused(e => { e.NotBeforeUtc = "2026-01-15T22:00:00Z"; e.NotAfterUtc = "2026-01-15T21:00:00Z"; }));
+        Assert.Contains("longer than zero", await Refused(e => e.Request.Exposure.Seconds = 0));
+    }
+
+    [Fact]
+    public async Task AnImageThatEndsDoneIsNotStartedAgainEvenWhenItsCoverageIsShort()
+    {
+        var s = new Schedule();
+        s.Entries.Add(Entry("NCP", 2.5, 85, priority: 5));
+        s.Entries.Add(Entry("M42", 5.588, -5.39));
+        Assert.True((await Commands.CallAsync(_node, SchedulerIds.SetSchedule, s)).Ok.Value);
+        Assert.True((await Commands.CallAsync(_node, SchedulerIds.Start, NOTESVoid.Void)).Ok.Value);
+        Assert.True(await Eventually(() => _last is { Running.Text: "NCP" }), _last?.Message.Text);
+        await _imaging.FinishShortAsync();                          // Done, the kept coverage still 0 s
+        Assert.True(await Eventually(() => _last is { Running.Text: "M42" }), _last?.Message.Text);
+        await Task.Delay(1500);                                     // several checks
+        Assert.Equal(new[] { "NCP", "M42" }, _imaging.Started);     // NCP once: it was started again and again before
+        Assert.Equal("Complete", _last!.Entries.First(e => e.Label.Text == "NCP").Status.Text);
+    }
+
+    [Fact]
+    public async Task AnImageAPersonStopsIsLeftUntilTheQueueIsStartedAgain()
+    {
+        var s = new Schedule();
+        s.Entries.Add(Entry("NCP", 2.5, 85, priority: 5));
+        s.Entries.Add(Entry("M42", 5.588, -5.39));
+        Assert.True((await Commands.CallAsync(_node, SchedulerIds.SetSchedule, s)).Ok.Value);
+        Assert.True((await Commands.CallAsync(_node, SchedulerIds.Start, NOTESVoid.Void)).Ok.Value);
+        Assert.True(await Eventually(() => _last is { Running.Text: "NCP" }), _last?.Message.Text);
+        await _imaging.StoppedByPersonAsync();
+        Assert.True(await Eventually(() => _last is { Running.Text: "M42" }), _last?.Message.Text);   // it goes on with the next
+        Assert.Equal("stopped by hand", _last!.Entries.First(e => e.Label.Text == "NCP").Reason.Text);
+        await _imaging.StoppedByPersonAsync();                      // that one too: nothing is left to take
+        Assert.True(await Eventually(() => _last is { Running.Text: "" }), _last?.Message.Text);
+        await Task.Delay(1500);
+        Assert.Equal(new[] { "NCP", "M42" }, _imaging.Started);
+        // starting the queue again takes them up
+        Assert.True((await Commands.CallAsync(_node, SchedulerIds.Start, NOTESVoid.Void)).Ok.Value);
+        Assert.True(await Eventually(() => _imaging.Started.Count == 3), string.Join(",", _imaging.Started));
+        Assert.Equal("NCP", _imaging.Started[2]);
     }
 }
