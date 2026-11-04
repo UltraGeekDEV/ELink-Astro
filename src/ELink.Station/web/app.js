@@ -263,7 +263,10 @@ function imageStats(s) {
   if (s.TargetSeconds > 0) {
     out.push(['Depth', `${duration(s.MeanSeconds)} of ${duration(s.TargetSeconds)}`]);
     out.push(['Thinnest spot', duration(s.MinSeconds)]);
-  } else out.push(['Depth', duration(s.MeanSeconds) + ' (until stopped)']);
+  } else {
+    out.push(['Depth', `${duration(s.MeanSeconds)} on average, until you stop it`]);
+    out.push(['Thinnest spot', s.MinSeconds > 0 ? duration(s.MinSeconds) : 'not reached yet (the first pass is still going)']);
+  }
   for (const l of s.Layers ?? []) if ((s.Layers.length > 1) && l.Label) out.push([`Layer ${l.Label}`, `${duration(l.MeanSeconds)} of ${duration(l.TargetSeconds)}`]);
   // the pace: depth gained per hour over the last half hour or so
   const a = rate.find(r => r.label === s.Label), b = rate[rate.length - 1];
@@ -271,6 +274,7 @@ function imageStats(s) {
     const perHour = (b.visits - a.visits) / ((b.t - a.t) / 3600000);
     out.push(['Pace', `${Math.round(perHour)} shots/h`]);
     const gain = (b.mean - a.mean) / ((b.t - a.t) / 1000);
+    if (!(s.TargetSeconds > 0) && gain > 0) out.push(['Gaining', `${duration(gain * 3600)} of depth an hour`]);
     if (s.TargetSeconds > 0 && gain > 0 && s.Phase === 'Running') {
       const left = (s.TargetSeconds - s.MeanSeconds) / gain * 1.1;     // the last thin spots take longer than the average
       out.push(['Done at', `about ${clock(new Date(Date.now() + left * 1000))} (${duration(left)})`]);
