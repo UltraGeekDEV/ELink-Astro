@@ -1,7 +1,10 @@
+using ELink.Contracts;
+using ELink.Contracts.Equipment;
 using ELink.Contracts.Automation;
 using ELink.Contracts.Composition;
 using ELink.Core;
 using Event.Connections.Models.BaseBinaryConvertibles;
+using EVent.Connections.Models.BaseBinaryConvertibles;
 
 namespace ELink.Automation;
 
@@ -118,10 +121,34 @@ public sealed partial class ImagingService
                 try { p = (await _node.CallFunctionAsync<NOTESVoid, PointerState>(PointerIds.GetState(pointer), NOTESVoid.Void, TimeSpan.FromSeconds(10), ct))?.FirstOrDefault(); }
                 catch (Exception) when (!ct.IsCancellationRequested) { }
                 if (p is null) return $"{id}'s mount {pointer} does not answer";
-                if (p.Phase.Text == "Disconnected") return $"{id}'s mount is not connected";
+                if (p.Phase.Text == "Disconnected")
+                {
+                    // after a power cut nothing connects the devices again when the INDI server is not the station's own profile:
+                    // they were connected when the image was running, and connecting moves nothing
+                    await ConnectAgainAsync(snap, scope, pointer, ct);
+                    return $"{id}'s mount is not connected (connecting it)";
+                }
                 if (p.Phase.Text == "Parked") return $"{id}'s mount is parked (unpark it and it carries on)";
             }
         }
         return null;
+    }
+
+    /// <summary>Connect a scope's mount and its telescopes' cameras (a device already connected stays as it is).</summary>
+    private async Task ConnectAgainAsync(CompositionSnapshot snap, ScopeDefinition scope, string pointer, CancellationToken ct)
+    {
+        var devices = snap.MountPointers.Where(m => m.Id.Text == pointer).Select(m => (DeviceKinds.Mount, m.MountId.Text))
+            .Concat(scope.Shooters.SelectMany(s => snap.Trains.Where(t => t.Id.Text == s.Id.Text)).SelectMany(t => t.Cameras).Select(c => (DeviceKinds.Camera, c.CameraId.Text)))
+            .Where(d => d.Item2 != "").Distinct();
+        foreach (var (kind, device) in devices)
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                var r = await Commands.CallAsync(_node, EquipmentIds.Command(kind, device, "Connect"), (BinaryConvertibleBool)true, TimeSpan.FromSeconds(30));
+                if (!r.Ok.Value) SessionLog.Warn(_node, "imaging", $"could not connect {device}: {r.Error.Text}");
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested) { SessionLog.Warn(_node, "imaging", $"could not connect {device}: {ex.Message}"); }
+        }
     }
 }

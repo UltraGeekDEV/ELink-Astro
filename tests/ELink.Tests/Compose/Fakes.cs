@@ -50,6 +50,13 @@ public sealed class FakePointer : IAsyncDisposable
         await _pub.StartAsync();
     }
 
+    /// <summary>Shows the pointer in another phase (Disconnected, Parked, Idle).</summary>
+    public Task SetPhaseAsync(string phase)
+    {
+        _state = new PointerState { Phase = phase, RaHours = _state.RaHours.Value, DecDegrees = _state.DecDegrees.Value };
+        return _pub.PublishAsync();
+    }
+
     public ValueTask DisposeAsync() { _cmds.Dispose(); _pub.Dispose(); return ValueTask.CompletedTask; }
 }
 

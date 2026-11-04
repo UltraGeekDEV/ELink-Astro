@@ -85,6 +85,7 @@ public sealed partial class ImagingService : IAsyncDisposable
             foreach (var x in s.Scopes) merged.Scopes.Add(x);
             foreach (var x in s.Trains) merged.Trains.Add(x);
             foreach (var x in s.CameraShooters) merged.CameraShooters.Add(x);
+            foreach (var x in s.MountPointers) merged.MountPointers.Add(x);
         }
         return merged;
     }

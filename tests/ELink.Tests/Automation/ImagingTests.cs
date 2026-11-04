@@ -310,6 +310,34 @@ public class ImagingTests : IAsyncLifetime
         Assert.Single(Assert.Single((await _node.CallFunctionAsync<NOTESVoid, SavedImages>(ImagingIds.ListSaved, NOTESVoid.Void))!).Images);   // still kept
     }
 
+    [Fact]
+    public async Task AfterAPowerCutTheDevicesOfTheImageAreConnectedAgainAndItCarriesOn()
+    {
+        await AddScopeAsync("solo", 0.5, 0.35);
+        _snap.MountPointers.Add(new MountPointerDefinition { Id = "solo-mount", MountId = "Sim_Mount" });
+        var connected = new List<string>();
+        foreach (var (kind, device) in new[] { (DeviceKinds.Mount, "Sim_Mount"), (DeviceKinds.Camera, "solo-cam") })
+            await _fakes.AddAsync<BinaryConvertibleBool, CommandResult>(EquipmentIds.Command(kind, device, "Connect"), on =>
+            {
+                lock (connected) connected.Add(device);
+                if (kind == DeviceKinds.Mount && on.Value) _ = Task.Run(() => _pointers["solo"].SetPhaseAsync("Idle"));
+                return Task.FromResult(CommandResult.Success());
+            }, "fake connect");
+        var r = Request(0, 0, 100, "solo"); r.Label = "Night";
+        Assert.True((await Commands.CallAsync(_node, ImagingIds.Start, r, TimeSpan.FromSeconds(60))).Ok.Value);
+        Assert.True(await Eventually(() => _last is { Visits.Value: >= 2 }), _last?.Phase.Text);
+
+        // the power goes: the station comes back with the mount (and camera) not connected
+        await _svc.DisposeAsync();
+        await Task.Delay(300);                                  // a slew still under way ends first
+        await _pointers["solo"].SetPhaseAsync("Disconnected");
+        _last = null;
+        _svc = new ImagingService(_node, _data) { ResumeRetry = TimeSpan.FromMilliseconds(200) }; await _svc.StartAsync();
+        Assert.True(await Eventually(() => _last is { Phase.Text: "Running" } && _last.Message.Text.Contains("kept from before"), 30000),
+            $"{_last?.Phase.Text} {_last?.Message.Text} / connected {string.Join(",", connected)} / {(await _node.CallFunctionAsync<NOTESVoid, ImagingState>(ImagingIds.GetState, NOTESVoid.Void))?.Single().Message.Text}");
+        lock (connected) Assert.Equal(new[] { "Sim_Mount", "solo-cam" }, connected.Distinct().ToArray());
+    }
+
     /// <summary>The mount's slack as a backlash service would give it (measured at the first image).</summary>
     private async Task<List<string>> FakeBacklashAsync(double raArcsec, double decArcsec)
     {

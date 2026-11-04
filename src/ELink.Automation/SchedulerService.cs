@@ -201,6 +201,7 @@ public sealed class SchedulerService : IAsyncDisposable
                 {
                     // reached its depth (or its shot limit): complete once the kept coverage says so
                     lock (_gate) { _running = ""; _message = $"{running} finished"; }
+                    SessionLog.Info(_node, "queue", $"'{running}' finished");
                     running = "";
                     saved = await KeptAsync();
                     verdicts = new List<Verdict>();
@@ -209,11 +210,13 @@ public sealed class SchedulerService : IAsyncDisposable
                 else if (img is { Phase.Text: "Error" or "Aborted" })
                 {
                     lock (_gate) { _failedAt[running] = DateTime.UtcNow; _failures[running] = (_failures.TryGetValue(running, out var fr) ? fr : 0) + 1; _running = ""; _message = $"{running}: {img.Message.Text}"; }
+                    SessionLog.Warn(_node, "queue", $"'{running}' ended: {img.Phase.Text} ({img.Message.Text})");
                     running = "";
                 }
                 else if (mine is null || mine.Status is "Waiting" or "Disabled")
                 {
                     // no longer possible (setting, dawn, the Moon): stop it; it is kept and carries on later
+                    SessionLog.Info(_node, "queue", $"stopping '{running}': {mine?.Reason ?? "removed from the schedule"} (it is kept and carries on later)");
                     await Commands.CallAsync(_node, ImagingIds.Abort, NOTESVoid.Void);
                     await WaitImagingIdleAsync(ct);
                     lock (_gate) { _running = ""; _message = $"{running} stopped: {mine?.Reason ?? "removed from the schedule"}"; }
@@ -234,6 +237,8 @@ public sealed class SchedulerService : IAsyncDisposable
                         if (r.Ok.Value) { _failures.Remove(req.Label.Text); _running = req.Label.Text; _message = $"{req.Label.Text}: {best.Reason}"; }
                         else { _failedAt[req.Label.Text] = DateTime.UtcNow; _failures[req.Label.Text] = (_failures.TryGetValue(req.Label.Text, out var fs) ? fs : 0) + 1; _message = $"{req.Label.Text} could not start: {r.Error.Text}"; }
                     }
+                    if (r.Ok.Value) SessionLog.Info(_node, "queue", $"starting '{req.Label.Text}': {best.Reason}");
+                    else SessionLog.Warn(_node, "queue", $"'{req.Label.Text}' could not start: {r.Error.Text}");
                 }
                 else lock (_gate) _message = verdicts.Count == 0 ? "the schedule is empty" : verdicts.All(v => v.Status is "Complete" or "Disabled") ? "everything is done" : "nothing can be taken now";
             }
