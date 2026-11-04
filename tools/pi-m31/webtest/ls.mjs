@@ -1,0 +1,11 @@
+import { Leaf, registerLeaf } from '../../../EVent/js/evn.js';
+registerLeaf('bytes', r => { r.take(r.i32()); });
+const leaf = new Leaf('ls-' + Math.random().toString(36).slice(2, 6));
+await leaf.connect(`ws://${process.env.PI ?? "192.168.137.48"}:8091/`);
+const st = (await leaf.call('ELink.Automation.LiveStack.GetState', null))?.[0];
+console.log(JSON.stringify(st, (k, v) => v instanceof Uint8Array ? `<${v.length} bytes>` : v).slice(0, 1500));
+const im = (await leaf.call('ELink.Automation.Imaging.GetState', null))?.[0];
+console.log('imaging:', im.Phase, '|', im.Message, '|', im.Workers.map(w => w.Phase + ' ' + w.Message).join(';'));
+const saved = (await leaf.call('ELink.Automation.Imaging.ListSaved', null))?.[0];
+const m45 = saved.Images.find(i => i.Label.includes('45')); console.log('M45 request LiveStack:', m45?.Request.LiveStack, 'scale', m45?.Request.OutputPixelScaleArcsec, 'W', m45?.Request.WidthDegrees);
+process.exit(0);
