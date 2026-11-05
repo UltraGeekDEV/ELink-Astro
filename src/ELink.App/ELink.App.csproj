@@ -4,9 +4,14 @@
     <AssemblyName>elink-ui</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <!-- the sky atlas's data (tools/skypack builds it) -->
+    <None Include="sky\elink-sky.pack" Condition="Exists('sky\elink-sky.pack')" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Avalonia.Desktop" Version="11.3.22" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\ELink.UI\ELink.UI.csproj" />
+    <ProjectReference Include="..\ELink.Atlas\ELink.Atlas.csproj" />
   </ItemGroup>
 </Project>

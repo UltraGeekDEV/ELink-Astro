@@ -6,6 +6,7 @@ using ELink.Contracts.Site;
 using ELink.Core;
 using Event.CoreFunctionality;
 using Event.Connections.Models.BaseBinaryConvertibles;
+using EVent.Connections.Models.BaseBinaryConvertibles;
 using Xunit;
 
 namespace ELink.Tests.Automation;
@@ -67,6 +68,46 @@ public sealed class FakeImaging : IAsyncDisposable
     public async Task StoppedByPersonAsync() { _phase = "Aborted"; await _pub.PublishAsync(); }
 
     public string Phase => _phase;
+    public ValueTask DisposeAsync() { _cmds.Dispose(); _pub.Dispose(); return ValueTask.CompletedTask; }
+}
+
+/// <summary>A mount that can be parked (or refuses to), listed as equipment the way the INDI bridge lists its devices.</summary>
+public sealed class ParkableMount : IAsyncDisposable
+{
+    private readonly CommandSet _cmds;
+    private readonly StatePublisher<MountState> _pub;
+    private readonly string _id;
+    public string Phase { get; private set; } = "Tracking";
+    public bool CannotPark { get; set; }
+    public int Parks, TrackingStops;
+
+    public ParkableMount(TypeSafeEVentNode node, string id)
+    {
+        _id = id; _cmds = new CommandSet(node);
+        _pub = new(node, EquipmentIds.State(DeviceKinds.Mount, id), EquipmentIds.GetState(DeviceKinds.Mount, id),
+            () => new MountState { Connected = true, Phase = Phase, Tracking = Phase == "Tracking", Parked = Phase == "Parked" });
+    }
+
+    public async Task StartAsync()
+    {
+        await _cmds.AddAsync<NOTESVoid, DeviceList>(EquipmentIds.List, _ =>
+        {
+            var l = new DeviceList(); l.Devices.Add(new DeviceInfo { Id = _id, Kind = DeviceKinds.Mount, DisplayName = _id, Source = "fake" }); return Task.FromResult(l);
+        }, "fake device list");
+        await _cmds.AddAsync<BinaryConvertibleBool, CommandResult>(EquipmentIds.Command(DeviceKinds.Mount, _id, "Park"), async b =>
+        {
+            Interlocked.Increment(ref Parks);
+            if (CannotPark) return CommandResult.Fail("no park position saved");
+            Phase = b.Value ? "Parked" : "Idle"; await _pub.PublishAsync(); return CommandResult.Success();
+        }, "fake park");
+        await _cmds.AddAsync<BinaryConvertibleBool, CommandResult>(EquipmentIds.Command(DeviceKinds.Mount, _id, "SetTracking"), async b =>
+        {
+            if (!b.Value) Interlocked.Increment(ref TrackingStops);
+            Phase = b.Value ? "Tracking" : "Idle"; await _pub.PublishAsync(); return CommandResult.Success();
+        }, "fake tracking");
+        await _pub.StartAsync();
+    }
+
     public ValueTask DisposeAsync() { _cmds.Dispose(); _pub.Dispose(); return ValueTask.CompletedTask; }
 }
 
@@ -278,5 +319,57 @@ public class SchedulerTests : IAsyncLifetime
         Assert.True((await Commands.CallAsync(_node, SchedulerIds.Start, NOTESVoid.Void)).Ok.Value);
         Assert.True(await Eventually(() => _imaging.Started.Count == 3), string.Join(",", _imaging.Started));
         Assert.Equal("NCP", _imaging.Started[2]);
+    }
+
+    [Fact]
+    public async Task TheMountIsParkedOnceEverythingIsDone()
+    {
+        await using var mount = new ParkableMount(_node, "OnStep"); await mount.StartAsync();
+        var s = new Schedule();
+        s.Entries.Add(Entry("NCP", 2.5, 85));
+        Assert.True((await Commands.CallAsync(_node, SchedulerIds.SetSchedule, s)).Ok.Value);
+        Assert.True((await Commands.CallAsync(_node, SchedulerIds.Start, NOTESVoid.Void)).Ok.Value);
+        Assert.True(await Eventually(() => _last is { Running.Text: "NCP" }), _last?.Message.Text);
+        await Task.Delay(1000);
+        Assert.Equal(0, mount.Parks);                                // not while it works
+        await _imaging.FinishAsync();
+        Assert.True(await Eventually(() => mount.Phase == "Parked"), $"{mount.Phase} {_last?.Message.Text}");
+        Assert.True(await Eventually(() => _last?.Message.Text.Contains("parked") == true), _last?.Message.Text);
+        await Task.Delay(1500);                                      // several checks
+        Assert.Equal(1, mount.Parks);                                // once, not on every check
+    }
+
+    [Fact]
+    public async Task WhenTheSunIsUpTheImageIsStoppedAndTheMountParked()
+    {
+        await using var mount = new ParkableMount(_node, "OnStep"); await mount.StartAsync();
+        var s = new Schedule();
+        s.Entries.Add(Entry("NCP", 2.5, 85));                         // always up, and not asked to need the dark
+        Assert.True((await Commands.CallAsync(_node, SchedulerIds.SetSchedule, s)).Ok.Value);
+        Assert.True((await Commands.CallAsync(_node, SchedulerIds.Start, NOTESVoid.Void)).Ok.Value);
+        Assert.True(await Eventually(() => _last is { Running.Text: "NCP" }), _last?.Message.Text);
+        // the morning comes: the Sun rises over a few checks
+        foreach (var t in new[] { "06:40", "07:00", "07:20", "07:40", "08:00" })
+        {
+            _now = DateTime.Parse("2026-01-16T" + t + ":00Z", null, System.Globalization.DateTimeStyles.AdjustToUniversal);
+            await Task.Delay(800);
+        }
+        Assert.True(await Eventually(() => mount.Phase == "Parked"), $"{mount.Phase} {_last?.Message.Text}");
+        Assert.True(_imaging.Aborts >= 1);
+        Assert.Equal("", _last!.Running.Text);
+    }
+
+    [Fact]
+    public async Task AMountThatCannotParkHasItsTrackingStopped()
+    {
+        await using var mount = new ParkableMount(_node, "OnStep") { CannotPark = true }; await mount.StartAsync();
+        var s = new Schedule();
+        s.Entries.Add(Entry("NCP", 2.5, 85));
+        Assert.True((await Commands.CallAsync(_node, SchedulerIds.SetSchedule, s)).Ok.Value);
+        Assert.True((await Commands.CallAsync(_node, SchedulerIds.Start, NOTESVoid.Void)).Ok.Value);
+        Assert.True(await Eventually(() => _last is { Running.Text: "NCP" }), _last?.Message.Text);
+        await _imaging.FinishAsync();
+        Assert.True(await Eventually(() => mount.TrackingStops == 1), $"{mount.Phase} {_last?.Message.Text}");
+        Assert.Equal("Idle", mount.Phase);
     }
 }

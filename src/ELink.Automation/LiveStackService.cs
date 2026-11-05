@@ -57,6 +57,13 @@ public sealed class LiveStackService : IAsyncDisposable
     private FilterStack? Primary => _stacks.Values.OrderByDescending(s => s.Counted).ThenByDescending(s => s.Stack.Frames).FirstOrDefault();
     private string _phase = "Idle", _message = "", _last = "";
     private int _rejected, _pending, _generation, _faults;
+    private long _frameBytes;
+    private double _stackSeconds;          // how long a frame takes to stack (smoothed)
+    private int _behind;                   // frames left out because the stacker was behind, this stack
+    /// <summary>How much frame data may wait for the stacker (bytes, the frame being stacked included). When the stacker falls behind
+    /// (slow alignment, short subs) a queue of whole frames grows by a 24 MP frame every shot until the station runs out of memory
+    /// and everything stalls; past this, a frame is left out of the live stack instead (it is still saved).</summary>
+    public long QueueBytes { get; set; } = 128L * 1024 * 1024;
     private double _exposure, _lastScale = double.NaN;
 
     private sealed record Item(ELink.Contracts.RawBytes Raw, string Source, double RaHours, double DecDegrees, double Seconds, int Generation, string Filter, string Pseudo = "", double Scale = double.NaN, double Angle = double.NaN)
@@ -143,7 +150,7 @@ public sealed class LiveStackService : IAsyncDisposable
         lock (_gate)
         {
             _request = r; _stacks.Clear(); _references.Clear(); _scale = r.PixelScaleArcsec.Value > 0 ? r.PixelScaleArcsec.Value : double.NaN;
-            _rejected = 0; _pending = 0; _faults = 0; _exposure = 0; _lastScale = double.NaN; _last = ""; _seen.Clear();
+            _rejected = 0; _pending = 0; _faults = 0; _behind = 0; _stackSeconds = 0; _exposure = 0; _lastScale = double.NaN; _last = ""; _seen.Clear();
             _sessionDir = dir; _framesSaved = 0;
             if (restored is not null)
             {
@@ -193,13 +200,26 @@ public sealed class LiveStackService : IAsyncDisposable
         if (shot.FrameType.Text is not ("Light" or "")) return;
         if (shot.Quality.Text == "Rejected") { Reject($"{shot.Shooter.Text}: rejected by its scope ({shot.QualityNote.Text})"); return; }
         if (!shot.Format.Text.StartsWith(".fit", StringComparison.OrdinalIgnoreCase)) { Reject($"{shot.Shooter.Text}: not FITS ({shot.Format.Text})"); return; }
-        Channel<Item> queue; int gen;
+        Channel<Item> queue = null!; int gen = 0; bool behind = false;
         lock (_gate)
         {
             if (_phase != "Stacking") return;
             // a scope relays its shooters' frames: the same frame may arrive under several ids
             if (!_seen.Add((shot.Shooter.Text, shot.Timestamp.Text, shot.Data.Ref is { } key ? key.GetHashCode() : Fingerprint(shot.Data.Data)))) return;
-            queue = _queue; gen = _generation; _pending++;
+            long bytes = shot.Data.Data.Length > 0 ? shot.Data.Data.Length : _frameBytes;
+            if (bytes > 0) _frameBytes = bytes;
+            int room = bytes > 0 ? (int)Math.Clamp(QueueBytes / bytes, 1, 16) : 16;
+            if (_pending >= room) { behind = true; }
+            else { queue = _queue; gen = _generation; _pending++; }
+        }
+        if (behind)
+        {
+            Reject($"{shot.Shooter.Text}: the stacker is behind, frame left out of the live stack (it is saved)");
+            int n; double each; lock (_gate) { n = ++_behind; each = _stackSeconds; }
+            // say why, and what helps, once and then now and then (the live picture quietly thinning out looked like clouds)
+            if (n == 1 || n % 20 == 0)
+                SessionLog.Warn(_node, "stack", FormattableString.Invariant($"the live stack is behind: a frame takes about {each:0} s to stack here, longer than the subs come in; {n} frame(s) left out of the live picture so far (they are all saved). Longer subs, or a coarser image scale, keep it up."));
+            return;
         }
         var item = new Item(shot.Data, shot.Shooter.Text, shot.PointingRaHours.Value, shot.PointingDecDegrees.Value, shot.ExposureSeconds.Value, gen, shot.Filter.Text, shot.PseudoChannel.Text, shot.PixelScaleArcsec.Value, shot.CameraAngleDegrees.Value);
         if (!queue.Writer.TryWrite(item)) { lock (_gate) _pending--; Reject($"{shot.Shooter.Text}: queue full, frame skipped"); }
@@ -242,6 +262,7 @@ public sealed class LiveStackService : IAsyncDisposable
             await foreach (var item in queue.Reader.ReadAllAsync(ct))
             {
                 string result;
+                var took = System.Diagnostics.Stopwatch.StartNew();
                 try { result = await StackOneAsync(item, ct); }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested) { return; }
                 catch (Exception ex)
@@ -256,6 +277,8 @@ public sealed class LiveStackService : IAsyncDisposable
                 }
                 lock (_gate)
                 {
+                    double t = took.Elapsed.TotalSeconds;
+                    _stackSeconds = _stackSeconds > 0 ? 0.7 * _stackSeconds + 0.3 * t : t;
                     if (item.Generation != _generation) continue;
                     _pending = Math.Max(0, _pending - 1);
                     _last = item.Source;

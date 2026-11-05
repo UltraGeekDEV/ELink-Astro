@@ -57,6 +57,8 @@ public class ImagingRequest : IBinaryConvertible
     public BinaryConvertibleDouble SkyWaitSeconds { get; set; } = 120.0;
     public BinaryConvertibleBool Resume { get; set; } = true;
     public BinaryConvertibleCollection<ImagingLayer> Layers { get; set; } = new();
+    public BinaryConvertibleDouble MinInsideShare { get; set; } = 0.5;
+    public BinaryConvertibleString Path { get; set; } = "Rows";
 
     public override string Name => "ImagingRequest";
     private static readonly NOTESDescriptor d = new();
@@ -81,6 +83,8 @@ public class ImagingRequest : IBinaryConvertible
         d.RegisterField("Resume", (ImagingRequest x) => x.Resume).Description("an image of this name was started before (another night): carry on with its coverage and stack; false = start it afresh");
         d.RegisterField("SkyWaitSeconds", (ImagingRequest x) => x.SkyWaitSeconds).Description("after 3 rejected shots in a row, a scope waits this long before the next (clouds passing)");
         d.RegisterField("Layers", (ImagingRequest x) => x.Layers, maxCount: 8).Description("kinds of data the image is made of, each with a filter, a range of pixel scales and a depth; empty = one layer of everything, shot as Exposure says");
+        d.RegisterField("MinInsideShare", (ImagingRequest x) => x.MinInsideShare).Description("the least share of a mosaic sub that must land inside the area (0 = any overhang, for an even depth to the very edge; 0.5 = the edges are finished by frames lying mostly inside, so the band along them comes out deeper instead of the time going to sky outside)");
+        d.RegisterField("Path", (ImagingRequest x) => x.Path).Description("how each pass walks the mosaic: Rows (every hop from the same side, kindest to an unguided mount's backlash) | Hilbert (along a Hilbert curve: one-step hops, the image fills in as nested squares)");
     }
     public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();

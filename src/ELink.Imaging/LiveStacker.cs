@@ -121,10 +121,12 @@ public sealed class LiveStacker
 
         lock (_gate)
         {
-            if (Frames == 0 && Channels != channels)
+            if (Frames == 0 && (Channels != channels || _sum.Length != channels))
             {
-                Channels = channels;
-                _sum = Enumerable.Range(0, channels).Select(_ => new float[_weight.Length]).ToArray();
+                // allocate first: running out of memory here must leave the stack as it was (a channel count that does not match
+                // the planes made every later frame fail out of bounds, all night)
+                var planes = Enumerable.Range(0, channels).Select(_ => new float[_weight.Length]).ToArray();
+                _sum = planes; Channels = channels;
             }
             if (RejectSigma > 0 && _sumSq is null) _sumSq = new float[_weight.Length];
             var sums = _sum; int sc = Channels;

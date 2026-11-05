@@ -115,9 +115,12 @@ await sessionLog.StartAsync();
 foreach (var id in save) await Commands.CallAsync(node, ELink.Contracts.Automation.StorageIds.Watch, new ELink.Contracts.Automation.StorageWatch { ShooterId = id });
 AtlasService? atlas = null;
 TonightService? tonight = null;
-if (File.Exists(Path.Combine(skyData, "namedstars.dat")))
+// ELink's sky pack (a file) or a KStars data directory
+bool kstars = File.Exists(Path.Combine(skyData, "namedstars.dat"));
+string? skyPack = File.Exists(skyData) ? skyData : !kstars && File.Exists(Path.Combine(AppContext.BaseDirectory, "sky", SkyPack.FileName)) ? Path.Combine(AppContext.BaseDirectory, "sky", SkyPack.FileName) : null;
+if (skyPack is not null || kstars)
 {
-    var catalog = await Task.Run(() => AtlasCatalog.LoadKStars(skyData));
+    var catalog = await Task.Run(() => skyPack is not null ? SkyPack.Read(skyPack) : AtlasCatalog.LoadKStars(skyData));
     atlas = new AtlasService(node, catalog);
     await atlas.StartAsync();
     tonight = new TonightService(node, catalog);

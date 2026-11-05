@@ -1,0 +1,91 @@
+{
+  "MountPointers": [
+    {
+      "Item1": "mount",
+      "Item2": "LX200_OnStep"
+    }
+  ],
+  "CameraShooters": [],
+  "Scopes": [
+    {
+      "Id": "newt",
+      "Name": "114/900 Newt",
+      "Pointers": [
+        "mount"
+      ],
+      "Shooters": [
+        {
+          "Id": "d3500",
+          "East": 0,
+          "North": 0
+        }
+      ],
+      "GuiderId": "",
+      "GuideShooterId": "",
+      "GuideOutput": "Pulse",
+      "GuidePortId": "",
+      "GuideTargetId": "",
+      "GuideExposure": 2,
+      "CenterAfterSlew": false,
+      "CenterShooterId": "",
+      "CenterTolerance": 1,
+      "CenterExposure": 3,
+      "CenterTries": 4,
+      "GradeFrames": true,
+      "FocusOnStart": false,
+      "RefocusEvery": 0,
+      "RefocusTemp": 0,
+      "RefocusFilter": false,
+      "RefocusHfr": 0,
+      "FocusExposure": 3,
+      "FocusStep": 3000,
+      "FocusSamples": 7,
+      "MeridianFlip": true,
+      "FlipAfterHours": 0.1,
+      "SiteId": "home",
+      "DitherEvery": 0,
+      "DitherPixels": 5,
+      "SettlePixels": 1.5,
+      "SettleSeconds": 10,
+      "SettleTimeoutSeconds": 120
+    }
+  ],
+  "Guiders": [],
+  "Trains": [
+    {
+      "Id": "d3500",
+      "Label": "114/900 + Nikon D3500",
+      "FocalLength": 900,
+      "Aperture": 114,
+      "Cameras": [
+        {
+          "Item1": "Nikon_D3500",
+          "Item2": "Imaging"
+        }
+      ],
+      "Wheel": "",
+      "Focuser": "",
+      "Rotator": "",
+      "Sensors": [
+        {
+          "Item1": "Nikon_D3500",
+          "Item2": 3.89,
+          "Item3": 6000,
+          "Item4": 4000
+        }
+      ],
+      "Settings": [
+        {
+          "Camera": "Nikon_D3500",
+          "Gain": null,
+          "Offset": null,
+          "CoolTo": null,
+          "CoolRate": 3,
+          "WarmTo": 10,
+          "PseudoMono": false
+        }
+      ],
+      "FocusOffsets": []
+    }
+  ]
+}

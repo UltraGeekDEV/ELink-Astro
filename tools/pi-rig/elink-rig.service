@@ -1,0 +1,19 @@
+[Unit]
+Description=ELink real rig station (114/900 newtonian, Nikon D3500, OnStep), web on 8090
+After=elink-rig-indi.service
+Wants=elink-rig-indi.service
+Conflicts=m31-station.service
+[Service]
+User=ultrageek
+WorkingDirectory=/home/ultrageek/elink/rig
+Environment=HOME=/home/ultrageek
+Environment=ELINK_SOLVE_FIELD=/home/ultrageek/elink/bin/solve-field
+ExecStart=/usr/bin/dotnet /home/ultrageek/elink/m31-test/pi-station/elink.dll --no-ui --listen 0.0.0.0 --port 5699 --web-listen 0.0.0.0 --web-port 8090 --ws-port 8091 --indi 127.0.0.1:7627=rig --compose /home/ultrageek/elink/rig/state/compose.json --save-dir /home/ultrageek/elink/rig/images --sky-data /nonexistent
+Restart=always
+RestartSec=5
+SuccessExitStatus=143
+MemoryAccounting=yes
+MemoryHigh=1000M
+MemoryMax=1150M
+[Install]
+WantedBy=multi-user.target

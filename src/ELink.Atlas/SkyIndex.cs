@@ -26,6 +26,9 @@ public sealed class SkyIndex<T>
 
     public int Count { get; }
 
+    /// <summary>Every item, cell by cell.</summary>
+    public IEnumerable<T> All() { foreach (var band in _cells) foreach (var cell in band) foreach (var item in cell) yield return item; }
+
     private static int Band(double dec) => Math.Clamp((int)((dec + 90) / Cell), 0, Bands - 1);
     private static int RaCell(double raHours) => (int)(Precession.NormalizeHours(raHours) * 15 / Cell) % RaCells;
 

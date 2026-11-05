@@ -10,8 +10,14 @@ public sealed class AtlasCatalog
     public SkyIndex<CatalogDso> Dsos { get; }
     public ConstellationFigure Constellations { get; }
     public GscDeepStars? DeepStars { get; }
+    /// <summary>Faint stars held in memory (a sky pack's GSC, to about magnitude 12), for fields small enough to want them.</summary>
+    public SkyIndex<CatalogStar>? FaintStars { get; private init; }
+    /// <summary>Where the data came from, for the about box.</summary>
+    public string Credits { get; private init; } = "";
     public IReadOnlyList<CatalogStar> NamedStars { get; }
     public IReadOnlyList<CatalogDso> AllDsos { get; }
+    /// <summary>The Milky Way's brightness contours (closed outlines, RA hours / Dec degrees), empty when the data has none.</summary>
+    public IReadOnlyList<IReadOnlyList<(double Ra, double Dec)>> MilkyWay { get; private init; } = Array.Empty<IReadOnlyList<(double, double)>>();
 
     /// <summary>The brightest magnitude GSC is consulted for: brighter stars come from the main catalogue.</summary>
     public const double DeepStarsFrom = 8.0;
@@ -37,7 +43,88 @@ public sealed class AtlasCatalog
             : new ConstellationFigure(Array.Empty<((double, double), (double, double))>(), Array.Empty<(string, string, double, double)>());
         var dsos = File.Exists(F("OpenNGC.kscat")) ? OpenNgcReader.Read(F("OpenNGC.kscat")) : new List<CatalogDso>();
         GscDeepStars? deep = gscData is null ? null : new GscDeepStars(data: gscData);
-        return new AtlasCatalog(stars, dsos, figures, deep is { Available: true } ? deep : null);
+        return new AtlasCatalog(stars, dsos, figures, deep is { Available: true } ? deep : null) { MilkyWay = File.Exists(F("milkyway.dat")) ? ReadMilkyWay(F("milkyway.dat")) : Array.Empty<IReadOnlyList<(double, double)>>() };
+    }
+
+    /// <summary>KStars' milkyway.dat: "M ra dec" or "S ra dec" starts a contour, "D ra dec" continues it (RA in hours).</summary>
+    public static List<IReadOnlyList<(double Ra, double Dec)>> ReadMilkyWay(string path)
+    {
+        var shapes = new List<IReadOnlyList<(double, double)>>(); List<(double, double)>? cur = null;
+        foreach (var line in File.ReadLines(path))
+        {
+            var p = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            if (p.Length < 3 || !double.TryParse(p[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var ra)
+                || !double.TryParse(p[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var dec)) continue;
+            if (p[0] is "M" or "S" || cur is null) { if (cur is { Count: > 2 }) shapes.Add(cur); cur = new(); }
+            cur.Add((ra, dec));
+        }
+        if (cur is { Count: > 2 }) shapes.Add(cur);
+        return shapes;
+    }
+
+    /// <summary>From a sky pack (see <see cref="SkyPack"/>).</summary>
+    public static AtlasCatalog FromPack(List<CatalogStar> stars, List<CatalogStar> faint, List<CatalogDso> dsos, ConstellationFigure figures,
+        IReadOnlyList<IReadOnlyList<(double, double)>> milkyWay, string credits) =>
+        new(stars, dsos, figures, null)
+        {
+            FaintStars = faint.Count > 0 ? new SkyIndex<CatalogStar>(faint, s => (s.RaHours, s.DecDegrees)) : null, MilkyWay = milkyWay, Credits = credits,
+        };
+
+    private byte[]? _glow;
+    public const int GlowWidth = 1440, GlowHeight = 720;
+
+    /// <summary>The Milky Way's glow as an all-sky map (equirectangular, RA 0h..24h across, Dec +90..-90 down; 0..255), made from
+    /// how densely the faint stars crowd the sky: the band is the light of stars too faint to see one by one, so where faint
+    /// stars are many it glows, and the dust lanes (the Great Rift) show as the gaps. The faint stars of a sky pack (to about
+    /// magnitude 12) trace it well; a KStars catalogue (to 8) only roughly.</summary>
+    public byte[] GlowMap() => _glow ??= MakeGlow(FaintStars?.All() ?? Stars.All().Where(s => s.Magnitude > 6));
+
+    private static byte[] MakeGlow(IEnumerable<CatalogStar> stars)
+    {
+        int w = GlowWidth, h = GlowHeight;
+        var acc = new double[w * h];
+        foreach (var s in stars)
+        {
+            int c = (int)((s.RaHours % 24 + 24) % 24 / 24 * w) % w, r = Math.Clamp((int)((90 - s.DecDegrees) / 180 * h), 0, h - 1);
+            acc[r * w + c] += 1;
+        }
+        // per unit of sky: a cell near a pole covers less of it
+        for (int r = 0; r < h; r++)
+        {
+            double area = Math.Max(Math.Cos((90 - (r + 0.5) * 180 / h) * Math.PI / 180), 0.02);
+            for (int c = 0; c < w; c++) acc[r * w + c] /= area;
+        }
+        // smooth over about a degree (wider in RA near the poles, where its cells are narrow)
+        var tmp = new double[acc.Length];
+        for (int pass = 0; pass < 3; pass++)
+        {
+            for (int r = 0; r < h; r++)
+            {
+                double cosd = Math.Max(Math.Cos((90 - (r + 0.5) * 180 / h) * Math.PI / 180), 0.02);
+                int rad = Math.Min(w / 2 - 1, (int)Math.Ceiling(3 / cosd));
+                double sum = 0; int row = r * w;
+                for (int k = -rad; k <= rad; k++) sum += acc[row + ((k % w) + w) % w];
+                for (int c = 0; c < w; c++) { tmp[row + c] = sum / (2 * rad + 1); sum += acc[row + (c + rad + 1) % w] - acc[row + ((c - rad) % w + w) % w]; }
+            }
+            for (int c = 0; c < w; c++)
+                for (int r = 0; r < h; r++)
+                {
+                    double sum = 0; int n = 0;
+                    for (int k = Math.Max(0, r - 3); k <= Math.Min(h - 1, r + 3); k++) { sum += tmp[k * w + c]; n++; }
+                    acc[r * w + c] = sum / n;
+                }
+        }
+        // the band against the rest of the sky: the darkest skies (the galactic poles) are nothing, the richest star clouds full
+        var sorted = acc.Where(v => v > 0).OrderBy(v => v).ToArray();
+        if (sorted.Length == 0) return new byte[w * h];
+        double floor = sorted[(int)(sorted.Length * 0.6)], top = sorted[(int)(sorted.Length * 0.998)];
+        var glow = new byte[w * h];
+        for (int i = 0; i < acc.Length; i++)
+        {
+            double v = Math.Clamp((acc[i] - floor) / Math.Max(top - floor, 1e-9), 0, 1);
+            glow[i] = (byte)Math.Round(255 * Math.Pow(v, 1.25));
+        }
+        return glow;
     }
 
     /// <summary>For tests and other sources: build from lists.</summary>

@@ -28,6 +28,56 @@ public class CoveragePlannerTests(ITestOutputHelper output)
 
     private int LongHops(Run r) => Enumerable.Range(1, r.Visits.Count - 1).Count(i => r.Hop(i) > 1.6 * (double.IsNaN(r.Planner.PassHop) ? r.Planner.Stepover : r.Planner.PassHop));
 
+    [Theory]
+    [InlineData(8, 8)]
+    [InlineData(5, 11)]
+    public void TheHilbertOrderVisitsEveryCellOnceInOneStepHops(int rows, int cols)
+    {
+        var order = CoveragePlanner.HilbertOrder(rows, cols).ToList();
+        Assert.Equal(rows * cols, order.Count);
+        Assert.Equal(rows * cols, order.Distinct().Count());
+        Assert.All(order, o => Assert.True(o.Row < rows && o.Col < cols));
+        int steps = Enumerable.Range(1, order.Count - 1).Count(i => Math.Abs(order[i].Row - order[i - 1].Row) + Math.Abs(order[i].Col - order[i - 1].Col) == 1);
+        if (rows == cols) Assert.Equal(order.Count - 1, steps);                    // a whole square: every hop is one step
+        else Assert.True(steps >= 0.85 * (order.Count - 1), $"{steps} one-step hops of {order.Count - 1}");
+    }
+
+    [Fact]
+    public void AHilbertPathPaintsTheMosaicToTheDepthToo()
+    {
+        FrameSpec[] frames = [Frame(1.49, 0.993)];
+        var rows = Simulate(3, 1.8, frames, exposure: 30, target: 1200, stepover: 0.1, cell: 0.04, configure: p => p.MinInside = 0.5);
+        var hilbert = Simulate(3, 1.8, frames, exposure: 30, target: 1200, stepover: 0.1, cell: 0.04, configure: p => { p.MinInside = 0.5; p.Hilbert = true; });
+        Assert.True(hilbert.Planner.Map.Min() >= 1200 - 1e-6, $"min {hilbert.Planner.Map.Min()}");
+        Assert.InRange(hilbert.Visits.Count, 0.8 * rows.Visits.Count, 1.25 * rows.Visits.Count);
+    }
+
+    [Fact]
+    public void RequiringSubsMostlyInsideCutsTheShotsAndKeepsTheDepth()
+    {
+        // the newt's frame on a 3° x 1.8° area turned 35° against it: an even edge needs frames hanging far out
+        FrameSpec[] frames = [Frame(1.49, 0.993)];
+        double Inside(Pose p, CoveragePlanner pl)
+        {
+            var fp = CoverageMap.Footprints(p, frames, 35)[0];
+            double c = Math.Cos(fp.Theta), s = Math.Sin(fp.Theta); int k = 0;
+            for (int i = 0; i < 30; i++) for (int j = 0; j < 20; j++)
+            {
+                double lx = (-1 + (i + 0.5) / 15) * fp.HalfWidth, ly = (-1 + (j + 0.5) / 10) * fp.HalfHeight;
+                double x = fp.Cx + lx * c + ly * s, y = fp.Cy - lx * s + ly * c;
+                if (Math.Abs(x) <= 1.5 && Math.Abs(y) <= 0.9) k++;
+            }
+            return k / 600.0;
+        }
+        var even = Simulate(3, 1.8, frames, exposure: 30, target: 1200, stepover: 0.1, areaAngle: 35, cell: 0.04);
+        var inside = Simulate(3, 1.8, frames, exposure: 30, target: 1200, stepover: 0.1, areaAngle: 35, cell: 0.04, configure: p => p.MinInside = 0.5);
+        Assert.True(even.Planner.Map.Min() >= 1200 - 1e-6);
+        Assert.True(inside.Planner.Map.Min() >= 1200 - 1e-6, $"min {inside.Planner.Map.Min()}");          // still the depth everywhere
+        Assert.True(inside.Visits.Count < 0.9 * even.Visits.Count, $"{inside.Visits.Count} shots against {even.Visits.Count}");
+        Assert.All(inside.Visits, v => Assert.True(Inside(v, inside.Planner) >= 0.45, $"a shot at {v.X:0.00},{v.Y:0.00} is {Inside(v, inside.Planner):P0} inside"));
+        Assert.True(inside.Planner.Map.Mean() > even.Planner.Map.Mean());                              // the time saved from the sky went inside
+    }
+
     [Fact]
     public void PaintsASingleFrameFieldToTheTargetEvenly()
     {

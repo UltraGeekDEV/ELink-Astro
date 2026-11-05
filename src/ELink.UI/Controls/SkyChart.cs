@@ -55,6 +55,7 @@ public sealed class SkyChart : Control
     public static readonly StyledProperty<ICommand?> PickCommandProperty = AvaloniaProperty.Register<SkyChart, ICommand?>(nameof(PickCommand));
     public static readonly StyledProperty<bool> ShowGridProperty = AvaloniaProperty.Register<SkyChart, bool>(nameof(ShowGrid), true);
     public static readonly StyledProperty<bool> ShowConstellationsProperty = AvaloniaProperty.Register<SkyChart, bool>(nameof(ShowConstellations), true);
+    public static readonly StyledProperty<SkyGlowMap?> SkyGlowProperty = AvaloniaProperty.Register<SkyChart, SkyGlowMap?>(nameof(SkyGlow));
 
     public double CenterRa { get => GetValue(CenterRaProperty); set => SetValue(CenterRaProperty, value); }
     public double CenterDec { get => GetValue(CenterDecProperty); set => SetValue(CenterDecProperty, value); }
@@ -83,11 +84,13 @@ public sealed class SkyChart : Control
     public ICommand? PickCommand { get => GetValue(PickCommandProperty); set => SetValue(PickCommandProperty, value); }
     public bool ShowGrid { get => GetValue(ShowGridProperty); set => SetValue(ShowGridProperty, value); }
     public bool ShowConstellations { get => GetValue(ShowConstellationsProperty); set => SetValue(ShowConstellationsProperty, value); }
+    /// <summary>The Milky Way's glow, drawn under everything else.</summary>
+    public SkyGlowMap? SkyGlow { get => GetValue(SkyGlowProperty); set => SetValue(SkyGlowProperty, value); }
 
     static SkyChart()
     {
         AffectsRender<SkyChart>(CenterRaProperty, CenterDecProperty, FovProperty, StarsProperty, DsosProperty, LinesProperty, LabelsProperty,
-            MarkersProperty, PolygonsProperty, HorizonProperty, BodiesProperty, ShowGridProperty, ShowConstellationsProperty, StarLimitProperty, FrameProperty, ImagesProperty);
+            MarkersProperty, PolygonsProperty, HorizonProperty, BodiesProperty, ShowGridProperty, ShowConstellationsProperty, StarLimitProperty, FrameProperty, ImagesProperty, SkyGlowProperty);
         FocusableProperty.OverrideDefaultValue<SkyChart>(true);
     }
 
@@ -275,6 +278,7 @@ public sealed class SkyChart : Control
     {
         var proj = Projection;
         ctx.FillRectangle(Background, new Rect(Bounds.Size));
+        DrawSkyGlow(ctx, proj);
         DrawImages(ctx, proj);
         if (ShowGrid) DrawGrid(ctx, proj);
         if (ShowConstellations) DrawConstellations(ctx, proj);
@@ -345,55 +349,205 @@ public sealed class SkyChart : Control
         _ => Color.FromRgb(170, 170, 190),
     };
 
+    /// <summary>The colour an object glows with in a picture: hydrogen red for emission nebulae and remnants, blue for the
+    /// reflection nebulae (the dust round bright blue stars), teal for planetaries, the warm white of old stars for galaxies and
+    /// globulars. Clusters and dark nebulae have no glow of their own (their stars are drawn).</summary>
+    public static DsoTextures.Look? LookOf(ChartDso d)
+    {
+        string name = d.CommonName.ToLowerInvariant();
+        if (d.Kind is "Nebula" && (name.Contains("reflection") || name.Contains("merope") || name.Contains("maia") || name.Contains("witch head")
+                || name.Contains("iris") || name.Contains("running man") || name.Contains("rho oph") || name.Contains("blue horsehead")))
+            return DsoTextures.Look.Reflection;
+        return d.Kind switch
+        {
+            "Galaxy" => DsoTextures.Look.Galaxy,
+            "GlobularCluster" => DsoTextures.Look.Globular,
+            "Nebula" => DsoTextures.Look.Emission,
+            "SupernovaRemnant" => DsoTextures.Look.Remnant,
+            "PlanetaryNebula" => DsoTextures.Look.Planetary,
+            _ => null,
+        };
+    }
+
+    /// <summary>How strongly an object shows (0..1), from its surface brightness: its magnitude spread over its area. Objects
+    /// with no magnitude (most nebulae) get a middling strength.</summary>
+    public static double GlowStrength(ChartDso d)
+    {
+        double major = Math.Max(d.MajorArcmin, 0.3), minor = d.MinorArcmin > 0 ? d.MinorArcmin : major;
+        if (float.IsNaN(d.Magnitude)) return d.Kind is "Nebula" or "SupernovaRemnant" ? 0.55 : 0.4;
+        double sb = d.Magnitude + 2.5 * Math.Log10(Math.PI / 4 * major * minor);   // magnitudes per square arcminute
+        return Math.Clamp(1.15 - (sb - 9) * 0.08, 0.18, 1);
+    }
+
     private void DrawDsos(DrawingContext ctx, SkyProjection proj)
     {
         if (Dsos is not { } dsos) return;
         double ppd = proj.PixelsPerDegree;
+        // the pictures first, faintest first, so bright cores sit on top of the haze round them
+        foreach (var d in dsos.OrderBy(GlowStrength))
+        {
+            if (LookOf(d) is not { } look || !proj.TryProject(d.RaHours, d.DecDegrees, out var x, out var y) || !Visible(x, y, 600)) continue;
+            double a = d.MajorArcmin / 60 * ppd / 2, b = (d.MinorArcmin > 0 ? d.MinorArcmin : d.MajorArcmin) / 60 * ppd / 2;
+            if (a < 1.2) continue;
+            b = Math.Max(b, a * 0.06);
+            double hw = b * DsoTextures.Reach, hh = a * DsoTextures.Reach;
+            var tex = DsoTextures.Get(d.Id, look, b / a, 2 * hh);
+            // a tiny object is a faint smudge, not a bright blob; a big one shows at its full strength
+            double opacity = GlowStrength(d) * Math.Clamp(a / 6, 0.35, 1);
+            using (ctx.PushTransform(Matrix.CreateRotation(-d.PositionAngle * Math.PI / 180) * Matrix.CreateTranslation(x, y)))
+            using (ctx.PushOpacity(opacity))
+                ctx.DrawImage(tex, new Rect(0, 0, tex.PixelSize.Width, tex.PixelSize.Height), new Rect(-hw, -hh, 2 * hw, 2 * hh));
+        }
         foreach (var d in dsos)
         {
             if (!proj.TryProject(d.RaHours, d.DecDegrees, out var x, out var y) || !Visible(x, y, 200)) continue;
             double a = Math.Max(3, d.MajorArcmin / 60 * ppd / 2), b = Math.Max(3, (d.MinorArcmin > 0 ? d.MinorArcmin : d.MajorArcmin) / 60 * ppd / 2);
             var color = KindColor(d.Kind);
-            var pen = new Pen(new SolidColorBrush(color, 0.85), 1.2);
-            // position angle: from north (up) toward east (left)
-            using (ctx.PushTransform(Matrix.CreateRotation(-d.PositionAngle * Math.PI / 180) * Matrix.CreateTranslation(x, y)))
-                ctx.DrawEllipse(null, pen, new Point(0, 0), b, a);
-            bool label = Fov < 25 ? (a > 4 || (!float.IsNaN(d.Magnitude) && d.Magnitude < 11)) : !float.IsNaN(d.Magnitude) && d.Magnitude < 7.5;
-            if (label) Text(ctx, d.Id, x + b + 2, y - 6, new SolidColorBrush(color, 0.9), 10);
+            // what has a picture needs no outline; clusters and dark nebulae get a light one, so they can be found
+            bool pictured = LookOf(d) is not null && d.MajorArcmin / 60 * ppd / 2 >= 1.2;
+            if (!pictured)
+            {
+                var pen = new Pen(new SolidColorBrush(color, 0.38), 0.9, d.Kind is "OpenCluster" or "Asterism" ? new DashStyle(new double[] { 3, 3 }, 0) : null);
+                using (ctx.PushTransform(Matrix.CreateRotation(-d.PositionAngle * Math.PI / 180) * Matrix.CreateTranslation(x, y)))
+                    ctx.DrawEllipse(null, pen, new Point(0, 0), b, a);
+            }
+            bool label = Fov < 25 ? (a > 6 || (!float.IsNaN(d.Magnitude) && d.Magnitude < 10)) : !float.IsNaN(d.Magnitude) && d.Magnitude < 6.5;
+            if (label)
+            {
+                string text = d.CommonName != "" && Fov < 40 && d.CommonName.Length < 28 ? $"{d.Id}  {d.CommonName}" : d.Id;
+                Text(ctx, text, x + Math.Min(b, 60) + 4, y - 6, new SolidColorBrush(color, 0.7), 10);
+            }
         }
     }
 
-    /// <summary>Star colour from its B-V index: blue-white through white and yellow to orange-red.</summary>
+    /// <summary>Star colour from its B-V index, as a star looks in a picture: B-V to temperature (Ballesteros), the temperature's
+    /// black-body colour, then about half way back to white (stars are pale; only the hot and the cool ones are clearly tinted).</summary>
     public static Color StarColor(float bv)
     {
-        double t = Math.Clamp((bv + 0.3) / 2.0, 0, 1);
-        (double r, double g, double b) = t < 0.25 ? Lerp((170, 190, 255), (235, 240, 255), t / 0.25)
-            : t < 0.5 ? Lerp((235, 240, 255), (255, 245, 220), (t - 0.25) / 0.25)
-            : t < 0.75 ? Lerp((255, 245, 220), (255, 205, 140), (t - 0.5) / 0.25)
-            : Lerp((255, 205, 140), (255, 150, 110), (t - 0.75) / 0.25);
-        return Color.FromRgb((byte)r, (byte)g, (byte)b);
+        double b = float.IsNaN(bv) ? 0.6 : Math.Clamp(bv, -0.4, 2.0);
+        double t = 4600 * (1 / (0.92 * b + 1.7) + 1 / (0.92 * b + 0.62));
+        var (r, g, bl) = BlackBody(t);
+        double m = Math.Max(r, Math.Max(g, bl));
+        r /= m; g /= m; bl /= m;
+        const double keep = 0.55;
+        return Color.FromRgb((byte)(255 * (1 - keep + keep * r)), (byte)(255 * (1 - keep + keep * g)), (byte)(255 * (1 - keep + keep * bl)));
     }
 
-    private static (double, double, double) Lerp((double, double, double) a, (double, double, double) b, double t) =>
-        (a.Item1 + (b.Item1 - a.Item1) * t, a.Item2 + (b.Item2 - a.Item2) * t, a.Item3 + (b.Item3 - a.Item3) * t);
+    /// <summary>The sRGB colour of a black body (Tanner Helland's fit), 0..1 a channel.</summary>
+    private static (double R, double G, double B) BlackBody(double kelvin)
+    {
+        double t = Math.Clamp(kelvin, 1000, 40000) / 100, r, g, b;
+        r = t <= 66 ? 255 : 329.698727446 * Math.Pow(t - 60, -0.1332047592);
+        g = t <= 66 ? 99.4708025861 * Math.Log(t) - 161.1195681661 : 288.1221695283 * Math.Pow(t - 60, -0.0755148492);
+        b = t >= 66 ? 255 : t <= 19 ? 0 : 138.5177312231 * Math.Log(t - 10) - 305.0447927307;
+        return (Math.Clamp(r, 0, 255) / 255, Math.Clamp(g, 0, 255) / 255, Math.Clamp(b, 0, 255) / 255);
+    }
 
-    /// <summary>Disc radius in pixels for a magnitude, relative to the faintest drawn.</summary>
-    public static double StarRadius(float magnitude, double limit) => Math.Clamp(0.7 + (limit - magnitude) * 0.55, 0.7, 7);
+    /// <summary>Core radius in pixels for a magnitude: grows with the star's light (about a third root of the flux, as a star's
+    /// image on a sensor does), from a pinpoint at the faintest drawn.</summary>
+    public static double StarRadius(float magnitude, double limit)
+    {
+        double flux = Math.Pow(10, -0.4 * (magnitude - limit));
+        return Math.Clamp(0.42 + 0.5 * Math.Pow(Math.Max(flux, 0), 0.3), 0.5, 7.5);
+    }
+
+    /// <summary>How opaque a star's core is: the faintest are barely there, a few magnitudes up they are solid.</summary>
+    public static double StarAlpha(float magnitude, double limit) => Math.Clamp(0.22 + 0.26 * (limit - magnitude), 0.22, 1);
+
+    private readonly Dictionary<(int, int), IBrush> _starBrushes = new();
+    private readonly Dictionary<int, IBrush> _haloBrushes = new();
+    private readonly Dictionary<int, IBrush> _spikeBrushes = new();
+
+    private static Color Toward(Color c, Color to, double t) =>
+        Color.FromArgb(c.A, (byte)(c.R + (to.R - c.R) * t), (byte)(c.G + (to.G - c.G) * t), (byte)(c.B + (to.B - c.B) * t));
 
     private void DrawStars(DrawingContext ctx, SkyProjection proj)
     {
         if (Stars is not { } stars) return;
         double limit = StarLimit;
-        var brushes = new Dictionary<int, IBrush>();
-        foreach (var s in stars)
+        foreach (var s in stars.OrderByDescending(s => s.Magnitude))     // faint first: bright stars on top
         {
-            if (!proj.TryProject(s.RaHours, s.DecDegrees, out var x, out var y) || !Visible(x, y, 10)) continue;
-            int key = (int)Math.Round((s.ColorIndex + 0.3) * 10);
-            if (!brushes.TryGetValue(key, out var brush)) brushes[key] = brush = new SolidColorBrush(StarColor(s.ColorIndex));
+            if (!proj.TryProject(s.RaHours, s.DecDegrees, out var x, out var y) || !Visible(x, y, 60)) continue;
+            int ckey = float.IsNaN(s.ColorIndex) ? 99 : (int)Math.Round((s.ColorIndex + 0.4) * 20);
+            var tint = StarColor(s.ColorIndex);
             double r = StarRadius(s.Magnitude, limit);
+            double above = limit - s.Magnitude;              // magnitudes above the faintest shown
+            if (above > 2.2)
+            {
+                // the bloom: light scattered round a bright star, in its colour (stronger than the core's, as in a photograph)
+                if (!_haloBrushes.TryGetValue(ckey, out var halo))
+                {
+                    var c = Toward(tint, Color.FromRgb(tint.R < 200 ? (byte)90 : (byte)255, tint.G, tint.B < 200 ? (byte)90 : (byte)255), 0.25);
+                    _haloBrushes[ckey] = halo = new RadialGradientBrush { GradientStops = new GradientStops
+                    {
+                        new GradientStop(Color.FromArgb(190, c.R, c.G, c.B), 0), new GradientStop(Color.FromArgb(80, c.R, c.G, c.B), 0.18),
+                        new GradientStop(Color.FromArgb(26, c.R, c.G, c.B), 0.45), new GradientStop(Color.FromArgb(7, c.R, c.G, c.B), 0.75),
+                        new GradientStop(Color.FromArgb(0, c.R, c.G, c.B), 1),
+                    } };
+                }
+                double hr = r * (2.6 + 0.55 * Math.Min(above, 9));
+                ctx.DrawEllipse(halo, null, new Point(x, y), hr, hr);
+                if (above > 5.5)
+                {
+                    // the very brightest: faint diffraction spikes
+                    if (!_spikeBrushes.TryGetValue(ckey, out var spike))
+                        _spikeBrushes[ckey] = spike = new LinearGradientBrush
+                        {
+                            StartPoint = new RelativePoint(0, 0.5, RelativeUnit.Relative), EndPoint = new RelativePoint(1, 0.5, RelativeUnit.Relative),
+                            GradientStops = new GradientStops { new GradientStop(Color.FromArgb(0, tint.R, tint.G, tint.B), 0), new GradientStop(Color.FromArgb(120, tint.R, tint.G, tint.B), 0.5), new GradientStop(Color.FromArgb(0, tint.R, tint.G, tint.B), 1) },
+                        };
+                    double len = r * (5 + 1.2 * (above - 5.5));
+                    ctx.FillRectangle(spike, new Rect(x - len, y - 0.6, 2 * len, 1.2));
+                    using (ctx.PushTransform(Matrix.CreateRotation(Math.PI / 2) * Matrix.CreateTranslation(x, y)))
+                        ctx.FillRectangle(spike, new Rect(-len, -0.6, 2 * len, 1.2));
+                }
+            }
+            // the core: white-hot in the middle of bright stars (a saturated star is white), the true tint in faint ones
+            int akey = (int)Math.Round(StarAlpha(s.Magnitude, limit) * 10);
+            double white = Math.Clamp((above - 1.5) / 5, 0, 0.75);
+            int wkey = (int)Math.Round(white * 8);
+            if (!_starBrushes.TryGetValue((ckey * 16 + wkey, akey), out var brush))
+                _starBrushes[(ckey * 16 + wkey, akey)] = brush = new SolidColorBrush(Toward(tint, Colors.White, wkey / 8.0), akey / 10.0);
             ctx.DrawEllipse(brush, null, new Point(x, y), r, r);
-            if (s.Label != "" && (s.Magnitude < 2.2 || (Fov < 40 && s.Magnitude < 4.5) || Fov < 12)) Text(ctx, s.Label, x + r + 2, y - 6, StarText, 10);
+            if (s.Label != "" && (s.Magnitude < 2.2 || (Fov < 40 && s.Magnitude < 4.5) || Fov < 12)) Text(ctx, s.Label, x + r + 3, y - 6, StarText, 10);
         }
+    }
+
+    // ---- the Milky Way --------------------------------------------------------------------------------------------
+
+    private Avalonia.Media.Imaging.WriteableBitmap? _glowBitmap;
+    private (double, double, double, double, double, SkyGlowMap?) _glowKey;
+    private const int GlowStep = 3;          // one glow pixel per 3x3 screen pixels: it is smooth anyway
+
+    /// <summary>The Milky Way as a soft band: every few screen pixels looks up its sky position in the glow map. Rebuilt only
+    /// when the view changes.</summary>
+    private void DrawSkyGlow(DrawingContext ctx, SkyProjection proj)
+    {
+        if (SkyGlow is not { } map) return;
+        int w = Math.Max(1, (int)Math.Ceiling(Bounds.Width / GlowStep)), h = Math.Max(1, (int)Math.Ceiling(Bounds.Height / GlowStep));
+        var key = (CenterRa, CenterDec, Fov, Bounds.Width, Bounds.Height, map);
+        if (_glowBitmap is null || _glowKey != key || _glowBitmap.PixelSize.Width != w || _glowBitmap.PixelSize.Height != h)
+        {
+            _glowBitmap?.Dispose();
+            _glowBitmap = new Avalonia.Media.Imaging.WriteableBitmap(new PixelSize(w, h), new Vector(96, 96), Avalonia.Platform.PixelFormat.Bgra8888, Avalonia.Platform.AlphaFormat.Premul);
+            var px = new int[w * h];
+            for (int j = 0; j < h; j++)
+                for (int i = 0; i < w; i++)
+                {
+                    var (ra, dec) = proj.Unproject((i + 0.5) * GlowStep, (j + 0.5) * GlowStep);
+                    if (double.IsNaN(ra) || double.IsNaN(dec)) continue;
+                    double v = map.Sample(ra, dec);
+                    if (v <= 0.002) continue;
+                    // a faint, slightly cool-white band; the dust lanes show as the gaps between the contours
+                    double a = Math.Pow(v, 0.85) * 0.5;
+                    int A = (int)(255 * a), R = (int)(205 * a), G = (int)(200 * a), B = (int)(215 * a);
+                    px[j * w + i] = (A << 24) | (R << 16) | (G << 8) | B;
+                }
+            using (var fb = _glowBitmap.Lock())
+                for (int j = 0; j < h; j++) System.Runtime.InteropServices.Marshal.Copy(px, j * w, fb.Address + j * fb.RowBytes, w);
+            _glowKey = key;
+        }
+        ctx.DrawImage(_glowBitmap, new Rect(0, 0, w, h), new Rect(0, 0, w * GlowStep, h * GlowStep));
     }
 
     private static readonly IPen HorizonPen = new Pen(new SolidColorBrush(Color.FromArgb(220, 120, 200, 90)), 2.2);

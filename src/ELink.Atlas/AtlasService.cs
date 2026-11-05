@@ -16,6 +16,8 @@ public sealed class AtlasService : IAsyncDisposable
 
     /// <summary>Fields at most this wide (radius, degrees) also get faint stars from the GSC.</summary>
     public double DeepStarRadiusLimit { get; set; } = 3.0;
+    /// <summary>Fields at most this wide (radius, degrees) get the sky pack's faint stars.</summary>
+    public double FaintStarRadiusLimit { get; set; } = 12.0;
 
     public AtlasService(TypeSafeEVentNode node, AtlasCatalog catalog)
     {
@@ -27,6 +29,7 @@ public sealed class AtlasService : IAsyncDisposable
     {
         await _commands.AddAsync<AtlasQuery, AtlasChunk>(AtlasIds.Query, QueryAsync, "stars and deep-sky objects in a region of the sky");
         await _commands.AddAsync<NOTESVoid, ConstellationSet>(AtlasIds.Constellations, _ => Task.FromResult(Figures()), "constellation lines and labels of the whole sky");
+        await _commands.AddAsync<NOTESVoid, MilkyWayMap>(AtlasIds.MilkyWay, _ => Task.Run(MilkyWay), "the Milky Way's glow over the whole sky");
         await _commands.AddAsync<BinaryConvertibleString, AtlasHits>(AtlasIds.Search, s => Task.FromResult(Search(s.Text)), "find a star or deep-sky object by name or designation");
     }
 
@@ -38,12 +41,16 @@ public sealed class AtlasService : IAsyncDisposable
         double starLimit = q.StarMagnitudeLimit.Value, dsoLimit = q.DsoMagnitudeLimit.Value;
 
         var stars = _catalog.Stars.Cone(ra, dec, r).Where(s => s.Magnitude <= starLimit).ToList();
-        if (_catalog.DeepStars is { } gsc && starLimit > AtlasCatalog.DeepStarsFrom && r <= DeepStarRadiusLimit && stars.Count < maxStars)
+        // the faint stars a sky pack carries (in memory, so wider fields than the GSC tool allows)
+        if (_catalog.FaintStars is { } faint && starLimit > AtlasCatalog.DeepStarsFrom && r <= FaintStarRadiusLimit)
+            stars.AddRange(faint.Cone(ra, dec, r).Where(s => s.Magnitude > AtlasCatalog.DeepStarsFrom && s.Magnitude <= starLimit));
+        double gscFrom = _catalog.FaintStars is not null ? 12.0 : AtlasCatalog.DeepStarsFrom;   // a pack has the GSC to 12 already
+        if (_catalog.DeepStars is { } gsc && starLimit > gscFrom && r <= DeepStarRadiusLimit && stars.Count < maxStars)
         {
             try
             {
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-                stars.AddRange(await gsc.QueryAsync(ra, dec, r, AtlasCatalog.DeepStarsFrom, starLimit, maxStars - stars.Count, cts.Token));
+                stars.AddRange(await gsc.QueryAsync(ra, dec, r, gscFrom, starLimit, maxStars - stars.Count, cts.Token));
             }
             catch (Exception ex) when (ex is OperationCanceledException or System.ComponentModel.Win32Exception or InvalidOperationException) { /* no faint stars this time */ }
         }
@@ -63,6 +70,8 @@ public sealed class AtlasService : IAsyncDisposable
             });
         return chunk;
     }
+
+    private MilkyWayMap MilkyWay() => new() { Width = AtlasCatalog.GlowWidth, Height = AtlasCatalog.GlowHeight, Data = new ELink.Contracts.RawBytes(_catalog.GlowMap()) };
 
     private ConstellationSet Figures()
     {

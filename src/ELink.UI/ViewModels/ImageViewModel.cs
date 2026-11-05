@@ -85,6 +85,11 @@ public sealed partial class ImageViewModel : ObservableObject, IDisposable
     [ObservableProperty] private double _targetMinutes = 60;
     [ObservableProperty] private double _stepover;
     [ObservableProperty] private double _ditherArcsec = 30;
+    /// <summary>The least share (percent) of a mosaic sub that must land inside the area.</summary>
+    [ObservableProperty] private double _insidePercent = 50;
+    /// <summary>How each pass walks the mosaic: Rows or Hilbert.</summary>
+    [ObservableProperty] private string _path = "Rows";
+    public string[] Paths { get; } = ["Rows", "Hilbert"];
     [ObservableProperty] private int _maxVisits;
     [ObservableProperty] private bool _liveStack = true;
     /// <summary>Save the frames of the scopes that take the image (to the folder under Advanced › Saving frames).</summary>
@@ -180,7 +185,7 @@ public sealed partial class ImageViewModel : ObservableObject, IDisposable
         Label = r.Label.Text; CenterRa = Sexagesimal.Format(r.Center.RaHours.Value, 0); CenterDec = Sexagesimal.Format(r.Center.DecDegrees.Value, 0);
         Width = r.WidthDegrees.Value; Height = r.HeightDegrees.Value; PositionAngle = r.PositionAngleDegrees.Value;
         ExposureSeconds = r.Exposure.Seconds.Value; Filter = r.Exposure.Filter.Text; Iso = r.Exposure.Iso.Text; TargetMinutes = r.TargetSeconds.Value / 60;
-        Stepover = r.StepoverDegrees.Value; DitherArcsec = r.DitherArcsec.Value; OutputScale = r.OutputPixelScaleArcsec.Value; LiveStack = r.LiveStack.Value;
+        Stepover = r.StepoverDegrees.Value; DitherArcsec = r.DitherArcsec.Value; InsidePercent = Math.Round(r.MinInsideShare.Value * 100); Path = r.Path.Text is "Hilbert" ? "Hilbert" : "Rows"; OutputScale = r.OutputPixelScaleArcsec.Value; LiveStack = r.LiveStack.Value;
         foreach (var s in Scopes) s.Selected = r.ScopeIds.Any(x => x.Text == s.Id);
         LayerRows.Clear();
         foreach (var l in r.Layers) LayerRows.Add(new LayerRow { Name = l.Label.Text, Filter = l.Filter.Text, FinestScale = l.MinScaleArcsec.Value, CoarsestScale = l.MaxScaleArcsec.Value, Minutes = l.TargetSeconds.Value / 60 });
@@ -208,7 +213,7 @@ public sealed partial class ImageViewModel : ObservableObject, IDisposable
             Label = Label.Trim() == "" ? "Image" : Label.Trim(), Center = new SkyTarget { RaHours = ra, DecDegrees = dec, Epoch = "J2000" },
             WidthDegrees = Width, HeightDegrees = Height, PositionAngleDegrees = PositionAngle,
             Exposure = new ShooterExposure { Seconds = ExposureSeconds, Filter = Filter.Trim(), FrameType = "Light", Iso = Iso.Trim() },
-            TargetSeconds = TargetMinutes * 60, StepoverDegrees = Stepover, DitherArcsec = DitherArcsec, MaxVisits = MaxVisits,
+            TargetSeconds = TargetMinutes * 60, StepoverDegrees = Stepover, DitherArcsec = DitherArcsec, MaxVisits = MaxVisits, MinInsideShare = Math.Clamp(InsidePercent, 0, 90) / 100, Path = Path,
             WeatherId = SelectedWeather ?? "", LiveStack = LiveStack, OutputPixelScaleArcsec = OutputScale, Resume = !StartAfresh,
         };
         foreach (var row in LayerRows)

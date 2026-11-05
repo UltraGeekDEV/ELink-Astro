@@ -43,6 +43,15 @@ switch (verb)
             Log($"{verb}: {r.Ok.Value} {r.Error.Text}");
             break;
         }
+    case "fetch":
+        {
+            // the live stack as a 32-bit FITS: night HOST PORT fetch FILE [MAXWIDTH]
+            var q = new LiveStackImageRequest { MaxWidth = args.Length > 4 ? int.Parse(args[4]) : 0 };
+            var img = (await node.CallFunctionAsync<LiveStackImageRequest, LiveStackImage>(LiveStackIds.GetImage, q, TimeSpan.FromSeconds(120)))!.First();
+            Log($"stack: {img.Ok.Value} {img.Message.Text} {img.Width.Value} x {img.Height.Value} x {img.Channels.Value}, {img.Frames.Value} frames, {img.PixelScaleArcsec.Value:0.00}\"/px");
+            if (img.Ok.Value) await File.WriteAllBytesAsync(args[3], img.Image.Data);
+            break;
+        }
     case "saved":
         {
             var s = await node.CallFunctionAsync<NOTESVoid, StorageState>(StorageIds.GetState, NOTESVoid.Void, TimeSpan.FromSeconds(10));
@@ -56,12 +65,16 @@ ImagingRequest Request(bool stack)
 {
     // M 31, the field of a 150 mm lens on APS-C (23.5 x 15.6 mm -> 8.97° x 5.95°), turned along the galaxy; 30 s unguided subs;
     // the picture at 9.3"/px, about 3470 x 2300 = 8 MP
+    // NIGHT_* environment variables frame something else (label, ra hours, dec, width, height, pa, exposure, depth, inside share, path, scale)
+    static string E(string k, string d) => Environment.GetEnvironmentVariable("NIGHT_" + k) is { Length: > 0 } v ? v : d;
+    static double N(string k, double d) => double.Parse(E(k, d.ToString(CultureInfo.InvariantCulture)), CultureInfo.InvariantCulture);
     var r = new ImagingRequest
     {
-        Label = "M31 wide", Center = new SkyTarget { RaHours = 0.7123, DecDegrees = 41.269, Epoch = "J2000" },
-        WidthDegrees = 8.97, HeightDegrees = 5.95, PositionAngleDegrees = 35,
-        Exposure = new ShooterExposure { Seconds = 30, FrameType = "Light" }, TargetSeconds = 600, DitherArcsec = 30,
-        LiveStack = stack, OutputPixelScaleArcsec = 9.3, Resume = true,
+        Label = E("LABEL", "M31 wide"), Center = new SkyTarget { RaHours = N("RA", 0.7123), DecDegrees = N("DEC", 41.269), Epoch = "J2000" },
+        WidthDegrees = N("W", 8.97), HeightDegrees = N("H", 5.95), PositionAngleDegrees = N("PA", 35),
+        Exposure = new ShooterExposure { Seconds = N("EXP", 30), FrameType = "Light" }, TargetSeconds = N("DEPTH", 600), DitherArcsec = N("DITHER", 30),
+        LiveStack = stack, OutputPixelScaleArcsec = N("SCALE", 9.3), Resume = E("RESUME", "1") == "1",
+        MinInsideShare = N("INSIDE", 0.5), Path = E("PATH", "Rows"),
     };
     r.ScopeIds.Add(Scope);
     return r;
@@ -82,7 +95,7 @@ async Task Setup()
     Log($"unpark: {(await Commands.CallAsync(node, EquipmentIds.Command("Mount", Mount, "Park"), (BinaryConvertibleBool)false, TimeSpan.FromSeconds(60))).Ok.Value}");
 
     // the site (where the M 31 test frames were taken), pushed to the mount
-    var site = new SiteConfig { Label = "Home", LatitudeDegrees = 47.485, LongitudeDegrees = 19.0625, ElevationMeters = 120, PushToMounts = true, MinAltitudeDegrees = 15 };
+    var site = new SiteConfig { Label = "Home", LatitudeDegrees = 47.485, LongitudeDegrees = double.Parse(Environment.GetEnvironmentVariable("NIGHT_LON") ?? "19.0625", CultureInfo.InvariantCulture), ElevationMeters = 120, PushToMounts = true, MinAltitudeDegrees = 15 };
     Log($"site: {(await Commands.CallAsync(node, SiteIds.Configure(SiteIds.Default), site)).Ok.Value}");
 
     // Quick set up: the telescope (900 mm + the APS-C camera) and an unguided scope on the mount

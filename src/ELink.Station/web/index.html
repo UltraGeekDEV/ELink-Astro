@@ -133,6 +133,8 @@
           <div class="fields">
             <label>Stepover ° <input name="Stepover" type="number" step="any" min="0" title="0 = a tenth of the frame"></label>
             <label>Dither ″ <input name="Dither" type="number" step="1" min="0"></label>
+            <label title="the least share of each mosaic sub that must land inside the area; 0 = even depth to the very edge, at the cost of subs hanging mostly over empty sky">Sub inside % <input name="Inside" type="number" step="5" min="0" max="90"></label>
+            <label title="how each pass walks the mosaic: rows keep every hop coming from the same side (backlash); Hilbert fills it in as nested squares">Path <select name="Path"><option value="Rows">Rows</option><option value="Hilbert">Hilbert curve</option></select></label>
             <label>Stop after shots <input name="MaxVisits" type="number" step="1" min="0" title="0 = no limit"></label>
             <label>Wait for sky s <input name="SkyWait" type="number" step="10" min="0"></label>
             <label>Slew timeout s <input name="SlewTimeout" type="number" step="10" min="10"></label>

@@ -86,6 +86,43 @@ public class ImagingTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ThePreviewSaysHowLongAMosaicTakes()
+    {
+        // a DSLR on a 900 mm newtonian: 1.49 x 0.99 degree frames, and a 4 x 3 degree M31 turned 35 degrees
+        await AddScopeAsync("newt", 1.486, 0.991, scale: 0.89);
+        async Task<(string Message, double Hours, TimeSpan Took)> Ask(double depth)
+        {
+            var r = Request(4, 3, depth, "newt");
+            r.Exposure = new ShooterExposure { Seconds = 30 }; r.PositionAngleDegrees = 35; r.Center = new SkyTarget { RaHours = 0.712, DecDegrees = 41.27, Epoch = "J2000" };
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            var p = Assert.Single((await _node.CallFunctionAsync<ImagingRequest, ImagingState>(ImagingIds.Preview, r, TimeSpan.FromSeconds(60)))!);
+            var m = System.Text.RegularExpressions.Regex.Match(p.Message.Text, @"about (\d+) subs, ([\d.]+) h of shooting \(36 s a sub\)");
+            return (p.Message.Text, m.Success ? double.Parse(m.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture) : double.NaN, clock.Elapsed);
+        }
+        var hour = await Ask(3600);
+        Assert.True(hour.Hours is > 15 and < 25, hour.Message);       // about twelve frames' worth of sky, an hour deep everywhere, and the edges' overhang
+        Assert.True(hour.Took < TimeSpan.FromSeconds(10), $"took {hour.Took}");
+        var third = await Ask(1200);
+        Assert.True(third.Hours > hour.Hours / 4 && third.Hours < hour.Hours / 2, $"{third.Message} vs {hour.Message}");
+        var endless = await Ask(0);
+        Assert.Contains("until stopped", endless.Message);
+    }
+
+    [Fact]
+    public async Task AnImageScaleTooFineForTheMemoryIsCoarsenedNotRefused()
+    {
+        await AddScopeAsync("newt", 1.486, 0.991, scale: 0.89);
+        _svc.ImageBudgetOverride = 200L << 20;                     // a small station
+        var r = Request(3, 1.8, 600, "newt");
+        r.Exposure = new ShooterExposure { Seconds = 30 }; r.LiveStack = true; r.OutputPixelScaleArcsec = 2;
+        var p = Assert.Single((await _node.CallFunctionAsync<ImagingRequest, ImagingState>(ImagingIds.Preview, r, TimeSpan.FromSeconds(60)))!);
+        Assert.NotEqual("Error", p.Phase.Text);
+        Assert.Contains("asked 2\"/px", p.Message.Text);
+        var m = System.Text.RegularExpressions.Regex.Match(p.Message.Text, @"image at ([\d.]+)""/px");
+        Assert.True(m.Success && double.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture) > 2, p.Message.Text);
+    }
+
+    [Fact]
     public async Task TwoDifferentScopesShareOneAreaWithoutBeingKeptInStep()
     {
         await AddScopeAsync("narrow", 0.5, 0.35, slewMs: 10);

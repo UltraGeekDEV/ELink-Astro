@@ -43,12 +43,22 @@ public sealed class CoveragePlanner
     /// <summary>Every row of a pass runs the same way and every pass in the same order: each short hop arrives from the same
     /// side, so an unguided mount's backlash is the same for all of them (only the start of a row comes from the other side).</summary>
     public bool OneWay { get; set; } = true;
+    /// <summary>Walk each pass's lattice along a Hilbert curve instead of in rows: every hop is one lattice step and the image
+    /// fills in as nested squares (nice to watch; the hops come from every side, so an unguided mount's backlash varies, and
+    /// <see cref="OneWay"/> does not apply).</summary>
+    public bool Hilbert { get; set; }
     /// <summary>A lattice pose is shot only if it fills at least this share of a whole frame's worth of what is missing; the
     /// edges that leaves short are finished by the top-up, which places frames to fill them.</summary>
     public double PassMinFill { get; set; } = 0.01;
     /// <summary>How far beyond the area the pass lattice reaches, as a share of a frame's half diagonal (1 = up to where a
     /// frame just touches the area).</summary>
     public double MarginShare { get; set; } = 1.0;
+    /// <summary>The least share of a shot's frames that must land inside the area (0 = any overhang). An even depth to the very
+    /// edge needs frames hanging far out, most of each such sub on empty sky; with a share required, the edges are finished by
+    /// frames lying (mostly) inside instead, and the band along them comes out deeper than the target rather than the sky
+    /// outside getting the time. What no allowed frame reaches (the very corners of an area the frames are turned against) is
+    /// left short.</summary>
+    public double MinInside { get; set; }
     public Pose? Last { get; private set; }
     /// <summary>When every spot has the target: raise it by <see cref="KeepGoingStep"/> and carry on, evenly, until stopped.</summary>
     public bool KeepGoing { get; set; }
@@ -106,8 +116,13 @@ public sealed class CoveragePlanner
     private (double Score, double Deficit) Evaluate(Pose p, double level = double.NaN)
     {
         var fp = CoverageMap.Footprints(p, Frames, AreaAngle);
-        if (TargetSeconds <= 0) { double g = Map.Gain(fp, Weight, Layer); return (g, g); }
-        Map.DeficitAndWaste(fp, double.IsNaN(level) ? TargetSeconds : level, out double d, out int w, Layer);
+        if (TargetSeconds <= 0)
+        {
+            if (MinInside > 0 && !TopUpOnly && Map.Cells(fp, Layer) < MinInside * _fullGain) return (0, 0);
+            double g = Map.Gain(fp, Weight, Layer); return (g, g);
+        }
+        Map.DeficitAndWaste(fp, double.IsNaN(level) ? TargetSeconds : level, out double d, out int w, out int cells, Layer);
+        if (MinInside > 0 && !TopUpOnly && cells < MinInside * _fullGain) return (0, 0);       // mostly sky outside the area: not allowed
         return d <= 0 ? (0, 0) : (d * d / (d + OverTargetPenalty * w), d);
     }
 
@@ -184,10 +199,36 @@ public sealed class CoveragePlanner
             double y0 = Map.FovHeight / 2 + _margin - oy + hy, y1 = -Map.FovHeight / 2 - _margin;
             int cols = (int)Math.Floor((x1 - x0) / hx) + 2, rows = (int)Math.Floor((y0 - y1) / hy) + 2;     // one hop beyond: the lattice phase is arbitrary
             var order = new List<(int r, int c)>(rows * cols);
-            for (int r = 0; r < rows; r++)
-                if (OneWay || r % 2 == 0) for (int c = 0; c < cols; c++) order.Add((r, c)); else for (int c = cols - 1; c >= 0; c--) order.Add((r, c));
-            if (!OneWay && pass % 2 == 1) order.Reverse();       // serpentine: every other pass runs the whole route backwards, no jump between passes
+            if (Hilbert)
+            {
+                order.AddRange(HilbertOrder(rows, cols));
+                if (pass % 2 == 1) order.Reverse();              // the curve ends in another corner: the next pass runs it back from there
+            }
+            else
+            {
+                for (int r = 0; r < rows; r++)
+                    if (OneWay || r % 2 == 0) for (int c = 0; c < cols; c++) order.Add((r, c)); else for (int c = cols - 1; c >= 0; c--) order.Add((r, c));
+                if (!OneWay && pass % 2 == 1) order.Reverse();   // serpentine: every other pass runs the whole route backwards, no jump between passes
+            }
             foreach (var (r, c) in order) yield return new Pose(x0 + c * hx, y0 - r * hy, rot);
+        }
+    }
+
+    /// <summary>The cells of a rows × cols grid in Hilbert-curve order (the curve of the smallest power-of-two square around
+    /// the grid, cells outside it skipped).</summary>
+    public static IEnumerable<(int Row, int Col)> HilbertOrder(int rows, int cols)
+    {
+        int n = 1; while (n < Math.Max(rows, cols)) n <<= 1;
+        for (long d = 0; d < (long)n * n; d++)
+        {
+            int x = 0, y = 0; long t = d;
+            for (int s = 1; s < n; s <<= 1)
+            {
+                int rx = (int)(1 & (t / 2)), ry = (int)(1 & (t ^ rx));
+                if (ry == 0) { if (rx == 1) { x = s - 1 - x; y = s - 1 - y; } (x, y) = (y, x); }
+                x += s * rx; y += s * ry; t /= 4;
+            }
+            if (y < rows && x < cols) yield return (y, x);
         }
     }
 
@@ -287,7 +328,7 @@ public sealed class CoveragePlanner
         {
             double along = (dx * _heading.X + dy * _heading.Y) / len;
             bonus += 0.02 * along;
-            if (OneWay && along < -0.3) bonus *= 0.5;      // turning back costs backlash: only when it is clearly better
+            if (OneWay && !Hilbert && along < -0.3) bonus *= 0.5;      // turning back costs backlash: only when it is clearly better
         }
         if (Math.Abs(NormalizeAngle(rot - last.FieldAngle)) > 1e-6) bonus *= RotationMalus;
         return bonus;

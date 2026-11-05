@@ -137,9 +137,13 @@ public sealed class CoverageMap
 
     /// <summary>For a target depth: the squared deficit the footprints would fill (D), and how many already-finished cells they
     /// would expose again (W).</summary>
-    public void DeficitAndWaste(IReadOnlyList<Footprint> footprints, double target, out double deficit, out int waste, int layer = 0)
+    public void DeficitAndWaste(IReadOnlyList<Footprint> footprints, double target, out double deficit, out int waste, int layer = 0) =>
+        DeficitAndWaste(footprints, target, out deficit, out waste, out _, layer);
+
+    /// <summary>Same, plus how many cells of the area the footprints cover at all (<paramref name="cells"/>: what lands inside the area).</summary>
+    public void DeficitAndWaste(IReadOnlyList<Footprint> footprints, double target, out double deficit, out int waste, out int cells, int layer = 0)
     {
-        deficit = 0; waste = 0;
+        deficit = 0; waste = 0; cells = 0;
         var seconds = Planes[layer];
         foreach (var f in footprints)
         {
@@ -150,12 +154,16 @@ public sealed class CoverageMap
                 for (int c = c0; c <= c1; c++)
                     if (Inside(f, cosT, sinT, c, r))
                     {
+                        cells++;
                         float v = seconds[r * Cols + c];
                         if (v >= target) waste++;
                         else { double d = 1 - v / target; deficit += d * d; }
                     }
         }
     }
+
+    /// <summary>How many cells of the area the footprints cover (in the given layer): the part of a shot that lands inside the area.</summary>
+    public int Cells(IReadOnlyList<Footprint> footprints, int layer = 0) => (int)Gain(footprints, _ => 1, layer);
 
     public double Min(int layer = 0) { float m = float.MaxValue; foreach (var v in Planes[layer]) if (v < m) m = v; return m; }
     public double Max(int layer = 0) { float m = 0; foreach (var v in Planes[layer]) if (v > m) m = v; return m; }

@@ -1,0 +1,16 @@
+[Unit]
+Description=ELink real rig: INDI drivers for the Nikon D3500 and OnStep on port 7627
+After=network.target
+Conflicts=m31-indi.service
+[Service]
+User=ultrageek
+WorkingDirectory=/home/ultrageek/elink/rig
+# Environment=ONSTEP_PORT=/dev/ttyUSB0
+# Environment=ONSTEP_HOST=192.168.0.1:9999
+ExecStart=/home/ultrageek/elink/rig/indi.sh
+Restart=always
+RestartSec=3
+SuccessExitStatus=143
+MemoryMax=450M
+[Install]
+WantedBy=multi-user.target

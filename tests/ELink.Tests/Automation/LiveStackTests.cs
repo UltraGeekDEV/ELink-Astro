@@ -355,6 +355,18 @@ public class LiveStackTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task WhenTheStackerFallsBehindFramesAreLeftOutInsteadOfPilingUp()
+    {
+        _svc.QueueBytes = 1;                      // room for the frame being stacked only
+        Assert.True((await Commands.CallAsync(_node, LiveStackIds.Start, Request(8))).Ok.Value);
+        var fits = Frame(TanWcs.Centered(RA, DEC, 0, 4, 400, 300), 400, 300);
+        for (int i = 0; i < 12; i++) await Shoot("cam", fits);
+        Assert.True(await Eventually(() => _last is { } l && l.FramesStacked.Value + l.FramesRejected.Value == 12 && l.FramesPending.Value == 0), $"{_last?.FramesStacked.Value} stacked, {_last?.FramesRejected.Value} left out");
+        Assert.True(_last!.FramesRejected.Value > 0);
+        Assert.True(_last.FramesStacked.Value >= 1);
+    }
+
+    [Fact]
     public async Task FramesTheScopeRejectedAreNotStacked()
     {
         Assert.True((await Commands.CallAsync(_node, LiveStackIds.Start, Request(8))).Ok.Value);

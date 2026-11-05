@@ -299,6 +299,26 @@ public class TonightList : IBinaryConvertible
     public override byte[] ToBytes() => d.ToBytes(this).ToArray();
 }
 
+/// <summary>The Milky Way's glow as an all-sky map: equirectangular (RA 0h..24h across, Dec +90..-90 down), a byte a cell.</summary>
+public class MilkyWayMap : IBinaryConvertible
+{
+    public BinaryConvertibleInt32 Width { get; set; } = 0;
+    public BinaryConvertibleInt32 Height { get; set; } = 0;
+    public RawBytes Data { get; set; } = new();
+
+    public override string Name => "MilkyWayMap";
+    private static readonly NOTESDescriptor d = new();
+    public override NOTESDescriptor Descriptor => d;
+    static MilkyWayMap()
+    {
+        d.RegisterField("Width", (MilkyWayMap x) => x.Width);
+        d.RegisterField("Height", (MilkyWayMap x) => x.Height);
+        d.RegisterField("Data", (MilkyWayMap x) => x.Data);
+    }
+    public override bool FromBytes(ref Span<byte> data) => d.FromBytes(this, ref data);
+    public override byte[] ToBytes() => d.ToBytes(this).ToArray();
+}
+
 public static class AtlasIds
 {
     public const string Root = "ELink.Atlas";
@@ -310,4 +330,6 @@ public static class AtlasIds
     public const string Search = Root + ".Search";
     /// <summary>TonightRequest in, TonightList out: the best objects to image in tonight's dark hours at the site.</summary>
     public const string Tonight = Root + ".Tonight";
+    /// <summary>Void in, MilkyWayMap out: the Milky Way's glow over the whole sky.</summary>
+    public const string MilkyWay = Root + ".MilkyWay";
 }

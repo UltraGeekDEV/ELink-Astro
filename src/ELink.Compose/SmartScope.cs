@@ -726,6 +726,27 @@ public sealed class SmartScope : IAsyncDisposable
         return null;
     }
 
+    /// <summary>The round's frames, or as soon as a camera says its exposure failed (a DSLR not in M mode, a full card, a driver
+    /// error): that is reported at once with the camera's reason, not after the whole timeout. An error still showing from the
+    /// shot before is not taken for this one's: a shooter counts as failed once it was seen exposing, or after a few seconds.</summary>
+    private async Task WaitForShotsAsync(int count, TimeSpan timeout, CancellationToken ct)
+    {
+        var end = DateTime.UtcNow + timeout; var start = DateTime.UtcNow;
+        var seenExposing = new HashSet<string>();
+        for (int got = 0; got < count;)
+        {
+            if (await _shots.WaitAsync(TimeSpan.FromMilliseconds(250), ct)) { got++; continue; }
+            if (DateTime.UtcNow > end) throw new TimeoutException("a frame did not arrive in time");
+            foreach (var sh in _shooters)
+            {
+                var st = sh.State.Latest;
+                if (st is { Phase.Text: "Exposing" }) seenExposing.Add(sh.Id);
+                if (st is { Phase.Text: "Error" } && (seenExposing.Contains(sh.Id) || DateTime.UtcNow - start > TimeSpan.FromSeconds(3)))
+                    throw new InvalidOperationException(st.Message.Text != "" ? $"{sh.Id}: {st.Message.Text}" : $"{sh.Id}: the camera failed the exposure");
+            }
+        }
+    }
+
     private async Task RunObserveAsync(ObserveRequest r, CancellationTokenSource cts)
     {
         var ct = cts.Token;
@@ -754,8 +775,7 @@ public sealed class SmartScope : IAsyncDisposable
                 if (!ex.Ok.Value) throw new InvalidOperationException(ex.Error.Text);
                 await SetScope(s => { s.Phase = "Exposing"; s.Message = _guideNote; });
                 var roundTimeout = TimeSpan.FromSeconds(r.Exposure.Seconds.Value + 180);
-                for (int k = 0; k < perRound; k++)
-                    if (!await _shots.WaitAsync(roundTimeout, ct)) throw new TimeoutException("a frame did not arrive in time");
+                await WaitForShotsAsync(perRound, roundTimeout, ct);
                 int done = i + 1;
                 await SetScope(s => s.ShotsDone = done);
             }

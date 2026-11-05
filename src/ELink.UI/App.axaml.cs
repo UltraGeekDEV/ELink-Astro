@@ -17,6 +17,9 @@ public sealed class UiLaunchOptions
     public int Port { get; init; } = 5698;
     /// <summary>Join <see cref="Host"/>:<see cref="Port"/> at start (ignored when <see cref="Node"/> is given).</summary>
     public bool AutoConnect { get; init; } = true;
+    /// <summary>Services this process hosts on its own node before the window starts asking the mesh (a UI-only process
+    /// carries the sky atlas itself, so a small headless station does not have to); the text is said in the status bar.</summary>
+    public Func<TypeSafeEVentNode, Task<string>>? LocalServices { get; init; }
 }
 
 public partial class App : Application
@@ -47,7 +50,15 @@ public partial class App : Application
             var vm = new MainViewModel(session, showConnectionBar: Options.Node is null) { Host = Options.Host, Port = Options.Port };
             created(vm);
             window.DataContext = vm;
+            // the local services load while the mesh connects: the chart asks for them as soon as the window starts
+            Task<string>? local = Options.Node is null && Options.LocalServices is { } start ? Task.Run(() => start(session.Node)) : null;
             if (Options.Node is null && Options.AutoConnect) await session.ConnectAsync(Options.Host, Options.Port);
+            if (local is not null)
+            {
+                string said;
+                try { said = await local; } catch (Exception ex) { said = "sky atlas: " + ex.Message; }
+                if (said != "") session.Notices.Info(said);
+            }
             await vm.StartAsync();
         }
         catch (Exception ex) { if (session is not null) session.Status = "start failed: " + ex.Message; else Console.Error.WriteLine("ELink UI failed to start: " + ex.Message); }

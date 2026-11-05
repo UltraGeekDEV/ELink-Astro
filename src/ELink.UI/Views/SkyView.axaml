@@ -13,7 +13,7 @@
     <!-- the sky -->
     <Grid Grid.Column="0">
       <c:SkyChart CenterRa="{Binding Atlas.CenterRa, Mode=TwoWay}" CenterDec="{Binding Atlas.CenterDec, Mode=TwoWay}" Fov="{Binding Atlas.Fov, Mode=TwoWay}" StarLimit="{Binding Atlas.StarLimit}"
-                  Stars="{Binding Atlas.Stars}" Dsos="{Binding Atlas.Dsos}" Lines="{Binding Atlas.Lines}" Labels="{Binding Atlas.Labels}"
+                  Stars="{Binding Atlas.Stars}" Dsos="{Binding Atlas.Dsos}" SkyGlow="{Binding Atlas.MilkyWay}" Lines="{Binding Atlas.Lines}" Labels="{Binding Atlas.Labels}"
                   Markers="{Binding Atlas.Markers}" Polygons="{Binding Polygons}" Horizon="{Binding Atlas.Horizon}" Bodies="{Binding Atlas.Bodies}"
                   PickCommand="{Binding Atlas.PickCommand}" DoubleClickCommand="{Binding FrameAtCommand}" FrameDoubleClickCommand="{Binding ZoomToFrameCommand}" ShowGrid="{Binding Atlas.ShowGrid}" ShowConstellations="{Binding Atlas.ShowConstellations}"
                   Frame="{Binding Frame}" Images="{Binding Images}" FrameEditedCommand="{Binding FrameEditedCommand}"
@@ -225,7 +225,7 @@
 
               <Expander Header="More options">
                 <StackPanel Spacing="8" Margin="0,8,0,0">
-                  <Grid ColumnDefinitions="*,8,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="8">
+                  <Grid ColumnDefinitions="*,8,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="8">
                     <StackPanel><TextBlock Classes="label" Text="Filter"/><TextBox Text="{Binding Image.Filter}"/></StackPanel>
                     <StackPanel Grid.Column="2"><TextBlock Classes="label" Text="ISO (cameras that have it)"/><TextBox Text="{Binding Image.Iso}"/></StackPanel>
                     <StackPanel Grid.Row="1"><TextBlock Classes="label" Text="Dither (″ every shot)"/><NumericUpDown Value="{Binding Image.DitherArcsec}" Minimum="0" Increment="5" FormatString="0"/></StackPanel>
@@ -233,6 +233,8 @@
                     <StackPanel Grid.Row="2"><TextBlock Classes="label" Text="Stop after (shots)"/><NumericUpDown Value="{Binding Image.MaxVisits}" Minimum="0" FormatString="0" ToolTip.Tip="0 = no limit"/></StackPanel>
                     <StackPanel Grid.Row="2" Grid.Column="2"><TextBlock Classes="label" Text="Output scale (″/px)"/><NumericUpDown Value="{Binding Image.OutputScale}" Minimum="0" Increment="0.5" FormatString="0.###" ToolTip.Tip="0 = as fine as the finest scope"/></StackPanel>
                     <StackPanel Grid.Row="3"><TextBlock Classes="label" Text="Pause when this is unsafe"/><ComboBox ItemsSource="{Binding Image.Weather}" SelectedItem="{Binding Image.SelectedWeather}" HorizontalAlignment="Stretch"/></StackPanel>
+                    <StackPanel Grid.Row="3" Grid.Column="2"><TextBlock Classes="label" Text="Path"/><ComboBox ItemsSource="{Binding Image.Paths}" SelectedItem="{Binding Image.Path}" HorizontalAlignment="Stretch" ToolTip.Tip="Rows: every hop from the same side (kindest to an unguided mount's backlash). Hilbert: the mosaic fills in as nested squares"/></StackPanel>
+                    <StackPanel Grid.Row="4"><TextBlock Classes="label" Text="Sub inside the area (%)"/><NumericUpDown Value="{Binding Image.InsidePercent}" Minimum="0" Maximum="90" Increment="5" FormatString="0" ToolTip.Tip="The least share of each mosaic sub that must land inside the area. 0 = even depth to the very edge, with subs hanging mostly over empty sky; 50 = less time lost outside, the band along the edges comes out deeper"/></StackPanel>
                   </Grid>
                   <StackPanel Spacing="4">
                     <Grid ColumnDefinitions="*,Auto">

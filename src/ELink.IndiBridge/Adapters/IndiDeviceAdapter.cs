@@ -104,6 +104,7 @@ public abstract class IndiDeviceAdapter<TState> : IEquipmentAdapter where TState
             PropertyDefined d => d.Property.Device == Device,
             PropertyUpdated u => u.Property.Device == Device,
             PropertyDeleted p => p.Device == Device,
+            LogReceived l => l.Device == Device,   // the driver's own messages ("[ERROR] ..."): why something failed
             _ => false,
         };
         if (!mine) return;

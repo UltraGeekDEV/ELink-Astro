@@ -57,6 +57,8 @@ public sealed partial class AtlasViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool _showConstellations = true;
     // what the chart draws
     [ObservableProperty] private IReadOnlyList<ChartStar> _stars = Array.Empty<ChartStar>();
+    /// <summary>The Milky Way's glow (null until the atlas has sent its outline, or when it has none).</summary>
+    [ObservableProperty] private SkyGlowMap? _milkyWay;
     [ObservableProperty] private IReadOnlyList<ChartDso> _dsos = Array.Empty<ChartDso>();
     [ObservableProperty] private IReadOnlyList<ChartSegment> _lines = Array.Empty<ChartSegment>();
     [ObservableProperty] private IReadOnlyList<ChartLabel> _labels = Array.Empty<ChartLabel>();
@@ -98,6 +100,19 @@ public sealed partial class AtlasViewModel : ObservableObject, IDisposable
 
     public int QueriesMade => _queries;
 
+    /// <summary>The Milky Way's glow from the atlas (in the background: it is a moment's work for the atlas the first time).</summary>
+    private async Task LoadMilkyWayAsync()
+    {
+        try
+        {
+            var m = (await _mesh.Node.CallFunctionAsync<NOTESVoid, MilkyWayMap>(AtlasIds.MilkyWay, NOTESVoid.Void, TimeSpan.FromSeconds(30)))?.FirstOrDefault();
+            if (m is null || m.Width.Value == 0 || m.Data.Data.Length != m.Width.Value * m.Height.Value) return;
+            var map = SkyGlowMap.FromBytes(m.Width.Value, m.Height.Value, m.Data.Data);
+            UiThread.Post(() => MilkyWay = map);
+        }
+        catch (Exception) { /* an atlas without the Milky Way (or an older one): the chart just has no band */ }
+    }
+
     public async Task StartAsync()
     {
         try
@@ -113,6 +128,7 @@ public sealed partial class AtlasViewModel : ObservableObject, IDisposable
             else UiThread.Post(() => Status = "no atlas service on the mesh");
         }
         catch (Exception ex) { UiThread.Post(() => Status = "atlas: " + ex.Message); }
+        _ = Task.Run(LoadMilkyWayAsync);
 
         _stellarium = new Follower<StellariumState>(_mesh.Node, StellariumIds.State, StellariumIds.GetState, s =>
         {
@@ -254,7 +270,9 @@ public sealed partial class AtlasViewModel : ObservableObject, IDisposable
     partial void OnFovChanged(double value) => ScheduleRefresh();
 
     /// <summary>Faintest stars to show for a field of view (about magnitude 5.5 for the whole sky, 13 for half a degree).</summary>
-    public static double StarLimitFor(double fov) => Math.Clamp(5.0 + 3.3 * Math.Log10(120 / Math.Max(fov, 0.05)), 5.5, 14);
+    /// <summary>The faintest stars fetched for a field this wide: a naked-eye sky at the widest, the whole catalogue (and the GSC
+    /// where there is one) when zoomed in.</summary>
+    public static double StarLimitFor(double fov) => Math.Clamp(6.4 + 3.3 * Math.Log10(120 / Math.Max(fov, 0.05)), 6.5, 14);
 
     private void ScheduleRefresh()
     {
@@ -274,7 +292,7 @@ public sealed partial class AtlasViewModel : ObservableObject, IDisposable
         var q = new AtlasQuery
         {
             RaHours = ra, DecDegrees = dec, RadiusDegrees = Math.Min(180, fov * 0.8), StarMagnitudeLimit = limit,
-            DsoMagnitudeLimit = Math.Clamp(limit + 2.5, 8, 16), MaxStars = 25000, MaxDsos = 3000,
+            DsoMagnitudeLimit = Math.Clamp(limit + 2.5, 8, 16), MaxStars = 60000, MaxDsos = 3000,
         };
         Interlocked.Increment(ref _queries);
         try

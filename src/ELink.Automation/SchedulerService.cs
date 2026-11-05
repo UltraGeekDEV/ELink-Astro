@@ -6,6 +6,7 @@ using ELink.Core;
 using ELink.Core.Astro;
 using Event.CoreFunctionality;
 using Event.Connections.Models.BaseBinaryConvertibles;
+using EVent.Connections.Models.BaseBinaryConvertibles;
 
 namespace ELink.Automation;
 
@@ -125,6 +126,7 @@ public sealed class SchedulerService : IAsyncDisposable
         lock (_gate)
         {
             _stoppedByPerson.Clear();     // starting the queue is the person taking those up again
+            _parked = false;
             if (_run is not null) return CommandResult.Success();
             _run = new CancellationTokenSource();
             _phase = "Waiting"; _message = "";
@@ -271,6 +273,7 @@ public sealed class SchedulerService : IAsyncDisposable
                 }
                 else lock (_gate) _message = verdicts.Count == 0 ? "the schedule is empty" : verdicts.All(v => v.Status is "Complete" or "Disabled") ? "everything is done" : "nothing can be taken now";
             }
+            running = await EndOfNightAsync(verdicts, site, running);
         }
         lock (_gate)
         {
@@ -285,6 +288,68 @@ public sealed class SchedulerService : IAsyncDisposable
                 _phase = _running != "" ? "Imaging" : verdicts.Count > 0 && verdicts.All(v => v.Status is "Complete" or "Disabled") ? "AllDone" : "Waiting";
         }
         await Publish();
+    }
+
+    // ---- the end of the night ----------------------------------------------------------------------------------------
+
+    /// <summary>Park the mounts when the queue's night is over (default on): nobody is at the scope at dawn.</summary>
+    public bool ParkWhenDone { get; set; } = true;
+    public TimeSpan ParkTimeout { get; set; } = TimeSpan.FromMinutes(3);
+    private bool _parked;
+    private double _lastSunAltitude = double.NaN;
+
+    /// <summary>Once the night's work is over, the mounts are parked rather than left tracking into the pier or the dawn: when
+    /// everything in the queue is done, or in the morning (the Sun above -12° and rising) with nothing left running. An image
+    /// still running when the Sun is up is stopped first (it is kept). A mount that cannot park (OnStep with no park position
+    /// saved) has its tracking stopped instead. Should something become possible after all, its slew unparks the mount again.
+    /// Returns what is running afterwards.</summary>
+    private async Task<string> EndOfNightAsync(List<Verdict> verdicts, SiteState? site, string running)
+    {
+        double sun = site?.SunAltitude.Value ?? double.NaN;
+        bool rising = !double.IsNaN(sun) && !double.IsNaN(_lastSunAltitude) && sun > _lastSunAltitude;
+        if (!double.IsNaN(sun)) _lastSunAltitude = sun;
+        if (running != "") { _parked = false; }
+        if (!ParkWhenDone) return running;
+        bool morning = rising && sun > -12;
+        if (running != "" && morning && sun > 0)
+        {
+            SessionLog.Warn(_node, "queue", $"the Sun is up: stopping '{running}' (it is kept) and parking");
+            await Commands.CallAsync(_node, ImagingIds.Abort, NOTESVoid.Void);
+            await WaitImagingIdleAsync(CancellationToken.None);
+            lock (_gate) { _running = ""; _message = $"{running} stopped: the Sun is up"; }
+            running = "";
+        }
+        bool allDone = verdicts.Count > 0 && verdicts.All(v => v.Status is "Complete" or "Disabled");
+        if (running != "" || _parked || !(allDone || morning)) return running;
+        _parked = true;
+        string why = allDone ? "everything in the queue is done" : "the night is over";
+        List<string> mounts;
+        try
+        {
+            var lists = await _node.CallFunctionAsync<NOTESVoid, DeviceList>(EquipmentIds.List, NOTESVoid.Void, TimeSpan.FromSeconds(5));
+            mounts = (lists ?? []).SelectMany(l => l.Devices).Where(d => d.Kind.Text == DeviceKinds.Mount).Select(d => d.Id.Text).Distinct().ToList();
+        }
+        catch (Exception) { return running; }
+        foreach (var m in mounts)
+        {
+            var park = await Commands.CallAsync(_node, EquipmentIds.Command(DeviceKinds.Mount, m, "Park"), (BinaryConvertibleBool)true, TimeSpan.FromSeconds(30));
+            if (park.Ok.Value)
+            {
+                // sent is not parked: a mount can take the command and then fail to get there
+                MountState? st = null;
+                for (var end = DateTime.UtcNow + ParkTimeout; DateTime.UtcNow < end; await Task.Delay(1000))
+                {
+                    st = (await _node.CallFunctionAsync<NOTESVoid, MountState>(EquipmentIds.GetState(DeviceKinds.Mount, m), NOTESVoid.Void, TimeSpan.FromSeconds(5)))?.FirstOrDefault();
+                    if (st is null || st.Phase.Text is "Parked" or "Error") break;
+                }
+                if (st is { Phase.Text: "Parked" }) { SessionLog.Info(_node, "queue", $"{why}: {m} parked"); continue; }
+                park = CommandResult.Fail(st is null ? "no answer" : st.Phase.Text == "Error" ? "the mount reported an error while parking" : $"not parked after {ParkTimeout.TotalMinutes:0} min");
+            }
+            var stop = await Commands.CallAsync(_node, EquipmentIds.Command(DeviceKinds.Mount, m, "SetTracking"), (BinaryConvertibleBool)false, TimeSpan.FromSeconds(30));
+            SessionLog.Warn(_node, "queue", $"{why}: {m} could not park ({park.Error.Text}){(stop.Ok.Value ? ": its tracking is stopped" : "")}");
+        }
+        lock (_gate) _message = $"{why}: mounts parked";
+        return running;
     }
 
     private async Task WaitImagingIdleAsync(CancellationToken ct)

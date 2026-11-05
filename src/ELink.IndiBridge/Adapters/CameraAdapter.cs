@@ -20,6 +20,7 @@ public sealed class CameraAdapter(AdapterContext ctx) : IndiDeviceAdapter<Camera
     private string? Control(string name) => P("CCD_CONTROLS")?.Elements.FirstOrDefault(e => string.Equals(e.Name, name, StringComparison.OrdinalIgnoreCase))?.Name;
     private string _lastFrameType = "Light";
     private bool _blobEnabled;
+    private string _driverNote = "";   // the driver's last word during this exposure ("[WARNING] ..."): why it failed, when it says
 
     protected override CameraState BuildState()
     {
@@ -50,7 +51,7 @@ public sealed class CameraAdapter(AdapterContext ctx) : IndiDeviceAdapter<Camera
             if (iso.OnSwitch is { } on) s.Iso = IsoLabel(iso[on]?.Label, on);
         }
         if (P("CCD_TRANSFER_FORMAT") is { } tf) s.TransferFormat = tf.OnSwitch switch { "FORMAT_FITS" => "FITS", "FORMAT_NATIVE" => "Native", { } other => other, _ => "" };
-        if (exp?.State == IndiState.Alert) s.Message = "the camera reported an exposure error";
+        if (exp?.State == IndiState.Alert) s.Message = _driverNote is { Length: > 0 } note ? "the camera failed the exposure: " + note : "the camera reported an exposure error";
         return s;
     }
 
@@ -107,7 +108,7 @@ public sealed class CameraAdapter(AdapterContext ctx) : IndiDeviceAdapter<Camera
                 if (isoProp.OnSwitch != match.Name) await SetSwitch("CCD_ISO", match.Name);
             }
             if (P("CCD_TRANSFER_FORMAT") is { } tf && tf.Has("FORMAT_FITS") && tf.OnSwitch != "FORMAT_FITS") await SetSwitch("CCD_TRANSFER_FORMAT", "FORMAT_FITS");
-            _lastExposure = seconds; _lastFrameType = r.FrameType.Text == "" ? "Light" : r.FrameType.Text;
+            _lastExposure = seconds; _lastFrameType = r.FrameType.Text == "" ? "Light" : r.FrameType.Text; _driverNote = "";
             await SetNumber("CCD_EXPOSURE", "CCD_EXPOSURE_VALUE", seconds);
         });
     }
@@ -164,6 +165,12 @@ public sealed class CameraAdapter(AdapterContext ctx) : IndiDeviceAdapter<Camera
 
     protected override async Task OnPropertyChangedAsync(IndiChange change)
     {
+        string? said = change switch { PropertyUpdated u => u.Message, LogReceived l => l.Text, _ => null };
+        if (said is { Length: > 0 } && !said.Contains("[INFO]", StringComparison.Ordinal) && !said.Contains("[DEBUG]", StringComparison.Ordinal))
+        {
+            _driverNote = System.Text.RegularExpressions.Regex.Replace(said, @"^\s*\[[A-Z]+\]\s*", "").Trim();
+            await PublishStateAsync();
+        }
         if (change is not PropertyUpdated { Property: { Name: "CCD1", Type: IndiPropertyType.Blob } p }) return;
         var e = p["CCD1"];
         if (e?.Blob is not { Length: > 0 } blob) return;

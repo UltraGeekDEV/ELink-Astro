@@ -160,6 +160,7 @@ public sealed partial class ImagingService : IAsyncDisposable
         if (r.WidthDegrees.Value < 0 || r.HeightDegrees.Value < 0 || r.WidthDegrees.Value > 60 || r.HeightDegrees.Value > 60) return "the area must be 0..60 degrees on a side";
         if (!(r.Exposure.Seconds.Value > 0)) return "the exposure must be longer than zero";
         if (r.TargetSeconds.Value < 0 || r.StepoverDegrees.Value < 0 || r.DitherArcsec.Value < 0 || r.MaxVisits.Value < 0) return "target, stepover, dither and visit limit cannot be negative";
+        if (r.Path.Text is { Length: > 0 } path && !string.Equals(path, "Rows", StringComparison.OrdinalIgnoreCase) && !string.Equals(path, "Hilbert", StringComparison.OrdinalIgnoreCase)) return $"unknown path \"{path}\" (Rows or Hilbert)";
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var l in r.Layers)
         {
@@ -260,9 +261,13 @@ public sealed partial class ImagingService : IAsyncDisposable
                 {
                     long room = budget - packed;
                     double fits = room > 0 ? CoarserToFit(scale, stack, room) : double.NaN;
-                    if (r.OutputPixelScaleArcsec.Value > 0 || !(fits > 0))
-                        return (null, FormattableString.Invariant($"at {scale:0.##}\"/px the image needs {(stack + packed) >> 20} MB for its stack and frames, more than the {budget >> 20} MB this station has for it") + (fits > 0 ? FormattableString.Invariant($": use {fits:0.##}\"/px or coarser (or a smaller area)") : ""));
-                    note = FormattableString.Invariant($" (the frames' {scale:0.##}\"/px would need {(stack + packed) >> 20} MB for the stack and frames, more than the {budget >> 20} MB this station has)");
+                    if (!(fits > 0))
+                        return (null, FormattableString.Invariant($"at {scale:0.##}\"/px the image needs {(stack + packed) >> 20} MB for its stack and frames, more than the {budget >> 20} MB this station has for it, and no coarser scale fits: use a smaller area"));
+                    // a scale that was asked for and does not fit: the finest that does, said so (the subs are kept at full
+                    // resolution either way; refusing to start left the night unused for a number on the live picture)
+                    note = r.OutputPixelScaleArcsec.Value > 0
+                        ? FormattableString.Invariant($" (asked {scale:0.##}\"/px, which needs {(stack + packed) >> 20} MB for the stack and frames, more than the {budget >> 20} MB this station has: the finest that fits; the subs are kept at full resolution)")
+                        : FormattableString.Invariant($" (the frames' {scale:0.##}\"/px would need {(stack + packed) >> 20} MB for the stack and frames, more than the {budget >> 20} MB this station has)");
                     scale = fits; superPixel = true;
                 }
             }
@@ -308,8 +313,47 @@ public sealed partial class ImagingService : IAsyncDisposable
         s.WidthDegrees = plan.Width; s.HeightDegrees = plan.Height;
         foreach (var sc in plan.Scopes) s.Workers.Add(Worker(sc));
         s.Message = FormattableString.Invariant($"{plan.Width:0.###}° x {plan.Height:0.###}°, stepover {plan.Stepover:0.####}°") + (plan.Scale > 0 ? FormattableString.Invariant($", image at {plan.Scale:0.##}\"/px") + plan.ScaleNote : "")
-            + (plan.Layers.Count > 1 ? $", {plan.Layers.Count} layers" : "") + SubsPerHour(plan);
+            + (plan.Layers.Count > 1 ? $", {plan.Layers.Count} layers" : "") + SubsPerHour(plan) + HowLong(r, plan);
         return s;
+    }
+
+    /// <summary>Seconds a shot takes beyond its exposure (download, the hop to the next spot, settling), for the estimates.</summary>
+    public static double ShotOverheadSeconds { get; set; } = 6;
+
+    /// <summary>"; about 1926 subs, 19.3 h of shooting": the planner run dry on a copy of the map (with what a carried-on image has
+    /// already), as the image would run it. A mosaic's depth is everywhere, so its time grows with its area, and the frames that
+    /// reach over its edges are part of it: this is the number to plan the nights by. Capped in time: a huge plan says "over".</summary>
+    private string HowLong(ImagingRequest r, Plan plan)
+    {
+        bool endless = plan.Layers.Any(l => TargetOf(l, r.TargetSeconds.Value) <= 0);
+        if (endless) return "; it runs until stopped";
+        var dry = plan with { Map = plan.Map.Clone() };
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var budget = TimeSpan.FromSeconds(3);
+        double longest = 0; int subs = 0; bool cut = false;
+        foreach (var sc in plan.Scopes)
+        {
+            var planners = PlannersOf(r, dry, sc, r.TargetSeconds.Value);
+            foreach (var (_, p) in planners) if (!p.TopUpOnly) p.Plan();
+            double seconds = 0;
+            var live = planners.ToList();
+            while (live.Count > 0)
+            {
+                for (int i = live.Count - 1; i >= 0; i--)
+                {
+                    if (live[i].Planner.Next() is null) { live.RemoveAt(i); continue; }
+                    seconds += live[i].Layer.Exposure + ShotOverheadSeconds; subs++;
+                }
+                if (subs >= 20000 || clock.Elapsed > budget) { cut = true; break; }
+            }
+            longest = Math.Max(longest, seconds);
+            if (cut) break;
+        }
+        if (subs == 0) return "; nothing left to take";
+        double hours = longest / 3600;
+        string per = FormattableString.Invariant($"{plan.Layers.Min(l => l.Exposure) + ShotOverheadSeconds:0.#} s a sub");
+        return cut ? FormattableString.Invariant($"; over {subs} subs and {hours:0.#} h of shooting ({per})")
+                   : FormattableString.Invariant($"; about {subs} subs, {hours:0.#} h of shooting ({per})");
     }
 
     /// <summary>"; about 5.5 GB of subs an hour": what the kept frames cost on disk, from the cameras' pixels (16 bits), shots back
@@ -475,11 +519,13 @@ public sealed partial class ImagingService : IAsyncDisposable
         catch (Exception) { return null; }
     }
 
-    private double TargetOf(LayerPlan l) => l.Def.TargetSeconds.Value > 0 ? l.Def.TargetSeconds.Value : _target;
+    private double TargetOf(LayerPlan l) => TargetOf(l, _target);
+    /// <param name="depth">the image's depth (the running one's, or a previewed request's)</param>
+    private static double TargetOf(LayerPlan l, double depth) => l.Def.TargetSeconds.Value > 0 ? l.Def.TargetSeconds.Value : depth;
 
     /// <summary>A scope's planners, one for each layer one of its cameras feeds. A shot goes through one filter: the frames that
     /// feed a layer are the planner's, and every camera that feeds any layer of the same filter is painted (it took the picture too).</summary>
-    private List<(LayerPlan Layer, CoveragePlanner Planner)> PlannersOf(ImagingRequest r, Plan plan, ScopeFrames s)
+    private List<(LayerPlan Layer, CoveragePlanner Planner)> PlannersOf(ImagingRequest r, Plan plan, ScopeFrames s, double? depth = null)
     {
         var list = new List<(LayerPlan, CoveragePlanner)>();
         foreach (var l in plan.Layers)
@@ -491,9 +537,9 @@ public sealed partial class ImagingService : IAsyncDisposable
             if (mine.Length == 0) continue;
             // an area that fits in this scope's frames (as they are turned against it) is best served by centred shots, not raster passes
             bool fits = mine.Any(f => f.OffsetEast == 0 && f.OffsetNorth == 0 && Covers(f, f.Rotation - r.PositionAngleDegrees.Value, plan.Width, plan.Height));
-            double target; lock (_gate) target = TargetOf(l);
+            double target; lock (_gate) target = TargetOf(l, depth ?? _target);
             var p = new CoveragePlanner(plan.Map, mine, [0.0], r.PositionAngleDegrees.Value, l.Exposure, target, plan.Stepover, l.Index)
-            { TopUpOnly = fits, PaintFrames = masked.Where(f => f.Mask != 0).ToArray() };
+            { TopUpOnly = fits, PaintFrames = masked.Where(f => f.Mask != 0).ToArray(), MinInside = Math.Clamp(r.MinInsideShare.Value, 0, 0.9), Hilbert = string.Equals(r.Path.Text, "Hilbert", StringComparison.OrdinalIgnoreCase) };
             // until stopped: deeper a step (about an hour of shots) at a time, in even passes over all of it
             if (target <= 0) { p.KeepGoing = true; p.TargetSeconds = p.HourOfDepth(); p.Plan(); }
             else if (fits) p.Plan();
@@ -990,7 +1036,7 @@ public sealed partial class ImagingService : IAsyncDisposable
                 s.MinSeconds = Enumerable.Range(0, map.Layers).Min(l => map.Min(l)); s.MeanSeconds = Enumerable.Range(0, map.Layers).Average(l => map.Mean(l)); s.MaxSeconds = Enumerable.Range(0, map.Layers).Max(l => map.Max(l));
                 byte[] bytes; int cols, rows;
                 if (map.Layers == 1) bytes = map.Render(Math.Max(TargetOf(layers[0]), map.Max()), 96, 64, out cols, out rows);
-                else bytes = map.RenderProgress(layers.Select(TargetOf).ToList(), 96, 64, out cols, out rows);
+                else bytes = map.RenderProgress(layers.Select(l => TargetOf(l)).ToList(), 96, 64, out cols, out rows);
                 s.MapCols = cols; s.MapRows = rows; s.Map = new RawBytes(bytes);
                 if (_plan.Gathered is { } all)
                 {

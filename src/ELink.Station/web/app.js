@@ -29,7 +29,7 @@ const D = {
   ImagingRequest: () => ({
     Label: 'Image', Center: D.SkyTarget(), WidthDegrees: 0, HeightDegrees: 0, PositionAngleDegrees: 0, ScopeIds: [], Exposure: D.ShooterExposure(),
     TargetSeconds: 0, StepoverDegrees: 0, DitherArcsec: 30, MaxVisits: 0, WeatherId: '', LiveStack: true, OutputPixelScaleArcsec: 0,
-    SlewTimeoutSeconds: 300, SkyWaitSeconds: 120, Resume: true, Layers: [],
+    SlewTimeoutSeconds: 300, SkyWaitSeconds: 120, Resume: true, Layers: [], MinInsideShare: 0.5, Path: 'Rows',
   }),
   ScheduleEntry: () => ({ Request: D.ImagingRequest(), Priority: 0, Enabled: true, MinAltitudeDegrees: NaN_, RequireDark: true, MinMoonSeparationDegrees: 0, MaxMoonIllumination: 1, NotBeforeUtc: '', NotAfterUtc: '' }),
   SiteConfig: () => ({ Label: 'Home', LatitudeDegrees: NaN_, LongitudeDegrees: NaN_, ElevationMeters: 0, GpsId: '', PushToMounts: true, MinAltitudeDegrees: 0, Horizon: [] }),
@@ -512,7 +512,7 @@ function planScopes() {
 }
 const chosenScopes = () => [...$('planScopes').querySelectorAll('input:checked')].map(i => i.value);
 
-const PLAN_DEFAULTS = { Label: '', Ra: '', Dec: '', Width: '', Height: '', Pa: '0', Exposure: '30', Depth: '60', Filter: '', Gain: '', Iso: '', Bin: '0', Scale: '', LiveStack: true, Stepover: '0', Dither: '30', MaxVisits: '0', SkyWait: '120', SlewTimeout: '300', Resume: true, Endless: false };
+const PLAN_DEFAULTS = { Label: '', Ra: '', Dec: '', Width: '', Height: '', Pa: '0', Exposure: '30', Depth: '60', Filter: '', Gain: '', Iso: '', Bin: '0', Scale: '', LiveStack: true, Stepover: '0', Dither: '30', Inside: '50', Path: 'Rows', MaxVisits: '0', SkyWait: '120', SlewTimeout: '300', Resume: true, Endless: false };
 function formValues() { const o = {}; for (const k of Object.keys(PLAN_DEFAULTS)) { const el = F(k); o[k] = el.type === 'checkbox' ? el.checked : el.value; } return o; }
 function endlessUi() { F('Depth').disabled = F('Endless').checked; }
 function setForm(o) { for (const k of Object.keys(PLAN_DEFAULTS)) { const el = F(k); const v = o[k] ?? PLAN_DEFAULTS[k]; if (el.type === 'checkbox') el.checked = !!v; else el.value = v; } }
@@ -544,6 +544,7 @@ function request() {
       Exposure: { Seconds: n('Exposure'), Filter: v.Filter.trim(), BinX: bin, BinY: bin, Gain: v.Gain === '' ? NaN_ : n('Gain'), Iso: v.Iso.trim() },
       TargetSeconds: v.Endless ? 0 : (n('Depth') || 0) * 60, StepoverDegrees: n('Stepover') || 0, DitherArcsec: n('Dither') || 0, MaxVisits: n('MaxVisits') | 0,
       LiveStack: v.LiveStack, OutputPixelScaleArcsec: scale, SlewTimeoutSeconds: n('SlewTimeout') || 300, SkyWaitSeconds: n('SkyWait') || 0, Resume: v.Resume,
+      MinInsideShare: v.Inside === '' ? 0.5 : Math.min(90, Math.max(0, n('Inside'))) / 100, Path: v.Path || 'Rows',
     }),
   };
 }
@@ -551,7 +552,7 @@ function loadRequest(r) {
   setForm({
     Label: r.Label, Ra: hms(r.Center.RaHours, true), Dec: hms(r.Center.DecDegrees, false), Width: r.WidthDegrees || '', Height: r.HeightDegrees || '', Pa: r.PositionAngleDegrees,
     Exposure: r.Exposure.Seconds, Depth: r.TargetSeconds ? Math.round(r.TargetSeconds / 60) : 60, Endless: !(r.TargetSeconds > 0), Filter: r.Exposure.Filter, Gain: fin(r.Exposure.Gain) ? r.Exposure.Gain : '', Iso: r.Exposure.Iso,
-    Bin: String(r.Exposure.BinX || 0), Scale: r.OutputPixelScaleArcsec || '', LiveStack: r.LiveStack, Stepover: r.StepoverDegrees, Dither: r.DitherArcsec, MaxVisits: r.MaxVisits,
+    Bin: String(r.Exposure.BinX || 0), Scale: r.OutputPixelScaleArcsec || '', LiveStack: r.LiveStack, Stepover: r.StepoverDegrees, Dither: r.DitherArcsec, Inside: Math.round((r.MinInsideShare ?? 0.5) * 100), Path: r.Path || 'Rows', MaxVisits: r.MaxVisits,
     SkyWait: r.SkyWaitSeconds, SlewTimeout: r.SlewTimeoutSeconds, Resume: true,
   });
   for (const i of $('planScopes').querySelectorAll('input')) i.checked = r.ScopeIds.includes(i.value) || r.ScopeIds.length === 0;
