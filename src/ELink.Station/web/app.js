@@ -236,9 +236,14 @@ function showImage(s) {
   $('imageLabel').textContent = s.Label ? s.Label : 'No image running';
   $('imagePhase').textContent = phaseName(s.Phase);
   $('imagePhase').className = 'chip ' + phaseClass(s.Phase);
-  $('imageMessage').textContent = s.Message || (active ? '' : 'Start one on the New image page, or continue a kept one.');
+  // the message, unless it only repeats the phase ("aborted" under "Aborted")
+  const msg = s.Message && s.Message.toLowerCase() !== String(s.Phase).toLowerCase() ? s.Message : '';
+  $('imageMessage').textContent = msg || (active ? '' : s.Label ? (s.Phase === 'Done' ? 'Finished. Start another, or go deeper on this one from the Kept page.' : 'Stopped. Its coverage and stack are kept: carry on with it from the Kept page.') : 'Nothing is being taken. Plan an image, or continue a kept one.');
+  $('toKept').hidden = active || !s.Label;
+  $('toPlan').hidden = active;
   const part = s.TargetSeconds > 0 ? Math.min(1, s.MeanSeconds / s.TargetSeconds) : 0;
   $('imageBar').style.width = (part * 100).toFixed(1) + '%';
+  $('imageBar').parentElement.hidden = !s.Label;
   $('pause').hidden = s.Phase !== 'Running' && !s.Phase.startsWith('Waiting');
   $('resume').hidden = s.Phase !== 'Paused';
   $('stop').hidden = !active;
@@ -297,6 +302,7 @@ function stats(dl, rows) {
 }
 function drawNow() {
   const s = image, canvas = $('cover');
+  $('legend').hidden = !s || !(s.WidthDegrees > 0) || !(s.Visits > 0);
   if (!s || !(s.WidthDegrees > 0)) { canvas.parentElement.hidden = true; return; }
   canvas.parentElement.hidden = false;
   // all the sky the frames reached (the edge frames hang over the area), with the planned area outlined in it
@@ -330,6 +336,8 @@ async function paOfRunning() {
   if (k) { imagePa = k.Request.PositionAngleDegrees; drawNow(); }
 }
 
+$('toKept').onclick = () => showTab('kept');
+$('toPlan').onclick = () => showTab('plan');
 $('pause').onclick = e => busy(e.target, () => command(`${IDS.imaging}.Pause`));
 $('resume').onclick = e => busy(e.target, () => command(`${IDS.imaging}.Resume`));
 $('stop').onclick = e => busy(e.target, async () => {
@@ -353,7 +361,7 @@ function ensureScope(def) {
   const el = document.createElement('article');
   el.className = 'card scope';
   el.innerHTML = '<div class="row between"><h3></h3><span class="chip">Idle</span></div><p class="message"></p><div class="bar"><div></div></div><p class="hint shots"></p><div class="row"><button class="danger quiet">Stop this scope</button></div>';
-  const card = { el, name: el.querySelector('h3'), phase: el.querySelector('.chip'), message: el.querySelector('.message'), bar: el.querySelector('.bar > div'), shots: el.querySelector('.shots') };
+  const card = { el, name: el.querySelector('h3'), phase: el.querySelector('.chip'), message: el.querySelector('.message'), bar: el.querySelector('.bar > div'), shots: el.querySelector('.shots'), stop: el.querySelector('button') };
   card.name.textContent = def.DisplayName || id;
   el.querySelector('button').onclick = e => busy(e.target, async () => { if (confirm(`Stop ${def.DisplayName || id}? The image goes on with the other scopes.`)) await command(`${IDS.scope(id)}.Abort`); });
   scopeCards.set(id, card);
@@ -361,7 +369,8 @@ function ensureScope(def) {
   follow(`${IDS.scope(id)}.State`, `${IDS.scope(id)}.GetState`, s => {
     card.phase.textContent = s.Phase;
     card.phase.className = 'chip ' + phaseClass(s.Phase);
-    card.message.textContent = s.Message || '';
+    card.message.textContent = s.Message && s.Message.toLowerCase() !== String(s.Phase).toLowerCase() && !(s.Phase === 'Idle' && s.Message === 'aborted') ? s.Message : '';
+    card.stop.hidden = ['Idle', 'Error', ''].includes(s.Phase || '');          // nothing to stop
     const planned = s.ShotsPlanned || 0;
     card.bar.parentElement.hidden = card.shots.hidden = !(s.Observing && planned > 1);
     card.bar.style.width = planned > 0 ? Math.min(100, 100 * s.ShotsDone / planned).toFixed(0) + '%' : '0%';
@@ -597,32 +606,56 @@ outSize();
 async function runPreview() {
   const { req, problem } = request();
   const seq = ++planSeq;
-  if (!req) { preview = null; $('planInfo').textContent = problem; drawPlan(); return; }
+  if (!req) { preview = null; $('planInfo').textContent = problem; stats($('planStats'), []); drawPlan(); return; }
   const p = await ask(`${IDS.imaging}.Preview`, req, 20000);
   if (seq !== planSeq) return;
   preview = p && p.Phase !== 'Error' ? { state: p, req } : null;
+  const [rows, notes] = p && p.Phase !== 'Error' ? summary(p, req) : [[], ''];
+  stats($('planStats'), rows);
   if (!p) $('planInfo').textContent = 'no imaging service answered';
   else if (p.Phase === 'Error') $('planInfo').textContent = p.Message;
-  else $('planInfo').textContent = p.Message + estimate(p, req);
+  else $('planInfo').textContent = notes;
   drawPlan();
   observability(req);
 }
-/** About how many shots and hours: the ideal (frames to tile the area, times the depth) and what the planner tends to need. */
-function estimate(p, req) {
-  const frames = p.Workers.flatMap(w => w.Frames.map(f => ({ a: f.WidthDegrees * f.HeightDegrees, w })));
-  if (!frames.length) return '';
-  if (!(req.TargetSeconds > 0)) return '. It keeps going until you stop it: each pass of about an hour deepens all of it evenly.';
-  const area = p.WidthDegrees * p.HeightDegrees, perShot = frames.reduce((s, f) => s + f.a, 0);
-  const tiles = area / perShot, deep = Math.ceil(req.TargetSeconds / req.Exposure.Seconds);
-  const scopes = Math.max(1, p.Workers.length);
-  // frames square to the area tile it with less overlap (measured: 1.4x the ideal lined up, 1.6x at 35°)
-  const f0 = p.Workers[0].Frames[0], rel = (((f0.RotationDegrees - req.PositionAngleDegrees) % 90) + 90) % 90;
-  const square = Math.min(rel, 90 - rel) < 3;
-  const lo = Math.ceil(tiles * deep * (square ? 1.3 : 1.45)), hi = Math.ceil(tiles * deep * (square ? 1.45 : 1.7));
-  const pace = req.Exposure.Seconds + 3;          // each shot: the exposure, a short hop, the download
-  const total = lo * pace / scopes, first = Math.min(total, Math.max(tiles * 1.5 * pace, 1.4 * 3600) / scopes);
-  return `. About ${lo}–${hi} shots, ${duration(lo * pace / scopes)}–${duration(hi * pace / scopes)}${square ? '' : ' (Match camera angle needs fewer)'}`
-    + (total > 2 * first ? `; it is taken in thin passes, so there is data everywhere after about ${duration(first)}.` : '.');
+/** The station's dry run, as a few labelled lines: how long it takes, how big the picture is, how much it saves; and the notes
+ * (why a scale was changed, a tip to line the camera up). */
+function summary(p, req) {
+  const m = p.Message, rows = [], notes = [];
+  const subs = /about (\d+) subs, (.+?) of shooting \(([^)]*)\)/.exec(m);
+  const over = /over (\d+) subs/.exec(m);
+  const scale = /image at ([\d.]+)"\/px/.exec(m);
+  const disk = /about ([\d.]+ [KMGT]?B) of subs an hour/.exec(m);
+  const note = /image at [\d.]+"\/px \((.*?)\)(;|,|$)/.exec(m);
+  rows.push(['Area', `${p.WidthDegrees.toFixed(2)}° × ${p.HeightDegrees.toFixed(2)}°`]);
+  if (/until stopped/.test(m)) rows.push(['Shooting', 'until you stop it, a little deeper everywhere each hour']);
+  else if (subs) rows.push(['Shooting', `about ${subs[1]} subs, ${subs[2]}`]);
+  else if (over) rows.push(['Shooting', `more than ${over[1]} subs: a very long one (a smaller area, a shorter depth or longer subs)`, 'warn']);
+  else if (/nothing left to take/.test(m)) rows.push(['Shooting', 'nothing left to take: it is as deep as asked']);
+  const first = firstData(p, req);
+  if (first) rows.push(['First data everywhere', `after about ${first}`]);
+  if (scale) rows.push(['Picture', `${scale[1]}″/px`]);
+  if (disk) rows.push(['Disk', `about ${disk[1]} an hour`]);
+  if (note) notes.push(note[1].charAt(0).toUpperCase() + note[1].slice(1) + '.');
+  const tip = cameraTip(p, req);
+  if (tip) rows.push(['Tip', tip, 'tip']);
+  return [rows, notes.join(' ')];
+}
+/** The passes are thin: after about this long every spot has some data (empty when it all fits in one go). */
+function firstData(p, req) {
+  const frames = p.Workers.flatMap(w => w.Frames.map(f => f.WidthDegrees * f.HeightDegrees));
+  if (!frames.length || !(req.TargetSeconds > 0)) return '';
+  const tiles = p.WidthDegrees * p.HeightDegrees / frames.reduce((s, a) => s + a, 0), pace = req.Exposure.Seconds + 6;
+  const scopes = Math.max(1, p.Workers.length), deep = Math.ceil(req.TargetSeconds / req.Exposure.Seconds);
+  const total = tiles * deep * 1.4 * pace / scopes, first = Math.min(total, Math.max(tiles * 1.5 * pace, 1.4 * 3600) / scopes);
+  return total > 2 * first ? duration(first) : '';
+}
+/** A camera turned against the area tiles it with more overlap: say so, once it is a mosaic. */
+function cameraTip(p, req) {
+  const f0 = p.Workers[0]?.Frames?.[0];
+  if (!f0 || p.WidthDegrees * p.HeightDegrees < 2 * f0.WidthDegrees * f0.HeightDegrees) return '';
+  const rel = (((f0.RotationDegrees - req.PositionAngleDegrees) % 90) + 90) % 90;
+  return Math.min(rel, 90 - rel) < 3 ? '' : 'Match camera angle lines the frames up with the area: fewer subs for the same depth';
 }
 function frameOfScopes() {
   const f = preview?.state?.Workers?.[0]?.Frames?.[0];
@@ -721,8 +754,13 @@ async function loadKept() {
   const k = await ask(`${IDS.imaging}.ListSaved`);
   if (!k) { list.innerHTML = '<p class="hint">No imaging service answered.</p>'; return; }
   list.textContent = '';
-  if (k.Images.length === 0) { list.innerHTML = '<p class="hint">None yet.</p>'; return; }
-  for (const i of [...k.Images].sort((a, b) => String(b.UpdatedUtc).localeCompare(String(a.UpdatedUtc)))) {
+  if (k.Images.length === 0) { list.innerHTML = '<p class="hint">None yet.</p>'; $('keptHidden').textContent = ''; return; }
+  const q = $('keptFind').value.trim().toLowerCase(), all = $('keptEmpty').checked;
+  const shown = [...k.Images].filter(i => (all || i.Visits > 0) && (!q || i.Label.toLowerCase().includes(q)));
+  const empty = k.Images.filter(i => !(i.Visits > 0)).length;
+  $('keptHidden').textContent = !all && empty ? `${empty} image${empty === 1 ? '' : 's'} with no shots hidden.` : '';
+  if (!shown.length) list.innerHTML = `<p class="hint">${q ? 'Nothing kept by that name.' : 'None with shots yet.'}</p>`;
+  for (const i of shown.sort((a, b) => String(b.UpdatedUtc).localeCompare(String(a.UpdatedUtc)))) {
     const r = i.Request, part = r.TargetSeconds > 0 ? Math.min(1, i.MeanSeconds / r.TargetSeconds) : 0;
     const el = document.createElement('div'); el.className = 'item';
     el.innerHTML = `<div class="row between"><b>${esc(i.Label)}</b><span class="hint">${esc(utc(i.UpdatedUtc)?.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) ?? '')}</span></div>
@@ -746,6 +784,9 @@ async function loadKept() {
   }
 }
 $('keptRefresh').onclick = e => busy(e.target, loadKept);
+$('keptFind').oninput = () => loadKept();
+$('keptEmpty').onchange = () => { store.set('keptEmpty', $('keptEmpty').checked); loadKept(); };
+$('keptEmpty').checked = store.get('keptEmpty', false);
 
 // ---------------------------------------------------------------------------------------------------- the queue
 let schedule = null, schedState = null;
@@ -806,6 +847,8 @@ function showSchedState(s) {
   schedState = s;
   $('schedPhase').textContent = s.Phase || 'Idle'; $('schedPhase').className = 'chip ' + phaseClass(s.Phase || '');
   $('schedMessage').textContent = (s.Running ? `running '${s.Running}'. ` : '') + (s.Message || '');
+  const on = !['Idle', 'Stopped', ''].includes(s.Phase || '');
+  $('schedStart').disabled = on; $('schedStop').disabled = !on;
   if (!document.querySelector('[data-page=queue]').hidden && !$('queueSave').classList.contains('primary')) showQueue();
 }
 
@@ -820,9 +863,10 @@ async function loadDevices() {
   try { devices = ((await leaf.call(IDS.devices, null)) ?? []).flatMap(l => l.Devices ?? []); } catch { devices = []; }
   devices.sort((a, b) => a.Kind.localeCompare(b.Kind) || a.Id.localeCompare(b.Id));
   const box = $('devices');
+  const shownDevices = devices.filter(d => d.Kind !== 'GuidePort');     // a driver's guide port is part of its camera or mount
   box.textContent = '';
   if (!devices.length) box.innerHTML = '<p class="hint">No devices: start the drivers (a profile) or check the INDI server.</p>';
-  for (const d of devices) {
+  for (const d of shownDevices) {
     const el = document.createElement('div'); el.className = 'item row between';
     el.innerHTML = `<span><b>${esc(d.DisplayName || d.Id)}</b> <span class="hint">${esc(d.Kind)} · ${esc(d.Source)}</span></span><span class="row tight"><span class="chip">…</span><button>Connect</button></span>`;
     const chip = el.querySelector('.chip'), btn = el.querySelector('button');
@@ -1051,6 +1095,7 @@ function addLog(text, level) {
   const line = document.createElement('div');
   line.textContent = text;
   if (level) line.className = level;
+  else if (/ info +\S+: (Idle|Pointing|OnTarget|Exposing|Settling|Slewing|Downloading|Centering|Guiding|Dithering)\s*$/.test(text) || / info +stack: .* frames \(latest/.test(text) || / info +station: session log (open|closed)\s*$/.test(text)) line.className = 'step';
   logEl.append(line);
   while (logEl.childElementCount > 800) logEl.firstElementChild.remove();
   if (stick) logEl.scrollTop = logEl.scrollHeight;
@@ -1064,6 +1109,8 @@ async function loadLog() {
   logEl.scrollTop = logEl.scrollHeight;
 }
 $('logQuiet').onchange = () => logEl.classList.toggle('quiet', $('logQuiet').checked);
+$('logSteps').onchange = () => { logEl.classList.toggle('nosteps', !$('logSteps').checked); store.set('logSteps', $('logSteps').checked); };
+$('logSteps').checked = store.get('logSteps', false); logEl.classList.toggle('nosteps', !$('logSteps').checked);
 $('noteForm').onsubmit = async ev => {
   ev.preventDefault();
   const text = $('note').value.trim();
@@ -1087,7 +1134,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden && st
 async function start() {
   const wsPort = await fetch('/api/wsport').then(r => r.json()).catch(() => 8081);
   const url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.hostname}:${wsPort}/`;
-  for (;;) { try { await leaf.connect(url); break; } catch { $('link').dataset.state = 'down'; $('link').textContent = 'no station at ' + url; await sleep(3000); } }
+  for (;;) { try { await leaf.connect(url); break; } catch { $('link').dataset.state = 'down'; $('link').textContent = `can't reach the station (${location.hostname}), trying again…`; await sleep(3000); } }
 
   showTab(store.get('tab', 'now'));
   await leaf.hook(IDS.logEntry, e => addLog(logLine(e), ['warn', 'error', 'note'].includes(e.Level) ? e.Level : '')).catch(ignore);

@@ -59,7 +59,7 @@ public class SkyAtlasLookTests
         string? dir = Environment.GetEnvironmentVariable("ELINK_SCREENSHOTS");
 
         foreach (var (name, ra, dec, fov) in new[] { ("cygnus-milky-way", 20.4, 40.0, 70.0), ("scutum-sagittarius", 18.6, -22.0, 60.0), ("orion", 5.55, -2.0, 24.0), ("m42", 5.59, -5.4, 2.5),
-                                                     ("pleiades", 3.79, 24.1, 3.0), ("andromeda", 0.712, 41.27, 5.0), ("lagoon-trifid", 18.05, -23.5, 4.0) })
+                                                     ("pleiades", 3.79, 24.1, 3.0), ("andromeda", 0.712, 41.27, 5.0), ("lagoon-trifid", 18.05, -23.5, 4.0), ("perseus-field", 3.4, 47.0, 8.0), ("cassiopeia-field", 0.9, 61.0, 3.0) })
         {
             var chart = await ChartAsync(atlas, glow, ra, dec, fov);
             var w = new Window { Width = 1400, Height = 900, Content = chart };

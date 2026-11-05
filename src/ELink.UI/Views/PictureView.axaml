@@ -123,7 +123,7 @@
               </StackPanel>
               <TextBlock Classes="hint" TextWrapping="Wrap" Text="Saves the stack as it really is (linear, unstretched FITS: nothing is lost, you can process it anywhere) and this picture as a 16-bit PNG. The stack is also kept unstretched with every kept image."/>
               <c:Notice Text="{Binding Saved}" Kind="ok"/>
-              <c:Notice Text="{Binding Message}" Kind="{Binding MessageKind}" IsVisible="{Binding HasImage}"/>
+              <c:Notice Text="{Binding Message}" Kind="{Binding MessageKind}" When="{Binding HasImage}"/>
             </StackPanel>
           </Border>
         </StackPanel>

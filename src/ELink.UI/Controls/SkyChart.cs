@@ -284,6 +284,7 @@ public sealed class SkyChart : Control
         if (ShowConstellations) DrawConstellations(ctx, proj);
         DrawDsos(ctx, proj);
         DrawStars(ctx, proj);
+        DrawLabels(ctx);
         DrawBodies(ctx, proj);
         DrawHorizon(ctx, proj);
         DrawPolygons(ctx, proj);
@@ -293,6 +294,24 @@ public sealed class SkyChart : Control
     }
 
     private bool Visible(double x, double y, double margin = 20) => x >= -margin && y >= -margin && x <= Bounds.Width + margin && y <= Bounds.Height + margin;
+
+    /// <summary>Star and object names waiting to be placed: the most important first, each only where it covers no name already
+    /// placed (a crowded field keeps its brightest names readable instead of a pile of overprinted ones).</summary>
+    private readonly List<(double Priority, string Text, double X, double Y, IBrush Brush, double Size)> _labels = new();
+
+    private void DrawLabels(DrawingContext ctx)
+    {
+        var placed = new List<Rect>();
+        foreach (var l in _labels.OrderBy(l => l.Priority))
+        {
+            var ft = new FormattedText(l.Text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Face, l.Size, l.Brush);
+            var box = new Rect(l.X - 1, l.Y - 1, ft.Width + 2, ft.Height + 2);
+            if (placed.Any(p => p.Intersects(box))) continue;
+            placed.Add(box);
+            ctx.DrawText(ft, new Point(l.X, l.Y));
+        }
+        _labels.Clear();
+    }
 
     private void Text(DrawingContext ctx, string text, double x, double y, IBrush brush, double size = 11)
     {
@@ -415,33 +434,50 @@ public sealed class SkyChart : Control
             if (label)
             {
                 string text = d.CommonName != "" && Fov < 40 && d.CommonName.Length < 28 ? $"{d.Id}  {d.CommonName}" : d.Id;
-                Text(ctx, text, x + Math.Min(b, 60) + 4, y - 6, new SolidColorBrush(color, 0.7), 10);
+                // Messier objects and bright ones first; the rest only where they do not cover a label already placed
+                double priority = (d.Id.StartsWith("M ") ? 0 : 3) + (float.IsNaN(d.Magnitude) ? 9 : d.Magnitude) * 0.5;
+                _labels.Add((priority, text, x + Math.Min(b, 60) + 4, y - 6, new SolidColorBrush(color, 0.7), 10));
             }
         }
     }
 
-    /// <summary>Star colour from its B-V index, as a star looks in a picture: B-V to temperature (Ballesteros), the temperature's
-    /// black-body colour, then about half way back to white (stars are pale; only the hot and the cool ones are clearly tinted).</summary>
+    /// <summary>Star colour from its B-V index, as stars look in a colour-calibrated deep-sky photograph (measured from field
+    /// stars in real ones): hot stars a soft sky blue, Sun-like stars white, K stars orange, M stars a deep orange.
+    /// A black body's colour is far paler than this; photographs are stretched, which pulls the colours apart.</summary>
     public static Color StarColor(float bv)
     {
         double b = float.IsNaN(bv) ? 0.6 : Math.Clamp(bv, -0.4, 2.0);
-        double t = 4600 * (1 / (0.92 * b + 1.7) + 1 / (0.92 * b + 0.62));
-        var (r, g, bl) = BlackBody(t);
-        double m = Math.Max(r, Math.Max(g, bl));
-        r /= m; g /= m; bl /= m;
-        const double keep = 0.55;
-        return Color.FromRgb((byte)(255 * (1 - keep + keep * r)), (byte)(255 * (1 - keep + keep * g)), (byte)(255 * (1 - keep + keep * bl)));
+        int i = 0;
+        while (i < Palette.Length - 2 && b > Palette[i + 1].Bv) i++;
+        var (b0, r0, g0, l0) = Palette[i];
+        var (b1, r1, g1, l1) = Palette[i + 1];
+        double t = Math.Clamp((b - b0) / (b1 - b0), 0, 1);
+        return Color.FromRgb((byte)(r0 + (r1 - r0) * t), (byte)(g0 + (g1 - g0) * t), (byte)(l0 + (l1 - l0) * t));
     }
 
-    /// <summary>The sRGB colour of a black body (Tanner Helland's fit), 0..1 a channel.</summary>
-    private static (double R, double G, double B) BlackBody(double kelvin)
+    // white at B-V 0.65, the Sun's colour: a colour-calibrated photograph is balanced on solar-type stars, so the hotter F, A
+    // and B stars go blue and the cooler K and M stars orange
+    private static readonly (double Bv, double R, double G, double B)[] Palette =
     {
-        double t = Math.Clamp(kelvin, 1000, 40000) / 100, r, g, b;
-        r = t <= 66 ? 255 : 329.698727446 * Math.Pow(t - 60, -0.1332047592);
-        g = t <= 66 ? 99.4708025861 * Math.Log(t) - 161.1195681661 : 288.1221695283 * Math.Pow(t - 60, -0.0755148492);
-        b = t >= 66 ? 255 : t <= 19 ? 0 : 138.5177312231 * Math.Log(t - 10) - 305.0447927307;
-        return (Math.Clamp(r, 0, 255) / 255, Math.Clamp(g, 0, 255) / 255, Math.Clamp(b, 0, 255) / 255);
+        (-0.40, 158, 184, 255), (-0.20, 170, 194, 255), (0.00, 192, 210, 255), (0.25, 214, 226, 255), (0.45, 234, 240, 255),
+        (0.65, 252, 252, 250), (0.90, 255, 234, 204), (1.15, 255, 210, 158), (1.45, 255, 182, 112), (2.00, 255, 148, 76),
+    };
+
+    /// <summary>B-V for a star with no measured colour (the faint catalogue has none): drawn, the same for the same star every
+    /// time, from the colours of real field stars (the quantiles of the catalogue's stars at magnitude 7 to 8.5, moved towards
+    /// the yellow-white dwarfs that outnumber the orange giants fainter down, as measured in deep photographs of star fields). So a field has the true mix of blue, white and orange stars, though
+    /// a given faint star's colour is only representative.</summary>
+    public static float FieldColorIndex(float raHours, float decDegrees)
+    {
+        uint h = (uint)BitConverter.SingleToInt32Bits(raHours) * 0x9E3779B1u ^ (uint)BitConverter.SingleToInt32Bits(decDegrees) * 0x85EBCA77u;
+        h ^= h >> 15; h *= 0x2C1B3C6Du; h ^= h >> 12;
+        double u = (h & 0xFFFFFF) / (double)0x1000000 * (FieldBv.Length - 1);
+        int k = (int)u;
+        return (float)(FieldBv[k] + (FieldBv[k + 1] - FieldBv[k]) * (u - k));
     }
+
+    private static readonly double[] FieldBv =
+        { -0.08, 0.04, 0.14, 0.23, 0.31, 0.38, 0.44, 0.49, 0.54, 0.58, 0.62, 0.66, 0.71, 0.77, 0.84, 0.93, 1.04, 1.14, 1.26, 1.42, 1.70 };
 
     /// <summary>Core radius in pixels for a magnitude: grows with the star's light (about a third root of the flux, as a star's
     /// image on a sensor does), from a pinpoint at the faintest drawn.</summary>
@@ -458,6 +494,14 @@ public sealed class SkyChart : Control
     private readonly Dictionary<int, IBrush> _haloBrushes = new();
     private readonly Dictionary<int, IBrush> _spikeBrushes = new();
 
+    /// <summary>The colour with its tint strengthened: each channel pulled further from the colour's grey.</summary>
+    private static Color Vivid(Color c, double k)
+    {
+        double m = (c.R + c.G + c.B) / 3.0;
+        byte F(byte v) => (byte)Math.Clamp(m + (v - m) * k, 0, 255);
+        return Color.FromArgb(c.A, F(c.R), F(c.G), F(c.B));
+    }
+
     private static Color Toward(Color c, Color to, double t) =>
         Color.FromArgb(c.A, (byte)(c.R + (to.R - c.R) * t), (byte)(c.G + (to.G - c.G) * t), (byte)(c.B + (to.B - c.B) * t));
 
@@ -468,26 +512,31 @@ public sealed class SkyChart : Control
         foreach (var s in stars.OrderByDescending(s => s.Magnitude))     // faint first: bright stars on top
         {
             if (!proj.TryProject(s.RaHours, s.DecDegrees, out var x, out var y) || !Visible(x, y, 60)) continue;
-            int ckey = float.IsNaN(s.ColorIndex) ? 99 : (int)Math.Round((s.ColorIndex + 0.4) * 20);
-            var tint = StarColor(s.ColorIndex);
+            float bv = float.IsNaN(s.ColorIndex) ? FieldColorIndex(s.RaHours, s.DecDegrees) : s.ColorIndex;
+            int ckey = (int)Math.Round((Math.Clamp(bv, -0.4f, 2f) + 0.4) * 20);
+            var tint = StarColor(bv);
             double r = StarRadius(s.Magnitude, limit);
             double above = limit - s.Magnitude;              // magnitudes above the faintest shown
-            if (above > 2.2)
             {
-                // the bloom: light scattered round a bright star, in its colour (stronger than the core's, as in a photograph)
-                if (!_haloBrushes.TryGetValue(ckey, out var halo))
+                // the glow: a star's image in a photograph is a soft blob, not a point, and its colour is strongest in the
+                // skirt round the centre (the centre of a bright one is burnt out pale); every star has one, stronger and wider
+                // the brighter it is
+                int level = Math.Clamp((int)Math.Round(above * 1.4), 0, 15);
+                if (!_haloBrushes.TryGetValue(ckey * 16 + level, out var halo))
                 {
-                    var c = Toward(tint, Color.FromRgb(tint.R < 200 ? (byte)90 : (byte)255, tint.G, tint.B < 200 ? (byte)90 : (byte)255), 0.25);
-                    _haloBrushes[ckey] = halo = new RadialGradientBrush { GradientStops = new GradientStops
+                    var c = Vivid(tint, 1.5);
+                    byte A(double a) => (byte)Math.Round(Math.Clamp(a, 0, 1) * 255);
+                    double peak = Math.Min(0.3 + 0.04 * level, 0.8);
+                    _haloBrushes[ckey * 16 + level] = halo = new RadialGradientBrush { GradientStops = new GradientStops
                     {
-                        new GradientStop(Color.FromArgb(190, c.R, c.G, c.B), 0), new GradientStop(Color.FromArgb(80, c.R, c.G, c.B), 0.18),
-                        new GradientStop(Color.FromArgb(26, c.R, c.G, c.B), 0.45), new GradientStop(Color.FromArgb(7, c.R, c.G, c.B), 0.75),
+                        new GradientStop(Color.FromArgb(A(peak), c.R, c.G, c.B), 0), new GradientStop(Color.FromArgb(A(peak * 0.55), c.R, c.G, c.B), 0.16),
+                        new GradientStop(Color.FromArgb(A(peak * 0.2), c.R, c.G, c.B), 0.38), new GradientStop(Color.FromArgb(A(peak * 0.06), c.R, c.G, c.B), 0.68),
                         new GradientStop(Color.FromArgb(0, c.R, c.G, c.B), 1),
                     } };
                 }
-                double hr = r * (2.6 + 0.55 * Math.Min(above, 9));
+                double hr = r * (2.6 + 0.5 * Math.Clamp(above, 0, 9)) + 2.2;
                 ctx.DrawEllipse(halo, null, new Point(x, y), hr, hr);
-                if (above > 5.5)
+                if (above > 6)
                 {
                     // the very brightest: faint diffraction spikes
                     if (!_spikeBrushes.TryGetValue(ckey, out var spike))
@@ -496,20 +545,20 @@ public sealed class SkyChart : Control
                             StartPoint = new RelativePoint(0, 0.5, RelativeUnit.Relative), EndPoint = new RelativePoint(1, 0.5, RelativeUnit.Relative),
                             GradientStops = new GradientStops { new GradientStop(Color.FromArgb(0, tint.R, tint.G, tint.B), 0), new GradientStop(Color.FromArgb(120, tint.R, tint.G, tint.B), 0.5), new GradientStop(Color.FromArgb(0, tint.R, tint.G, tint.B), 1) },
                         };
-                    double len = r * (5 + 1.2 * (above - 5.5));
+                    double len = r * (5 + 1.2 * (above - 6));
                     ctx.FillRectangle(spike, new Rect(x - len, y - 0.6, 2 * len, 1.2));
                     using (ctx.PushTransform(Matrix.CreateRotation(Math.PI / 2) * Matrix.CreateTranslation(x, y)))
                         ctx.FillRectangle(spike, new Rect(-len, -0.6, 2 * len, 1.2));
                 }
             }
-            // the core: white-hot in the middle of bright stars (a saturated star is white), the true tint in faint ones
+            // the core: its colour in faint and middling stars, burning to white only in the bright ones (their colour is in the glow)
             int akey = (int)Math.Round(StarAlpha(s.Magnitude, limit) * 10);
-            double white = Math.Clamp((above - 1.5) / 5, 0, 0.75);
+            double white = Math.Clamp((above - 3.5) / 5, 0, 0.6);
             int wkey = (int)Math.Round(white * 8);
             if (!_starBrushes.TryGetValue((ckey * 16 + wkey, akey), out var brush))
                 _starBrushes[(ckey * 16 + wkey, akey)] = brush = new SolidColorBrush(Toward(tint, Colors.White, wkey / 8.0), akey / 10.0);
             ctx.DrawEllipse(brush, null, new Point(x, y), r, r);
-            if (s.Label != "" && (s.Magnitude < 2.2 || (Fov < 40 && s.Magnitude < 4.5) || Fov < 12)) Text(ctx, s.Label, x + r + 3, y - 6, StarText, 10);
+            if (s.Label != "" && (s.Magnitude < 2.2 || (Fov < 40 && s.Magnitude < 4.5) || Fov < 12)) _labels.Add((s.Magnitude - 1, s.Label, x + r + 3, y - 6, StarText, 10));
         }
     }
 
@@ -531,6 +580,9 @@ public sealed class SkyChart : Control
             _glowBitmap?.Dispose();
             _glowBitmap = new Avalonia.Media.Imaging.WriteableBitmap(new PixelSize(w, h), new Vector(96, 96), Avalonia.Platform.PixelFormat.Bgra8888, Avalonia.Platform.AlphaFormat.Premul);
             var px = new int[w * h];
+            // zoomed in, the band is resolved into its stars (and a photograph's background is set near black): only a trace of
+            // the glow is left, so the stars stand out against a dark sky
+            double fade = Math.Clamp(0.22 + 0.78 * Math.Log10(Math.Max(Fov, 1) / 3) / Math.Log10(10), 0.22, 1);
             for (int j = 0; j < h; j++)
                 for (int i = 0; i < w; i++)
                 {
@@ -539,7 +591,7 @@ public sealed class SkyChart : Control
                     double v = map.Sample(ra, dec);
                     if (v <= 0.002) continue;
                     // a faint, slightly cool-white band; the dust lanes show as the gaps between the contours
-                    double a = Math.Pow(v, 0.85) * 0.5;
+                    double a = Math.Pow(v, 0.85) * 0.5 * fade;
                     int A = (int)(255 * a), R = (int)(205 * a), G = (int)(200 * a), B = (int)(215 * a);
                     px[j * w + i] = (A << 24) | (R << 16) | (G << 8) | B;
                 }

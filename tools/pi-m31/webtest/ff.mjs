@@ -2,15 +2,17 @@
 //   node ff.mjs URL steps.mjs OUTDIR [WIDTHxHEIGHT]
 import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 
 const [,, url, stepsFile, out = '.', size = '1200x1400'] = process.argv;
 const [W, H] = size.split('x').map(Number);
-const profile = `${homedir()}/snap/firefox/common/elink-ff-test`;   // the snap Firefox can only read profiles here
+// the snap Firefox can only read profiles under ~/snap; elsewhere (Windows) a temp folder; FIREFOX names another binary
+const profile = process.platform === 'win32' ? `${tmpdir()}/elink-ff-test` : `${homedir()}/snap/firefox/common/elink-ff-test`;
+const firefox = process.env.FIREFOX ?? (process.platform === 'win32' ? 'C:/Program Files/Mozilla Firefox/firefox.exe' : 'firefox');
 rmSync(profile, { recursive: true, force: true }); mkdirSync(profile, { recursive: true });
 writeFileSync(`${profile}/user.js`, 'user_pref("geo.enabled", false);\nuser_pref("browser.shell.checkDefaultBrowser", false);\nuser_pref("datareporting.policy.dataSubmissionEnabled", false);\n');
 const port = 9300 + Math.floor(Math.random() * 500);
-const ff = spawn('firefox', ['--headless', '--no-remote', '--profile', profile, `--remote-debugging-port=${port}`, `--width=${W}`, `--height=${H}`], { stdio: ["ignore", "ignore", "pipe"], detached: true });
+const ff = spawn(firefox, ['--headless', '--no-remote', '--profile', profile, `--remote-debugging-port=${port}`, `--width=${W}`, `--height=${H}`], { stdio: ["ignore", "ignore", "pipe"], detached: true });
 ff.stderr.on('data', () => {});
 const t0 = Date.now();
 const log = (...a) => console.log(((Date.now() - t0) / 1000).toFixed(1).padStart(6), ...a);

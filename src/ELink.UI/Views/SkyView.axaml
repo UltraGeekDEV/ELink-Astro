@@ -129,7 +129,7 @@
                 <TextBlock Classes="hint" Text="Tell ELink where you are and it will suggest what is best placed tonight, for your frame."/>
                 <Button Content="Set my location" Command="{Binding GoToSiteCommand}" HorizontalAlignment="Left"/>
               </StackPanel>
-              <c:Notice Text="{Binding Message}" Kind="info" IsVisible="{Binding !NeedsSite}"/>
+              <c:Notice Text="{Binding Message}" Kind="info" When="{Binding !NeedsSite}"/>
               <ItemsControl ItemsSource="{Binding Items}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate>

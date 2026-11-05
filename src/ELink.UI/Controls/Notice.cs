@@ -10,9 +10,12 @@ public sealed class Notice : Border
 {
     public static readonly StyledProperty<string?> TextProperty = AvaloniaProperty.Register<Notice, string?>(nameof(Text));
     public static readonly StyledProperty<string?> KindProperty = AvaloniaProperty.Register<Notice, string?>(nameof(Kind), "error");
+    /// <summary>Shown only when this is true too (and it has text): a view binds this, never IsVisible, which would show an empty bar.</summary>
+    public static readonly StyledProperty<bool> WhenProperty = AvaloniaProperty.Register<Notice, bool>(nameof(When), true);
 
     public string? Text { get => GetValue(TextProperty); set => SetValue(TextProperty, value); }
     public string? Kind { get => GetValue(KindProperty); set => SetValue(KindProperty, value); }
+    public bool When { get => GetValue(WhenProperty); set => SetValue(WhenProperty, value); }
 
     private readonly TextBlock _text = new() { TextWrapping = TextWrapping.Wrap, FontSize = 13 };
 
@@ -28,13 +31,13 @@ public sealed class Notice : Border
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
-        if (change.Property == TextProperty || change.Property == KindProperty) Apply();
+        if (change.Property == TextProperty || change.Property == KindProperty || change.Property == WhenProperty) Apply();
     }
 
     private void Apply()
     {
         _text.Text = Text;
-        IsVisible = !string.IsNullOrWhiteSpace(Text);
+        IsVisible = When && !string.IsNullOrWhiteSpace(Text);
         (Color edge, Color back, Color fore) = (Kind ?? "error") switch
         {
             "ok" => (Color.FromRgb(0x4C, 0xC9, 0x80), Color.FromRgb(0x18, 0x2E, 0x26), Color.FromRgb(0xA8, 0xEC, 0xC4)),

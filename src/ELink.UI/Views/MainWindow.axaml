@@ -16,15 +16,30 @@
   </Window.KeyBindings>
   <Grid RowDefinitions="Auto,Auto,*">
     <!-- joining a mesh: only when the UI runs on its own -->
-    <Border Grid.Row="0" Background="#171C27" Padding="14,8" IsVisible="{Binding ShowConnectionBar}" BorderBrush="#2B3548" BorderThickness="0,0,0,1">
-      <Grid ColumnDefinitions="Auto,*,Auto">
+    <Border Grid.Row="0" Background="#171C27" Padding="14,6" IsVisible="{Binding ShowConnectionBar}" BorderBrush="#2B3548" BorderThickness="0,0,0,1">
+      <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+        <!-- the address only while it is needed: once connected, one line and a way to change it -->
         <StackPanel Classes="row" VerticalAlignment="Center">
+          <StackPanel.IsVisible>
+            <MultiBinding Converter="{x:Static BoolConverters.Or}">
+              <Binding Path="!Mesh.IsConnected"/>
+              <Binding Path="ChangingStation"/>
+            </MultiBinding>
+          </StackPanel.IsVisible>
           <TextBlock Classes="label" Text="ELink station at" VerticalAlignment="Center"/>
-          <TextBox Text="{Binding Host}" Width="140" Watermark="host"/>
-          <NumericUpDown Value="{Binding Port}" Minimum="1" Maximum="65535" FormatString="0" Width="100"/>
-          <Button Content="Connect" Classes.primary="{Binding !Mesh.IsConnected}" Command="{Binding ConnectCommand}"/>
+          <TextBox Text="{Binding Host}" Width="140" Watermark="host or address"/>
+          <NumericUpDown Value="{Binding Port}" Minimum="1" Maximum="65535" FormatString="0" Width="100" ToolTip.Tip="the station's mesh port (5699 on the Pi)"/>
+          <Button Content="Connect" Classes="primary" Command="{Binding ConnectCommand}"/>
         </StackPanel>
-        <TextBlock Grid.Column="2" Text="{Binding ConnectionStatus}" VerticalAlignment="Center" Classes="label"/>
+        <TextBlock Grid.Column="2" Text="{Binding ConnectionStatus}" VerticalAlignment="Center" Classes="label" Margin="0,0,8,0"/>
+        <Button Grid.Column="3" Content="Change" Classes="ghost" Padding="8,2" HorizontalAlignment="Right" Command="{Binding ChangeStationCommand}" ToolTip.Tip="connect to another station">
+          <Button.IsVisible>
+            <MultiBinding Converter="{x:Static BoolConverters.And}">
+              <Binding Path="Mesh.IsConnected"/>
+              <Binding Path="!ChangingStation"/>
+            </MultiBinding>
+          </Button.IsVisible>
+        </Button>
       </Grid>
     </Border>
 

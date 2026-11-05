@@ -133,11 +133,16 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         await IndiBrowser.RefreshServersAsync();
     }
 
+    /// <summary>The address fields show while not connected, or when the user asks to change it.</summary>
+    [ObservableProperty] private bool _changingStation;
+
+    [RelayCommand] private void ChangeStation() => ChangingStation = true;
+
     [RelayCommand]
     private async Task ConnectAsync()
     {
         await Mesh.ConnectAsync(Host, Port);
-        if (Mesh.IsConnected) await Catalog.RefreshAsync();
+        if (Mesh.IsConnected) { ChangingStation = false; await Catalog.RefreshAsync(); }
     }
 
     [RelayCommand] private Task RefreshAsync() => Catalog.RefreshAsync();

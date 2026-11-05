@@ -15,7 +15,7 @@
     <div class="brand"><h1>ELink</h1><span id="sky" class="hint"></span></div>
     <div class="row tight">
       <span id="headline" class="chip" hidden></span>
-      <button id="red" class="icon" title="Red light (keeps your eyes dark adapted)" aria-label="Red light">●</button>
+      <button id="red" class="icon" title="Night mode: everything red, to keep your eyes dark adapted" aria-label="Night mode (red light)">● <span class="wide-only">Night</span></button>
       <span id="link" class="chip" data-state="connecting">connecting…</span>
     </div>
   </header>
@@ -40,16 +40,18 @@
         </div>
         <p id="imageMessage" class="hint"></p>
         <div class="coverage"><canvas id="cover" aria-label="where the image has data"></canvas></div>
-        <div class="legend hint"><span class="sw s0"></span>none <span class="sw s1"></span>some <span class="sw s2"></span>most <span class="sw s3"></span>done <span class="sw sf"></span>frame now</div>
+        <div class="legend hint" id="legend" hidden><span class="sw s0"></span>none <span class="sw s1"></span>some <span class="sw s2"></span>most <span class="sw s3"></span>done <span class="sw sf"></span>frame now</div>
         <div class="bar" aria-label="progress"><div id="imageBar"></div></div>
         <dl id="imageStats" class="stats"></dl>
         <div class="row between" id="imageButtons">
           <span class="row tight">
-            <button id="pause">Pause</button>
-            <button id="resume" class="primary">Resume</button>
-            <button id="stop" class="danger">Stop</button>
+            <button id="pause" hidden>Pause</button>
+            <button id="resume" class="primary" hidden>Resume</button>
+            <button id="stop" class="danger" hidden>Stop</button>
+            <button id="toKept" hidden>Continue it…</button>
+            <button id="toPlan" class="primary" hidden>Plan an image</button>
           </span>
-          <span class="row tight" id="depthRow">
+          <span class="row tight" id="depthRow" hidden>
             <label class="inline">Depth <input id="depthNow" type="number" min="0" step="any" inputmode="decimal"> min</label>
             <button id="depthSet">Set</button>
           </span>
@@ -143,10 +145,11 @@
         </details>
 
         <div class="coverage"><canvas id="planCanvas" aria-label="the area and one frame"></canvas></div>
+        <dl id="planStats" class="stats"></dl>
         <p id="planInfo" class="hint"></p>
         <div class="row sticky">
           <button type="submit" class="primary" id="startNow">Start</button>
-          <button type="button" id="addQueue">Add to queue</button>
+          <button type="button" id="addQueue" title="add it to the queue, which runs the best image for the sky all night">Add to queue</button>
           <button type="button" id="gotoCentre">Go to centre</button>
           <span class="grow"></span>
           <button type="button" id="resetForm" class="quiet">Clear</button>
@@ -159,6 +162,11 @@
       <article class="card">
         <div class="row between"><h2>Kept images</h2><button id="keptRefresh" class="quiet">Refresh</button></div>
         <p class="hint">Images started before keep their coverage and stack. Continue one tonight and it carries on where it was.</p>
+        <div class="row">
+          <input id="keptFind" type="search" placeholder="Find a kept image" aria-label="find a kept image" class="grow">
+          <label class="inline"><input id="keptEmpty" type="checkbox"> show the ones with no shots</label>
+        </div>
+        <p id="keptHidden" class="hint"></p>
         <div id="keptList" class="list"></div>
       </article>
     </section>
@@ -173,7 +181,7 @@
           <button id="schedStart" class="primary">Run the queue</button>
           <button id="schedStop">Stop the queue</button>
           <span class="grow"></span>
-          <label class="inline">Switch no sooner than <input id="minRun" type="number" min="0" step="5" class="short"> min</label>
+          <label class="inline" title="once an image starts, the queue stays on it at least this long before it may switch to a better one">Stay on an image at least <input id="minRun" type="number" min="0" step="5" class="short"> min</label>
           <button id="queueSave">Save</button>
         </div>
       </article>
@@ -207,7 +215,7 @@
 
       <article class="card">
         <h2>Telescope and scope</h2>
-        <p class="hint">A scope is a mount plus a telescope with its camera. This sets up the simple case: one camera, no guiding.</p>
+        <p class="hint">A scope is a mount plus a telescope with its camera. Fill this in to add one (the simple case: one camera, no guiding), or press Edit on a scope below to change it.</p>
         <form id="setupForm" class="fields" autocomplete="off">
           <label>Scope name <input name="Name" placeholder="Home 900" required></label>
           <label>Mount <select name="Mount"></select></label>
@@ -260,9 +268,10 @@
           <button class="primary">Add note</button>
         </form>
         <div class="row tight">
+          <label class="inline"><input id="logSteps" type="checkbox"> show every step (pointing, exposing, ...)</label>
           <label class="inline"><input id="logQuiet" type="checkbox"> only warnings and notes</label>
         </div>
-        <pre id="log" aria-live="polite"></pre>
+        <pre id="log" class="nosteps" aria-live="polite"></pre>
       </article>
     </section>
   </main>
