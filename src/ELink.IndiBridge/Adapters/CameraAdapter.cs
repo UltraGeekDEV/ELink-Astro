@@ -76,6 +76,7 @@ public sealed class CameraAdapter(AdapterContext ctx) : IndiDeviceAdapter<Camera
             _ => "",
         };
         if (frameElement == "") return CommandResult.Fail($"unknown frame type {r.FrameType.Text}");
+        if (BinningProblem(r.BinX.Value, r.BinY.Value) is { } badBin) return CommandResult.Fail(badBin);
         if (P("CCD_EXPOSURE")?.State == IndiState.Busy) return CommandResult.Fail("an exposure is already running");
 
         return await Send(async () =>
@@ -109,6 +110,23 @@ public sealed class CameraAdapter(AdapterContext ctx) : IndiDeviceAdapter<Camera
             _lastExposure = seconds; _lastFrameType = r.FrameType.Text == "" ? "Light" : r.FrameType.Text;
             await SetNumber("CCD_EXPOSURE", "CCD_EXPOSURE_VALUE", seconds);
         });
+    }
+
+    /// <summary>Why a binning cannot be sent, or null. 0 leaves the camera's own; anything else must be within what the driver
+    /// offers (CCD_BINNING's min..max): an out-of-range bin was passed on unchecked once, and the CCD simulator died of it.</summary>
+    private string? BinningProblem(int binX, int binY)
+    {
+        if (binX < 0 || binY < 0) return $"binning cannot be negative ({binX}x{binY})";
+        if (binX == 0 && binY == 0) return null;
+        if (P("CCD_BINNING") is not { } bin) return binX > 1 || binY > 1 ? $"{Device} cannot bin" : null;
+        int x = binX > 0 ? binX : 1, y = binY > 0 ? binY : x;
+        foreach (var (name, value) in new[] { ("HOR_BIN", x), ("VER_BIN", y) })
+        {
+            if (bin[name] is not { } e) continue;
+            double min = e.Min > 0 ? e.Min : 1, max = e.Max >= min ? e.Max : double.PositiveInfinity;
+            if (value < min || value > max) return $"{Device} bins {min:0}..{max:0} ({(name == "HOR_BIN" ? "across" : "down")}), not {value}";
+        }
+        return null;
     }
 
     private async Task EnsureBlobsAsync()
@@ -158,7 +176,7 @@ public sealed class CameraAdapter(AdapterContext ctx) : IndiDeviceAdapter<Camera
             await Node.FireEventAsync(EquipmentIds.Command(Kind, Id, "Frame"), new FrameEvent
             {
                 Device = Device, Format = format, ExposureSeconds = _lastExposure, FrameType = _lastFrameType,
-                Timestamp = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture), Data = new RawBytes(data),
+                Timestamp = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture), Data = RawBytes.Shared(data),   // by reference: every hop and subscriber here shares this one array
             });
         }
         catch (ObjectDisposedException) { }

@@ -193,7 +193,9 @@ public partial class ScopePanelViewModel : ObservableObject, IDisposable
             string text = $"{DateTime.Now:HH:mm:ss}  {shot.Shooter.Text}  {shot.FrameType.Text} {shot.ExposureSeconds.Value:0.###}s" +
                           (shot.Filter.Text != "" ? $"  {shot.Filter.Text}" : "");
             UiThread.Post(() => { Shots.Insert(0, text); while (Shots.Count > 50) Shots.RemoveAt(Shots.Count - 1); });
-            Preview.Show(shot.Data.Data, shot.Format.Text, text);
+            // a frame from another process comes by reference: fetch it only for the preview (and not on the event's thread)
+            if (shot.Data.Remote) _ = Task.Run(async () => { var b = await Frames.BytesAsync(node, shot.Data); if (b.Length > 0) Preview.Show(b, shot.Format.Text, text); });
+            else Preview.Show(shot.Data.Data, shot.Format.Text, text);
         };
         await node.HookEventAsync(ShooterIds.Shot(ScopeId), _shotHook, "scope preview");
 

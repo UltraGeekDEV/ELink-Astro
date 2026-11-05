@@ -200,7 +200,7 @@ public sealed class AutofocusService : IAsyncDisposable
         var point = new FocusPoint { Position = position };
         if (!shot.Format.Text.StartsWith(".fit", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException($"autofocus needs FITS frames, the shooter delivered {shot.Format.Text}");
-        var image = FitsImage.Parse(shot.Data.Data);
+        var image = FitsImage.Parse(await Frames.BytesAsync(_node, shot.Data));
         if (req.Channel.Text != "") image = FocusMeasure.ColourPlane(image, req.Channel.Text);
         var result = await Task.Run(() => StarField.Detect(image), ct);
         point.Hfr = result.MedianHfr; point.Stars = result.Count;

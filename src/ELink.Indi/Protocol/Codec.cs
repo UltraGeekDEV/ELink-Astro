@@ -27,13 +27,13 @@ public static class IndiCodec
             catch (Exception e) when (e is IOException or ObjectDisposedException or SocketException) { yield break; }
             if (n == 0) yield break;
             framer.Append(chunk.AsSpan(0, n));
-            while (framer.TryTake(out string? xml))
+            while (framer.TryTake(out string? xml, out var blobs))
             {
                 IndiMessage? message = null;
                 try
                 {
                     using var xr = XmlReader.Create(new StringReader(xml!), readerSettings);
-                    message = Parse(XElement.Load(xr));
+                    message = Parse(XElement.Load(xr), blobs);
                 }
                 catch (XmlException) { /* malformed element: skip it, keep the connection */ }
                 if (message is not null) yield return message;
@@ -41,7 +41,9 @@ public static class IndiCodec
         }
     }
 
-    public static IndiMessage? Parse(XElement e)
+    /// <summary>One element. <paramref name="blobs"/>: the contents of its oneBLOBs, already decoded by the framer (the
+    /// elements are then empty); without them the base64 text inside the element is decoded.</summary>
+    public static IndiMessage? Parse(XElement e, IReadOnlyList<byte[]>? blobs = null)
     {
         string tag = e.Name.LocalName;
         switch (tag)
@@ -55,7 +57,7 @@ public static class IndiCodec
             case "setNumberVector": return ParseSet(e, IndiPropertyType.Number, "oneNumber");
             case "setSwitchVector": return ParseSet(e, IndiPropertyType.Switch, "oneSwitch");
             case "setLightVector": return ParseSet(e, IndiPropertyType.Light, "oneLight");
-            case "setBLOBVector": return ParseSet(e, IndiPropertyType.Blob, "oneBLOB");
+            case "setBLOBVector": return ParseSet(e, IndiPropertyType.Blob, "oneBLOB", blobs);
             case "delProperty":
                 return new IndiDelete(Attr(e, "device") ?? "", Attr(e, "name"), Attr(e, "message"));
             case "message":
@@ -87,16 +89,18 @@ public static class IndiCodec
         return new IndiDefine(property, Attr(e, "message"));
     }
 
-    private static IndiSet ParseSet(XElement e, IndiPropertyType type, string childTag)
+    private static IndiSet ParseSet(XElement e, IndiPropertyType type, string childTag, IReadOnlyList<byte[]>? blobs = null)
     {
         var updates = ImmutableArray.CreateBuilder<IndiElementUpdate>();
+        int blob = 0;
         foreach (var c in e.Elements().Where(x => x.Name.LocalName == childTag))
         {
             string name = Attr(c, "name") ?? "";
             if (type == IndiPropertyType.Blob)
             {
                 byte[] data;
-                try { data = Convert.FromBase64String(c.Value); } catch (FormatException) { data = Array.Empty<byte>(); }
+                if (blobs is not null) data = blob < blobs.Count ? blobs[blob++] : Array.Empty<byte>();
+                else try { data = Convert.FromBase64String(c.Value); } catch (FormatException) { data = Array.Empty<byte>(); }
                 updates.Add(new IndiElementUpdate(name, Attr(c, "size") ?? data.Length.ToString(CultureInfo.InvariantCulture), data, Attr(c, "format")));
             }
             else

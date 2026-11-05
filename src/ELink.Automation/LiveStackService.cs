@@ -56,10 +56,14 @@ public sealed class LiveStackService : IAsyncDisposable
     private double _scale = double.NaN;     // all stacks share one grid once the scale is known
     private FilterStack? Primary => _stacks.Values.OrderByDescending(s => s.Counted).ThenByDescending(s => s.Stack.Frames).FirstOrDefault();
     private string _phase = "Idle", _message = "", _last = "";
-    private int _rejected, _pending, _generation;
+    private int _rejected, _pending, _generation, _faults;
     private double _exposure, _lastScale = double.NaN;
 
-    private sealed record Item(byte[] Fits, string Source, double RaHours, double DecDegrees, double Seconds, int Generation, string Filter, string Pseudo = "", double Scale = double.NaN, double Angle = double.NaN);
+    private sealed record Item(ELink.Contracts.RawBytes Raw, string Source, double RaHours, double DecDegrees, double Seconds, int Generation, string Filter, string Pseudo = "", double Scale = double.NaN, double Angle = double.NaN)
+    {
+        /// <summary>The frame's bytes (fetched first when it came by reference from another process).</summary>
+        public byte[] Fits => Raw.Data;
+    }
 
     private readonly string? _dataDir;
     private string? _sessionDir;
@@ -139,7 +143,7 @@ public sealed class LiveStackService : IAsyncDisposable
         lock (_gate)
         {
             _request = r; _stacks.Clear(); _references.Clear(); _scale = r.PixelScaleArcsec.Value > 0 ? r.PixelScaleArcsec.Value : double.NaN;
-            _rejected = 0; _pending = 0; _exposure = 0; _lastScale = double.NaN; _last = ""; _seen.Clear();
+            _rejected = 0; _pending = 0; _faults = 0; _exposure = 0; _lastScale = double.NaN; _last = ""; _seen.Clear();
             _sessionDir = dir; _framesSaved = 0;
             if (restored is not null)
             {
@@ -194,10 +198,10 @@ public sealed class LiveStackService : IAsyncDisposable
         {
             if (_phase != "Stacking") return;
             // a scope relays its shooters' frames: the same frame may arrive under several ids
-            if (!_seen.Add((shot.Shooter.Text, shot.Timestamp.Text, Fingerprint(shot.Data.Data)))) return;
+            if (!_seen.Add((shot.Shooter.Text, shot.Timestamp.Text, shot.Data.Ref is { } key ? key.GetHashCode() : Fingerprint(shot.Data.Data)))) return;
             queue = _queue; gen = _generation; _pending++;
         }
-        var item = new Item(shot.Data.Data, shot.Shooter.Text, shot.PointingRaHours.Value, shot.PointingDecDegrees.Value, shot.ExposureSeconds.Value, gen, shot.Filter.Text, shot.PseudoChannel.Text, shot.PixelScaleArcsec.Value, shot.CameraAngleDegrees.Value);
+        var item = new Item(shot.Data, shot.Shooter.Text, shot.PointingRaHours.Value, shot.PointingDecDegrees.Value, shot.ExposureSeconds.Value, gen, shot.Filter.Text, shot.PseudoChannel.Text, shot.PixelScaleArcsec.Value, shot.CameraAngleDegrees.Value);
         if (!queue.Writer.TryWrite(item)) { lock (_gate) _pending--; Reject($"{shot.Shooter.Text}: queue full, frame skipped"); }
         else _ = Publish();
     }
@@ -219,8 +223,8 @@ public sealed class LiveStackService : IAsyncDisposable
             if (_request is null) return CommandResult.Fail("no stack: Start one first");
             queue = _queue; gen = _generation; _pending++;
         }
-        if (f.Image.Data.Length == 0) { lock (_gate) _pending--; return CommandResult.Fail("no image"); }
-        await queue.Writer.WriteAsync(new Item(f.Image.Data, f.Source.Text == "" ? "added" : f.Source.Text, f.PointingRaHours.Value, f.PointingDecDegrees.Value, double.NaN, gen, f.Filter.Text));
+        if (f.Image.Data.Length == 0 && !f.Image.Remote) { lock (_gate) _pending--; return CommandResult.Fail("no image"); }
+        await queue.Writer.WriteAsync(new Item(f.Image, f.Source.Text == "" ? "added" : f.Source.Text, f.PointingRaHours.Value, f.PointingDecDegrees.Value, double.NaN, gen, f.Filter.Text));
         await Publish();
         return CommandResult.Success();
     }
@@ -240,7 +244,16 @@ public sealed class LiveStackService : IAsyncDisposable
                 string result;
                 try { result = await StackOneAsync(item, ct); }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested) { return; }
-                catch (Exception ex) { result = "!" + ex.Message; }
+                catch (Exception ex)
+                {
+                    // not a frame the stack turned down: a fault, and the trace is what finds it
+                    result = "!" + ex.Message;
+                    Console.Error.WriteLine($"[stack] {item.Source}: {ex}");
+                    // and the session log says so (only the journal did: frames failed all night with the image looking fine)
+                    int n = Interlocked.Increment(ref _faults);
+                    if (n == 1 || n % 10 == 0)
+                        SessionLog.Error(_node, "stack", $"a frame from {item.Source} could not be stacked: {(ex is OutOfMemoryException ? "out of memory (use a coarser image scale)" : ex.Message)} ({n} so far)");
+                }
                 lock (_gate)
                 {
                     if (item.Generation != _generation) continue;
@@ -260,11 +273,23 @@ public sealed class LiveStackService : IAsyncDisposable
     {
         LiveStackRequest r;
         lock (_gate) { if (_request is null || item.Generation != _generation) return "!stack was replaced"; r = _request; }
-        var img = FitsImage.Parse(item.Fits);
-        string calibrated = "";
-        if (r.Calibrate.Value) (img, calibrated) = await CalibrateAsync(img, item, ct);
-        var (data, width, height, channels, bin, colour) = Prepare(img, r);
-        colour = calibrated + colour;
+        if ((await Frames.BytesAsync(_node, item.Raw)).Length == 0) return "!the frame is no longer available";
+        FitsImage img;
+        float[] data; int width, height, channels, bin; string colour;
+        if (await SuperPixelDirectAsync(r, item, ct) is { } direct)
+        {
+            // the frame straight into super pixels: the full-size frame is never made (a 24 MP frame: 96 MB less, which a Pi feels)
+            img = direct.Header;
+            (data, width, height, channels, bin, colour) = (direct.Pixels.Data, direct.Pixels.Width, direct.Pixels.Height, 3, 2, $", {direct.Pattern} super pixel");
+        }
+        else
+        {
+            img = FitsImage.Parse(item.Fits);
+            string calibrated = "";
+            if (r.Calibrate.Value) (img, calibrated) = await CalibrateAsync(img, item, ct);
+            (data, width, height, channels, bin, colour) = Prepare(img, r);
+            colour = calibrated + colour;
+        }
 
         var (rawWcs, how) = await RegisterAsync(r, img, item, ct);   // the raw frame is what gets solved
         if (rawWcs is null) return "!" + how;
@@ -495,7 +520,8 @@ public sealed class LiveStackService : IAsyncDisposable
             double scale; lock (_gate) scale = frameScale > 0 ? frameScale : !double.IsNaN(_lastScale) ? _lastScale : 0;   // hint: the frame's own scale, else what solved last
             var answers = await _node.CallFunctionAsync<SolveRequest, SolveResult>(SolveIds.Solve, new SolveRequest
             {
-                Image = new ELink.Contracts.RawBytes { Data = item.Fits }, HintRaHours = ra, HintDecDegrees = dec, HintRadiusDegrees = 5,
+                Image = item.Raw,   // by reference when it came that way: the solver here reads the same bytes
+                HintRaHours = ra, HintDecDegrees = dec, HintRadiusDegrees = 5,
                 ScaleLowArcsecPerPixel = scale > 0 ? scale * 0.8 : 0, ScaleHighArcsecPerPixel = scale > 0 ? scale * 1.25 : 0,
                 TimeoutSeconds = r.SolveTimeoutSeconds.Value,
             }, TimeSpan.FromSeconds(r.SolveTimeoutSeconds.Value + 30));
@@ -535,17 +561,40 @@ public sealed class LiveStackService : IAsyncDisposable
     /// <summary>How long a library answer is trusted (so masters taken meanwhile are picked up).</summary>
     public TimeSpan MasterCacheTime { get; set; } = TimeSpan.FromMinutes(2);
 
-    /// <summary>The raw frame less its dark (or bias), divided by its flat, from the calibration library (when it has any).</summary>
-    private async Task<(FitsImage Image, string Note)> CalibrateAsync(FitsImage img, Item item, CancellationToken ct)
+    /// <summary>A raw colour frame that is only super-pixelled (no masters to apply, not split into pseudo-mono channels): its
+    /// header and its super pixels, read in one pass; null when the frame needs the full path.</summary>
+    private async Task<(FitsImage Header, FitsImage Pixels, string Pattern)?> SuperPixelDirectAsync(LiveStackRequest r, Item item, CancellationToken ct)
     {
-        if (img.Channels != 1 || img.Get("IMAGETYP") is { } t && t.StartsWith("Master", StringComparison.OrdinalIgnoreCase)) return (img, "");
+        if (r.Debayer.Text != nameof(DebayerMode.SuperPixel) || item.Pseudo != "") return null;
+        var head = FitsImage.Parse(item.Fits, headerOnly: true);
+        if (head.Channels != 1 || head.Width < 2 || head.Height < 2 || head.GetDouble("BITPIX") != 16) return null;
+        string? pattern = Debayer.Normalize(r.BayerPattern.Text) ?? Debayer.PatternOf(head);
+        if (pattern is null) return null;
+        if (r.Calibrate.Value && !(head.Get("IMAGETYP") is { } t && t.StartsWith("Master", StringComparison.OrdinalIgnoreCase)))
+        {
+            var q = QueryFor(head, item);
+            q.Kind = "Dark"; if ((await MasterAsync(q, ct)).Data is not null) return null;
+            q.Kind = "Flat"; if ((await MasterAsync(q, ct)).Data is not null) return null;
+        }
+        return (head, FitsImage.Parse(item.Fits, superPixel: pattern), pattern);
+    }
+
+    private static MasterQuery QueryFor(FitsImage img, Item item)
+    {
         string filter = item.Filter != "" ? item.Filter : (img.Get("FILTER") ?? "").Trim();
         double seconds = !double.IsNaN(item.Seconds) && item.Seconds > 0 ? item.Seconds : img.GetDouble("EXPTIME", img.GetDouble("EXPOSURE", 0));
-        var q = new MasterQuery
+        return new MasterQuery
         {
             ShooterId = item.Source, ExposureSeconds = seconds, Gain = img.GetDouble("GAIN"), Iso = (img.Get("ISOSPEED") ?? "").Trim(),
             TemperatureC = img.GetDouble("CCD-TEMP"), BinX = Math.Max(1, (int)img.GetDouble("XBINNING", 1)), Filter = filter, Width = img.Width, Height = img.Height,
         };
+    }
+
+    /// <summary>The raw frame less its dark (or bias), divided by its flat, from the calibration library (when it has any).</summary>
+    private async Task<(FitsImage Image, string Note)> CalibrateAsync(FitsImage img, Item item, CancellationToken ct)
+    {
+        if (img.Channels != 1 || img.Get("IMAGETYP") is { } t && t.StartsWith("Master", StringComparison.OrdinalIgnoreCase)) return (img, "");
+        var q = QueryFor(img, item);
         q.Kind = "Dark"; var dark = await MasterAsync(q, ct);
         q.Kind = "Flat"; var flat = await MasterAsync(q, ct);
         if (dark.Data is null && flat.Data is null) return (img, "");

@@ -227,7 +227,7 @@ public sealed class CompositionHost : IAsyncDisposable
 
     private async Task Notify()
     {
-        try { await _node.FireEventAsync(ScopeIds.Changed, Snapshot()); } catch (ObjectDisposedException) { }
+        try { await _node.FireEventAsync(ScopeIds.Changed, Snapshot(), ElinkNode.StateDelivery); } catch (ObjectDisposedException) { }
     }
 
     // ---- persistence ------------------------------------------------------------------------------------------

@@ -148,7 +148,7 @@ public class PseudoMonoTests : IAsyncLifetime
     [Fact]
     public async Task StorageKeepsTheInFocusChannelAndTheOutOfFocusLightInTwoFolders()
     {
-        await using var storage = new StorageService(_node, _dir) { LocalNow = () => new DateTime(2026, 10, 2, 1, 30, 0) };
+        await using var storage = new StorageService(_node, _dir) { CompressLights = false, LocalNow = () => new DateTime(2026, 10, 2, 1, 30, 0) };
         await storage.StartAsync();
         Assert.True((await Commands.CallAsync(_node, StorageIds.Watch, new StorageWatch { ShooterId = "cam", Enabled = true })).Ok.Value);
         await Shoot("R"); await Shoot("B");

@@ -183,9 +183,10 @@ public sealed class Guider : IAsyncDisposable
         ShotEvent shot;
         try { shot = await _frames.Reader.ReadAsync(timeout.Token); }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested) { throw new TimeoutException("no frame from the guide camera"); }
-        var img = FitsImage.Parse(shot.Data.Data);
+        var bytes = await Frames.BytesAsync(_node, shot.Data);
+        var img = FitsImage.Parse(bytes);
         var stars = StarField.Detect(img, 8, 80).Stars;
-        return new Frame(img, stars, start.AddSeconds(seconds / 2), shot.Data.Data);
+        return new Frame(img, stars, start.AddSeconds(seconds / 2), bytes);
     }
 
     private double Dec => _mount?.Latest is { Connected.Value: true } m ? m.DecDegrees.Value : double.NaN;

@@ -8,6 +8,7 @@ using ELink.Core.Astro;
 using ELink.Tests.Compose;
 using Event.CoreFunctionality;
 using Event.Connections.Models.BaseBinaryConvertibles;
+using EVent.Connections.Models.BaseBinaryConvertibles;
 using Xunit;
 
 namespace ELink.Tests.Automation;
@@ -123,17 +124,20 @@ public class ImagingTests : IAsyncLifetime
         Assert.True(await Eventually(() => _last is { Phase.Text: "Done" or "Error" }), $"{_last?.Phase.Text} {_last?.Message.Text}");
         Assert.Equal("Done", _last!.Phase.Text);
         Assert.NotNull(stack);
-        Assert.Equal(PlanProjection.TangentSpan(60), stack!.FovWidthDegrees.Value, 6);
-        Assert.Equal(PlanProjection.TangentSpan(40), stack.FovHeightDegrees.Value, 6);
+        // the grid holds the area as wide as its edges are on the tangent plane, and the sky its edge frames reach around it,
+        // no wider than MaxGatheredDegrees allows on the sphere
+        Assert.True(stack!.FovWidthDegrees.Value >= PlanProjection.TangentSpan(60) - 1e-6, $"{stack.FovWidthDegrees.Value}");
+        Assert.True(stack.FovHeightDegrees.Value >= PlanProjection.TangentSpan(40) - 1e-6, $"{stack.FovHeightDegrees.Value}");
+        Assert.Equal(PlanProjection.TangentSpan(90), stack.FovWidthDegrees.Value, 6);
         Assert.True(PlanProjection.TangentSpan(60) > 66);                          // wider than the plain 60: the sky is curved
-        // the area's four corners are the grid's four corners (within a pixel of rounding): nothing of the area is cut off
+        // the area's four corners are inside the grid: nothing of the area is cut off
         int w = (int)Math.Round(stack.FovWidthDegrees.Value * 3600 / stack.PixelScaleArcsec.Value), h = (int)Math.Round(stack.FovHeightDegrees.Value * 3600 / stack.PixelScaleArcsec.Value);
         var wcs = ELink.Imaging.TanWcs.Centered(stack.Center.RaHours.Value * 15, stack.Center.DecDegrees.Value, stack.PositionAngleDegrees.Value, stack.PixelScaleArcsec.Value, w, h);
         foreach (var (cx, cy) in new[] { (-30.0, 20.0), (30.0, 20.0), (30.0, -20.0), (-30.0, -20.0) })
         {
             var (ra, dec) = PlanProjection.ToSky(12, 25, 37, cx, cy);
             var (px, py) = wcs.SkyToPixel(ra * 15, dec);
-            Assert.True(Math.Min(Math.Abs(px + 0.5), Math.Abs(px - w + 0.5)) < 1.5 && Math.Min(Math.Abs(py + 0.5), Math.Abs(py - h + 0.5)) < 1.5, $"the area corner ({cx},{cy}) falls at pixel ({px:0.0},{py:0.0}) of a {w}x{h} grid");
+            Assert.True(px >= -0.5 && px <= w - 0.5 && py >= -0.5 && py <= h - 0.5, $"the area corner ({cx},{cy}) falls at pixel ({px:0.0},{py:0.0}), outside the {w}x{h} grid");
         }
         // the scope was sent where the plan says: every pose is within the area plus the reach of its field
         var gotos = _pointers["wide-lens"].Gotos;
@@ -169,12 +173,54 @@ public class ImagingTests : IAsyncLifetime
         await AddScopeAsync("good", 0.5, 0.35);
         await AddScopeAsync("bad", 0.5, 0.35);
         _pointers["bad"].StuckPhase = "Parked";
+        _svc.RetryPause = TimeSpan.FromMilliseconds(50); _svc.MaxFailuresInARow = 2;   // it tries again, then gives up
         Assert.True((await Commands.CallAsync(_node, ImagingIds.Start, Request(1, 0.7, 0.1, "good", "bad"), TimeSpan.FromSeconds(60))).Ok.Value);
         Assert.True(await Eventually(() => _last is { Phase.Text: "Done" or "Error" }), $"{_last?.Phase.Text} {_last?.Message.Text}");
         Assert.Equal("Done", _last!.Phase.Text);
         Assert.Contains("bad failed", _last.Message.Text);
         Assert.Equal("Failed", _last.Workers.First(w => w.ScopeId.Text == "bad").Phase.Text);
         Assert.True(_last.Workers.First(w => w.ScopeId.Text == "good").Visits.Value > 0);
+    }
+
+    [Fact]
+    public async Task AShotThatFailsOnceIsTriedAgainAndTheNightGoesOn()
+    {
+        await AddScopeAsync("solo", 0.5, 0.35);
+        _shooters["solo"].FailOn = n => n == 2;
+        _svc.RetryPause = TimeSpan.FromMilliseconds(50);
+        Assert.True((await Commands.CallAsync(_node, ImagingIds.Start, Request(0, 0, 0.25, "solo"), TimeSpan.FromSeconds(60))).Ok.Value);
+        Assert.True(await Eventually(() => _last is { Phase.Text: "Done" or "Error" }), $"{_last?.Phase.Text} {_last?.Message.Text}");
+        Assert.Equal("Done", _last!.Phase.Text);
+        var w = _last.Workers.Single();
+        Assert.Equal("Done", w.Phase.Text);
+        Assert.True(_last.MinSeconds.Value >= 0.25 - 1e-6);
+        Assert.Equal(w.Visits.Value + 1, _shooters["solo"].Exposures);        // one more exposure than good shots: the one that failed
+    }
+
+    [Fact]
+    public async Task WhereFramesReallyLandIsLearnedFromSolvesAndAimedOff()
+    {
+        // the mount lands 0.2° north of wherever it is sent; every frame is solved (as the next one exposes) and says so
+        await AddScopeAsync("solo", 0.5, 0.35);
+        _shooters["solo"].FrameMaker = n => SyntheticSky.Frame(visible: 1, frame: n);
+        int solves = 0;
+        await _fakes.AddAsync<NOTESVoid, BinaryConvertibleString>(SolveIds.Solvers, _ => Task.FromResult((BinaryConvertibleString)"fake"), "fake solvers");
+        await _fakes.AddAsync<SolveRequest, SolveResult>(SolveIds.Solve, q =>
+        {
+            Interlocked.Increment(ref solves);
+            var p = _pointers["solo"].Gotos.Last();
+            return Task.FromResult(new SolveResult { Solved = true, RaHours = p.RaHours.Value, DecDegrees = p.DecDegrees.Value + 0.2, PixelScale = 2 });
+        }, "fake solver");
+        var r = Request(0, 0, 0.6, "solo"); r.DitherArcsec = 0;
+        Assert.True((await Commands.CallAsync(_node, ImagingIds.Start, r, TimeSpan.FromSeconds(60))).Ok.Value);
+        Assert.True(await Eventually(() => _last is { Phase.Text: "Done" or "Error" }, 30000),
+            $"{_last?.Phase.Text} {_last?.Message.Text} visits {_last?.Visits.Value} min {_last?.MinSeconds.Value} mean {_last?.MeanSeconds.Value} solves {solves} gotos {string.Join(" ", _pointers["solo"].Gotos.Select(g => g.DecDegrees.Value.ToString("0.000")))} worker {_last?.Workers.FirstOrDefault()?.Phase.Text} {_last?.Workers.FirstOrDefault()?.Message.Text}");
+        Assert.Equal("Done", _last!.Phase.Text);
+        Assert.True(solves >= 3, $"{solves} solves");
+        // the first shots go to the target, the later ones 0.2° south of it, so they land on it
+        var gotos = _pointers["solo"].Gotos;
+        Assert.True(Math.Abs(gotos[0].DecDegrees.Value - 10) < 0.01, $"first goto {gotos[0].DecDegrees.Value}");
+        Assert.True(Math.Abs(gotos[^1].DecDegrees.Value - 9.8) < 0.02, $"last goto {gotos[^1].DecDegrees.Value}");
     }
 
     [Fact]
@@ -230,6 +276,112 @@ public class ImagingTests : IAsyncLifetime
         Assert.True(await Eventually(() => _last is { Phase.Text: "Done", Visits.Value: 1 }), _last?.Phase.Text);
         Assert.True((await Commands.CallAsync(_node, ImagingIds.DeleteSaved, (EVent.Connections.Models.BaseBinaryConvertibles.BinaryConvertibleString)"M31")).Ok.Value);
         Assert.Empty(Assert.Single((await _node.CallFunctionAsync<NOTESVoid, SavedImages>(ImagingIds.ListSaved, NOTESVoid.Void))!).Images);
+    }
+
+    [Fact]
+    public async Task AnImageTheStationStoppedUnderCarriesOnWhenItStartsAgainButNotOneAPersonStopped()
+    {
+        await AddScopeAsync("solo", 0.5, 0.35);
+        var r = Request(0, 0, 100, "solo"); r.Label = "Night";
+        Assert.True((await Commands.CallAsync(_node, ImagingIds.Start, r, TimeSpan.FromSeconds(60))).Ok.Value);
+        Assert.True(await Eventually(() => _last is { Visits.Value: >= 2 }), _last?.Phase.Text);
+        string running = Path.Combine(_data, "images", "running.bin");
+        Assert.True(File.Exists(running));
+
+        // the station stops (a crash, a restart): the image is still noted as running
+        await _svc.DisposeAsync();
+        Assert.True(File.Exists(running));
+
+        // it starts again with the scope missing at first (its devices still coming up): it waits, then carries on
+        var scope = _snap.Scopes.Single(); _snap.Scopes.Clear();
+        _last = null;
+        _svc = new ImagingService(_node, _data) { ResumeRetry = TimeSpan.FromMilliseconds(200) }; await _svc.StartAsync();
+        Assert.True(await Eventually(() => _last?.Message.Text.Contains("as soon as it can") == true, 10000), _last?.Message.Text);
+        _snap.Scopes.Add(scope);
+        Assert.True(await Eventually(() => _last is { Phase.Text: "Running" } && _last.Message.Text.Contains("kept from before"), 20000), _last?.Message.Text);
+
+        // a person stops it: it is crossed out and does not come back
+        Assert.True((await Commands.CallAsync(_node, ImagingIds.Abort, NOTESVoid.Void)).Ok.Value);
+        Assert.True(await Eventually(() => _last is { Phase.Text: "Aborted" }), _last?.Phase.Text);
+        Assert.False(File.Exists(running));
+        await _svc.DisposeAsync();
+        _last = null;
+        _svc = new ImagingService(_node, _data); await _svc.StartAsync();
+        await Task.Delay(1500);
+        Assert.True(_last is null || _last.Phase.Text != "Running" && !_last.Message.Text.Contains("after a restart"), _last?.Phase.Text + " " + _last?.Message.Text);
+        Assert.Equal(0, (await _node.CallFunctionAsync<NOTESVoid, ImagingState>(ImagingIds.GetState, NOTESVoid.Void))!.Single().Visits.Value);
+        Assert.Single(Assert.Single((await _node.CallFunctionAsync<NOTESVoid, SavedImages>(ImagingIds.ListSaved, NOTESVoid.Void))!).Images);   // still kept
+    }
+
+    [Fact]
+    public async Task AfterAPowerCutTheDevicesOfTheImageAreConnectedAgainAndItCarriesOn()
+    {
+        await AddScopeAsync("solo", 0.5, 0.35);
+        _snap.MountPointers.Add(new MountPointerDefinition { Id = "solo-mount", MountId = "Sim_Mount" });
+        var connected = new List<string>();
+        foreach (var (kind, device) in new[] { (DeviceKinds.Mount, "Sim_Mount"), (DeviceKinds.Camera, "solo-cam") })
+            await _fakes.AddAsync<BinaryConvertibleBool, CommandResult>(EquipmentIds.Command(kind, device, "Connect"), on =>
+            {
+                lock (connected) connected.Add(device);
+                if (kind == DeviceKinds.Mount && on.Value) _ = Task.Run(() => _pointers["solo"].SetPhaseAsync("Idle"));
+                return Task.FromResult(CommandResult.Success());
+            }, "fake connect");
+        var r = Request(0, 0, 100, "solo"); r.Label = "Night";
+        Assert.True((await Commands.CallAsync(_node, ImagingIds.Start, r, TimeSpan.FromSeconds(60))).Ok.Value);
+        Assert.True(await Eventually(() => _last is { Visits.Value: >= 2 }), _last?.Phase.Text);
+
+        // the power goes: the station comes back with the mount (and camera) not connected
+        await _svc.DisposeAsync();
+        await Task.Delay(300);                                  // a slew still under way ends first
+        await _pointers["solo"].SetPhaseAsync("Disconnected");
+        _last = null;
+        _svc = new ImagingService(_node, _data) { ResumeRetry = TimeSpan.FromMilliseconds(200) }; await _svc.StartAsync();
+        Assert.True(await Eventually(() => _last is { Phase.Text: "Running" } && _last.Message.Text.Contains("kept from before"), 30000),
+            $"{_last?.Phase.Text} {_last?.Message.Text} / connected {string.Join(",", connected)} / {(await _node.CallFunctionAsync<NOTESVoid, ImagingState>(ImagingIds.GetState, NOTESVoid.Void))?.Single().Message.Text}");
+        lock (connected) Assert.Equal(new[] { "Sim_Mount", "solo-cam" }, connected.Distinct().ToArray());
+    }
+
+    /// <summary>The mount's slack as a backlash service would give it (measured at the first image).</summary>
+    private async Task<List<string>> FakeBacklashAsync(double raArcsec, double decArcsec)
+    {
+        var measured = new List<string>();
+        var m = new BacklashMeasurement { MountId = "solo-mount", ScopeId = "solo", RaArcsec = raArcsec, DecArcsec = decArcsec, Ok = true };
+        await _fakes.AddAsync<NOTESVoid, BacklashState>(BacklashIds.GetState, _ => Task.FromResult(new BacklashState()), "fake backlash");
+        await _fakes.AddAsync<BinaryConvertibleString, BacklashMeasurement>(BacklashIds.Measure, s => { measured.Add(s.Text); return Task.FromResult(m); }, "fake backlash");
+        return measured;
+    }
+
+    [Fact]
+    public async Task WithDecSlackEveryShotArrivesFromBelowInDecAndAMountWithoutSlackGetsNoLeadIns()
+    {
+        await AddScopeAsync("solo", 0.5, 0.35);
+        var measured = await FakeBacklashAsync(0, 120);
+        var r = Request(1.6, 1.2, 0.15, "solo"); r.DitherArcsec = 60;
+        Assert.True((await Commands.CallAsync(_node, ImagingIds.Start, r, TimeSpan.FromSeconds(60))).Ok.Value);
+        Assert.True(await Eventually(() => _last is { Phase.Text: "Done" }), _last?.Phase.Text);
+        Assert.Equal(new[] { "solo" }, measured);                 // measured once, at the start
+        var g = _pointers["solo"].Gotos;
+        // at PA 0 a row's hops do not move Dec: arrivals are from below. A move down by more than a little (a new row, a dither
+        // back) is never where a shot is taken: the next move goes back up to it
+        int turns = 0;
+        for (int i = 1; i < g.Count; i++)
+            if (g[i].DecDegrees.Value - g[i - 1].DecDegrees.Value < -40.0 / 3600)
+            {
+                turns++;
+                Assert.True(i + 1 < g.Count && g[i + 1].DecDegrees.Value > g[i].DecDegrees.Value, $"goto {i} came down in Dec and a shot was taken there");
+            }
+        Assert.True(turns > 0);
+    }
+
+    [Fact]
+    public async Task AMountMeasuredWithoutSlackIsNotLedIn()
+    {
+        await AddScopeAsync("solo", 0.5, 0.35);
+        await FakeBacklashAsync(2, 3);
+        var r = Request(1.6, 1.2, 0.15, "solo");
+        Assert.True((await Commands.CallAsync(_node, ImagingIds.Start, r, TimeSpan.FromSeconds(60))).Ok.Value);
+        Assert.True(await Eventually(() => _last is { Phase.Text: "Done" }), _last?.Phase.Text);
+        Assert.Equal(_shooters["solo"].Exposures, _pointers["solo"].Gotos.Count);
     }
 
     [Fact]

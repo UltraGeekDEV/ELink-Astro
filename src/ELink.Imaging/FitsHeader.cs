@@ -30,7 +30,19 @@ public static class FitsHeader
     /// <summary>Returns a copy of the file where each (key, card-text) replaces the card of that key, or is added before END.</summary>
     public static byte[] Set(ReadOnlySpan<byte> fits, IReadOnlyDictionary<string, string> cards)
     {
+        var header = NewHeader(fits, cards, out int headerEnd);
+        var result = new byte[header.Length + (fits.Length - headerEnd)];
+        header.CopyTo(result, 0);
+        fits[headerEnd..].CopyTo(result.AsSpan(header.Length));
+        return result;
+    }
+
+    /// <summary>Only the new header (padded to whole blocks): write it, then the original from <paramref name="dataStart"/> on,
+    /// and a 48 MB frame is never copied.</summary>
+    public static byte[] NewHeader(ReadOnlySpan<byte> fits, IReadOnlyDictionary<string, string> cards, out int dataStart)
+    {
         int headerEnd = FindHeaderEnd(fits, out int endCardOffset);
+        dataStart = headerEnd;
         var existing = new List<string>();
         for (int off = 0; off < endCardOffset; off += 80) existing.Add(Encoding.ASCII.GetString(fits.Slice(off, 80)));
 
@@ -43,10 +55,7 @@ public static class FitsHeader
         existing.Add("END".PadRight(80));
         string header = string.Concat(existing);
         int padded = (header.Length + 2879) / 2880 * 2880;
-        var result = new byte[padded + (fits.Length - headerEnd)];
-        Encoding.ASCII.GetBytes(header.PadRight(padded)).CopyTo(result, 0);
-        fits[headerEnd..].CopyTo(result.AsSpan(padded));
-        return result;
+        return Encoding.ASCII.GetBytes(header.PadRight(padded));
     }
 
     /// <returns>offset of the first data byte (a multiple of 2880); endCard = offset of the END card</returns>

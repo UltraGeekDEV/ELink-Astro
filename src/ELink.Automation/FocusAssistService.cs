@@ -137,7 +137,8 @@ public sealed class FocusAssistService : IAsyncDisposable
                 try { shot = await shots.Reader.ReadAsync(wait.Token); }
                 catch (OperationCanceledException) when (!ct.IsCancellationRequested) { await Fail("the frame did not arrive in time"); return; }
                 if (!shot.Format.Text.StartsWith(".fit", StringComparison.OrdinalIgnoreCase)) { await Fail($"the focus helper needs FITS frames, the shooter delivered {shot.Format.Text}"); return; }
-                var sample = await Task.Run(() => FocusMeasure.Measure(FitsImage.Parse(shot.Data.Data)), ct);
+                var bytes = await Frames.BytesAsync(_node, shot.Data);
+                var sample = await Task.Run(() => FocusMeasure.Measure(FitsImage.Parse(bytes)), ct);
                 lock (_gate)
                 {
                     _samples.Add(sample); if (_samples.Count > History) _samples.RemoveAt(0);

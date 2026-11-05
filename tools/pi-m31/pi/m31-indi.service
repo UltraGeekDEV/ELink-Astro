@@ -1,0 +1,18 @@
+[Unit]
+Description=ELink test: INDI simulators (telescope, CCD 6000x4000 RGGB) on port 7625
+After=network.target
+[Service]
+User=ultrageek
+WorkingDirectory=/home/ultrageek/elink/m31-test
+Environment=HOME=/home/ultrageek/elink/m31-test/sim-home
+Environment=PATH=/home/ultrageek/elink/gsc/bin:/usr/bin:/bin
+Environment=GSCDAT=/home/ultrageek/elink/gsc/share/GSC
+Environment=GSCBIN=/home/ultrageek/elink/gsc/share/GSC/bin
+ExecStart=/usr/bin/indiserver -p 7625 -u /tmp/indiserver-m31 indi_simulator_telescope indi_simulator_ccd
+ExecStartPost=/home/ultrageek/elink/m31-test/indi-ready.sh
+Restart=always
+RestartSec=3
+MemoryAccounting=yes
+MemoryMax=450M
+[Install]
+WantedBy=multi-user.target

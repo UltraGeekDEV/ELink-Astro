@@ -23,12 +23,31 @@ public sealed class StorageService : IAsyncDisposable
     private readonly Dictionary<string, Action<ShotEvent>> _watching = new();
     private readonly Dictionary<string, int> _counters = new();
     private readonly SemaphoreSlim _writeLock = new(1, 1);
+    // frames are written one after the other off the event (a 48 MB write must not hold up the scope that relays the frame)
+    private readonly System.Threading.Channels.Channel<(string Id, ShotEvent Shot)> _queue = System.Threading.Channels.Channel.CreateUnbounded<(string, ShotEvent)>(new() { SingleReader = true });
+    private Task? _writer;
+    private int _queued;
     private string _directory;
     private int _saved;
     private string _lastFile = "", _message = "";
 
     /// <summary>The night changes at local noon, so a whole night lands in one folder.</summary>
     public Func<DateTime> LocalNow { get; set; } = () => DateTime.Now;
+
+    /// <summary>Light frames are kept tile-compressed (lossless Rice, <c>.fits.fz</c>) where cfitsio is installed.</summary>
+    public bool CompressLights { get; set; } = FitsCompressor.Available;
+
+    /// <summary>Below this much free space frames are no longer saved (the live stack goes on): a full disk also stops the schedule,
+    /// the kept images and the session log being written.</summary>
+    public long StopBelowBytes { get; set; } = 2L << 30;
+    /// <summary>The session log warns when the free space lasts less than this at the pace frames are being saved.</summary>
+    public TimeSpan WarnBelow { get; set; } = TimeSpan.FromHours(2);
+    /// <summary>Free space where frames go (bytes); replaceable for tests.</summary>
+    public Func<string, long> FreeBytes { get; set; } = dir => new DriveInfo(Path.GetFullPath(dir)).AvailableFreeSpace;
+
+    private readonly Queue<(DateTime At, long Bytes)> _recent = new();      // the last saves, for the pace
+    private DateTime _warnedAt = DateTime.MinValue, _stoppedAt = DateTime.MinValue;
+    private int _skipped;
 
     public StorageService(TypeSafeEVentNode node, string directory)
     {
@@ -44,6 +63,19 @@ public sealed class StorageService : IAsyncDisposable
         await _commands.AddAsync<BinaryConvertibleString, CommandResult>(StorageIds.SetDirectory, SetDirectoryAsync, "where frames are saved");
         await _commands.AddAsync<StorageWatch, CommandResult>(StorageIds.Watch, WatchAsync, "start or stop saving the frames of a shooter");
         await _publisher.StartAsync();
+        _writer = Task.Run(WriteLoopAsync);
+    }
+
+    /// <summary>Frames waiting to be written.</summary>
+    public int Queued => Volatile.Read(ref _queued);
+
+    private async Task WriteLoopAsync()
+    {
+        await foreach (var (id, shot) in _queue.Reader.ReadAllAsync())
+        {
+            try { await SaveShotAsync(id, shot); }
+            finally { Interlocked.Decrement(ref _queued); }
+        }
     }
 
     private StorageState BuildState()
@@ -74,7 +106,7 @@ public sealed class StorageService : IAsyncDisposable
         if (w.Enabled.Value)
         {
             lock (_gate) if (_watching.ContainsKey(id)) return CommandResult.Success();
-            Action<ShotEvent> handler = shot => SaveShot(id, shot);
+            Action<ShotEvent> handler = shot => { Interlocked.Increment(ref _queued); _queue.Writer.TryWrite((id, shot)); };
             await _node.HookEventAsync(ShooterIds.Shot(id), handler, "frame storage");
             lock (_gate) _watching[id] = handler;
         }
@@ -88,9 +120,9 @@ public sealed class StorageService : IAsyncDisposable
         return CommandResult.Success();
     }
 
-    private void SaveShot(string watchId, ShotEvent shot)
+    private async Task SaveShotAsync(string watchId, ShotEvent shot)
     {
-        _writeLock.Wait();
+        await _writeLock.WaitAsync();
         try
         {
             string dir; lock (_gate) dir = _directory;
@@ -100,6 +132,7 @@ public sealed class StorageService : IAsyncDisposable
             bool rejected = shot.Quality.Text == "Rejected";
             if (rejected) nightDir = Path.Combine(nightDir, "rejected");   // kept, but out of the way of stacking software
             Directory.CreateDirectory(nightDir);
+            if (!RoomFor(nightDir, shot.Data.Data.Length)) return;
 
             string obj = shot.ObjectName.Text, planId = shot.PlanId.Text;   // stamped by the scope that ran the observation
 
@@ -112,11 +145,12 @@ public sealed class StorageService : IAsyncDisposable
             string key = Path.Combine(nightDir, stem);
             if (!_counters.TryGetValue(key, out int n)) n = Directory.GetFiles(nightDir, stem + "_*").Length;
             string file;
-            do { n++; file = Path.Combine(nightDir, $"{stem}_{n:0000}{ext}"); } while (File.Exists(file));
+            do { n++; file = Path.Combine(nightDir, $"{stem}_{n:0000}{ext}"); } while (File.Exists(file) || File.Exists(file + ".fz"));
             _counters[key] = n;
 
-            byte[] bytes = shot.Data.Data;
-            if (shot.PseudoChannel.Text != "" && ext is ".fits" or ".fit" && SplitPseudo(shot, nightDir, stem, ext, obj, planId) is { } pair)
+            byte[] bytes = await Frames.BytesAsync(_node, shot.Data);
+            byte[]? header = null; int dataStart = 0;
+            if (shot.PseudoChannel.Text != "" && ext is ".fits" or ".fit" && SplitPseudo(shot, bytes, obj, planId) is { } pair)
             {
                 SavePair(watchId, shot, dir, nightDir, pair, obj, planId, frame);
                 return;
@@ -137,24 +171,54 @@ public sealed class StorageService : IAsyncDisposable
                 if (shot.Quality.Text != "") cards["ELQUAL"] = FitsHeader.StringCard("ELQUAL", shot.Quality.Text, shot.QualityNote.Text == "" ? "frame grade" : shot.QualityNote.Text);
                 if (shot.Stars.Value >= 0) cards["ELSTARS"] = FitsHeader.NumberCard("ELSTARS", shot.Stars.Value, "stars found");
                 if (!double.IsNaN(shot.Hfr.Value)) cards["ELHFR"] = FitsHeader.NumberCard("ELHFR", shot.Hfr.Value, "median half-flux radius, px");
-                try { bytes = FitsHeader.Set(bytes, cards); }
+                try { header = FitsHeader.NewHeader(bytes, cards, out dataStart); }
                 catch (FormatException) { /* not a parsable FITS: store as received */ }
             }
-            string tmp = file + ".part";
-            File.WriteAllBytes(tmp, bytes);
-            File.Move(tmp, file);
+            int written = -1;
+            if (CompressLights && frame == "Light" && ext is ".fits" or ".fit")
+            {
+                // lossless: the same pixels and header, in about half the space
+                // it needs a second copy of the frame; when memory is short the sub is written uncompressed instead of lost
+                string fz = file + ".fz";
+                try
+                {
+                    byte[] whole = header is null ? bytes : [.. header, .. bytes.AsSpan(dataStart)];
+                    if (await Task.Run(() => FitsCompressor.TryWrite(whole, fz + ".part")))
+                    {
+                        File.Move(fz + ".part", fz);
+                        file = fz; written = (int)new FileInfo(fz).Length;
+                    }
+                }
+                catch (OutOfMemoryException)
+                {
+                    try { File.Delete(fz + ".part"); } catch (IOException) { }
+                    Console.Error.WriteLine("[storage] not enough memory to compress a frame: saved uncompressed");
+                }
+            }
+            if (written < 0)
+            {
+                string tmp = file + ".part";
+                await using (var fs = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16, FileOptions.Asynchronous))
+                {
+                    if (header is not null) await fs.WriteAsync(header);
+                    await fs.WriteAsync(bytes.AsMemory(dataStart));
+                }
+                File.Move(tmp, file);
+                written = (header?.Length ?? 0) + bytes.Length - dataStart;
+            }
+            lock (_gate) { _recent.Enqueue((DateTime.UtcNow, written)); while (_recent.Count > 20) _recent.Dequeue(); }
 
             var log = new
             {
                 time = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture), file = Path.GetRelativePath(dir, file), shooter = shot.Shooter.Text,
                 watched = watchId, frame, filter, exposure = shot.ExposureSeconds.Value, @object = obj, plan = planId,
-                raHours = Finite(shot.PointingRaHours.Value), decDegrees = Finite(shot.PointingDecDegrees.Value), bytes = bytes.Length,
+                raHours = Finite(shot.PointingRaHours.Value), decDegrees = Finite(shot.PointingDecDegrees.Value), bytes = written,
                 quality = shot.Quality.Text, qualityNote = shot.QualityNote.Text, stars = shot.Stars.Value, hfr = Finite(shot.Hfr.Value),
             };
             File.AppendAllText(Path.Combine(nightDir, "session.jsonl"), JsonSerializer.Serialize(log) + "\n", Encoding.UTF8);
 
             lock (_gate) { _saved++; _lastFile = file; _message = ""; }
-            _ = Announce(file, watchId, obj, frame, filter, shot.ExposureSeconds.Value, bytes.Length);
+            await Announce(file, watchId, obj, frame, filter, shot.ExposureSeconds.Value, written);   // in order, off the frame's event
         }
         catch (Exception ex)
         {
@@ -167,11 +231,11 @@ public sealed class StorageService : IAsyncDisposable
 
     /// <summary>Pseudo mono frames are saved as two mono frames: the channel that was in focus (folder <c>infocus</c>) and the mean of the
     /// other two (folder <c>oof</c>), each super-pixel debayered, so no channel is ever interpolated from another.</summary>
-    private static (byte[] InFocus, byte[] OutOfFocus)? SplitPseudo(ShotEvent shot, string nightDir, string stem, string ext, string obj, string planId)
+    private static (byte[] InFocus, byte[] OutOfFocus)? SplitPseudo(ShotEvent shot, byte[] bytes, string obj, string planId)
     {
         try
         {
-            var img = FitsImage.Parse(shot.Data.Data);
+            var img = FitsImage.Parse(bytes);
             string? pattern = Debayer.PatternOf(img);
             if (img.Channels != 1 || pattern is null) return null;
             var c = Debayer.SuperPixel(img.Data, img.Width, img.Height, pattern);
@@ -232,6 +296,40 @@ public sealed class StorageService : IAsyncDisposable
         catch (ObjectDisposedException) { }
     }
 
+    /// <summary>Whether there is room to save a frame of about <paramref name="size"/> bytes; says so in the session log (and the
+    /// state) when the space runs short at the pace frames are coming, and stops saving before the disk is full.</summary>
+    private bool RoomFor(string dir, long size)
+    {
+        long free;
+        try { free = FreeBytes(dir); } catch (Exception) { return true; }     // cannot tell: save, as before
+        double perHour;
+        lock (_gate)
+        {
+            var span = _recent.Count >= 2 ? _recent.Last().At - _recent.First().At : TimeSpan.Zero;
+            perHour = span > TimeSpan.Zero ? _recent.Skip(1).Sum(r => r.Bytes) / span.TotalHours : 0;
+        }
+        var now = DateTime.UtcNow;
+        if (free - size < StopBelowBytes)
+        {
+            int skipped;
+            lock (_gate) { skipped = ++_skipped; _message = $"the disk is nearly full ({free >> 20} MB free): frames are not saved"; }
+            if (now - _stoppedAt > TimeSpan.FromMinutes(30))
+            {
+                _stoppedAt = now;
+                SessionLog.Error(_node, "storage", $"the disk where frames go is nearly full ({free >> 20} MB free): frames are no longer saved (the live stack goes on); {skipped} not saved so far");
+            }
+            _ = _publisher.PublishAsync();
+            return false;
+        }
+        lock (_gate) if (_skipped > 0) { _skipped = 0; _message = ""; }
+        if (perHour > 0 && free / perHour < WarnBelow.TotalHours && now - _warnedAt > TimeSpan.FromMinutes(30))
+        {
+            _warnedAt = now;
+            SessionLog.Warn(_node, "storage", FormattableString.Invariant($"{free / 1e9:0.#} GB free where frames go: about {free / perHour:0.#} h of frames at this pace ({perHour / 1e9:0.#} GB an hour); saving stops at {StopBelowBytes / 1e9:0.#} GB"));
+        }
+        return true;
+    }
+
     private static double? Finite(double v) => double.IsNaN(v) || double.IsInfinity(v) ? null : v;
 
     private static string Sanitize(string text)
@@ -246,7 +344,8 @@ public sealed class StorageService : IAsyncDisposable
         List<(string id, Action<ShotEvent> h)> hooks;
         lock (_gate) { hooks = _watching.Select(w => (w.Key, w.Value)).ToList(); _watching.Clear(); }
         foreach (var (id, h) in hooks) { try { _node.UnhookEvent(ShooterIds.Shot(id), h); } catch (ObjectDisposedException) { } }
+        _queue.Writer.TryComplete();
+        if (_writer is not null) { try { await _writer.WaitAsync(TimeSpan.FromSeconds(30)); } catch (TimeoutException) { } }   // what arrived is still written
         _commands.Dispose(); _publisher.Dispose();
-        await Task.CompletedTask;
     }
 }

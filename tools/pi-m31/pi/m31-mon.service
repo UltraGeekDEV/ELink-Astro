@@ -1,0 +1,8 @@
+[Unit]
+Description=ELink test: memory/CPU/temperature log of the station every 2 s
+[Service]
+User=ultrageek
+ExecStart=/bin/sh -c "/home/ultrageek/elink/m31-test/mon.sh >> /home/ultrageek/elink/m31-test/mon.log"
+Restart=always
+[Install]
+WantedBy=multi-user.target

@@ -366,7 +366,7 @@ public sealed class SmartScope : IAsyncDisposable
         var none = new Grade(shot.Quality.Text, shot.QualityNote.Text, shot.Stars.Value, shot.Hfr.Value, shot.Elongation.Value, shot.Background.Value);
         if (!_def.GradeFrames.Value || shot.Quality.Text != "" || shot.FrameType.Text is not ("Light" or "") || !shot.Format.Text.StartsWith(".fit", StringComparison.OrdinalIgnoreCase)) return none;
         ELink.Imaging.FrameMetrics m;
-        try { m = await Task.Run(() => ELink.Imaging.FrameMetrics.Measure(ELink.Imaging.FitsImage.Parse(shot.Data.Data))); }
+        try { var bytes = await Frames.BytesAsync(_node, shot.Data); m = await Task.Run(() => ELink.Imaging.FrameMetrics.Measure(bytes)); }
         catch (Exception) { return none; }
         ELink.Imaging.FrameGrader grader;
         lock (_scopeGate)
@@ -391,12 +391,13 @@ public sealed class SmartScope : IAsyncDisposable
         if (!(_def.RefocusHfrIncreasePercent.Value > 0) || _focusTrains is not { } trains) return;
         var t = trains.FirstOrDefault(x => x.CameraShooter == shot.Shooter.Text);
         if (t is null || !shot.Format.Text.StartsWith(".fit", StringComparison.OrdinalIgnoreCase) || shot.FrameType.Text is not ("Light" or "")) return;
-        var data = shot.Data.Data;
-        _ = Task.Run(() =>
+        var raw = shot.Data;
+        _ = Task.Run(async () =>
         {
             try
             {
-                var r = ELink.Imaging.FrameMetrics.Measure(ELink.Imaging.FitsImage.Parse(data));
+                var data = await Frames.BytesAsync(_node, raw);
+                var r = ELink.Imaging.FrameMetrics.Measure(data);
                 if (r.Stars < 3 || double.IsNaN(r.Hfr)) return;
                 lock (t.RecentHfr)
                 {

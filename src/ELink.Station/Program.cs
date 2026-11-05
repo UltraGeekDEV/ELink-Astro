@@ -12,13 +12,13 @@ using ELink.UI;
 // ELink station: INDI bridge + composition host + UI in one process, on one EVent node. The UI and the backend
 // still only talk through EVent (here over the node's local loopback). The node also listens, so other ELink
 // processes (another UI, a sequencer) can join this station's mesh.
-//   elink [--web-port 8080] [--ws-port 8081] [--web-listen 127.0.0.1] [--no-web] [--profile NAME] [--indi host[:port][=name]]... [--port 5698] [--listen 127.0.0.1] [--compose file.json] [--save-dir DIR] [--save SHOOTER]... [--stellarium-port 10001] [--stellarium-remote URL] [--sky-data /usr/share/kstars] [--no-ui]
+//   elink [--web-port 8080] [--ws-port 8081] [--web-listen 127.0.0.1] [--no-web] [--no-resume] [--profile NAME] [--indi host[:port][=name]]... [--port 5698] [--listen 127.0.0.1] [--compose file.json] [--save-dir DIR] [--save SHOOTER]... [--stellarium-port 10001] [--stellarium-remote URL] [--sky-data /usr/share/kstars] [--no-ui]
 var indi = new List<(string Name, string Host, int Port)>();
 int port = ElinkNode.DefaultPort; var listen = IPAddress.Loopback; bool ui = true;
 string saveDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "ELink");
 var save = new List<string>();
 string? profile = null;
-int webPort = 8080, wsPort = 8081; var webListen = IPAddress.Loopback; bool web = true;
+int webPort = 8080, wsPort = 8081; var webListen = IPAddress.Loopback; bool web = true, resume = true;   // resume: carry on with the image the station stopped under
 int stellariumPort = 10001; string stellariumRemote = "http://127.0.0.1:8090"; string skyData = "/usr/share/kstars";
 string compose = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "elink", "compose.json");
 for (int i = 0; i < args.Length; i++)
@@ -31,6 +31,7 @@ for (int i = 0; i < args.Length; i++)
         case "--compose": compose = Next(); break;
         case "--no-ui": ui = false; break;
         case "--no-web": web = false; break;
+        case "--no-resume": resume = false; break;
         case "--web-port": webPort = int.Parse(Next()); break;
         case "--ws-port": wsPort = int.Parse(Next()); break;
         case "--web-listen": webListen = IPAddress.Parse(Next()); break;
@@ -52,7 +53,7 @@ for (int i = 0; i < args.Length; i++)
                 break;
             }
         default:
-            Console.WriteLine("usage: elink [--indi host[:port][=name]]... [--port 5698] [--listen 127.0.0.1] [--compose file.json] [--save-dir DIR] [--save SHOOTER]... [--stellarium-port 10001] [--stellarium-remote URL] [--sky-data DIR] [--profile NAME] [--web-port 8080] [--ws-port 8081] [--web-listen ADDR] [--no-web] [--no-ui]");
+            Console.WriteLine("usage: elink [--indi host[:port][=name]]... [--port 5698] [--listen 127.0.0.1] [--compose file.json] [--save-dir DIR] [--save SHOOTER]... [--stellarium-port 10001] [--stellarium-remote URL] [--sky-data DIR] [--profile NAME] [--web-port 8080] [--ws-port 8081] [--web-listen ADDR] [--no-web] [--no-resume] [--no-ui]");
             return args[i] is "-h" or "--help" ? 0 : 1;
     }
 }
@@ -64,6 +65,7 @@ Directory.CreateDirectory(Path.GetDirectoryName(compose)!);
 Event.CoreFunctionality.TypeSafeEVentNode node;
 try { node = web ? ElinkNode.Create("Station", port, listen, WebGateway.Transport(webListen, wsPort)) : ElinkNode.Create("Station", port, listen); }   // created here, off any UI thread
 catch (Exception ex) when (web) { Console.WriteLine($"web interface: not started ({ex.Message})"); web = false; node = ElinkNode.Create("Station", port, listen); }
+ElinkNode.DropSilentPeers(node);
 using var nodeLife = node;
 var directory = new DeviceDirectory(node);
 await directory.StartAsync();
@@ -98,7 +100,9 @@ await using var site = new SiteService(node, Path.Combine(Path.GetDirectoryName(
 await site.StartAsync();
 await using var centering = new CenteringService(node, Path.Combine(Path.GetDirectoryName(compose)!, "centering.json"));
 await centering.StartAsync();
-await using var imaging = new ImagingService(node, Path.GetDirectoryName(compose)!);
+await using var backlash = new BacklashService(node, Path.GetDirectoryName(compose)!);
+await backlash.StartAsync();
+await using var imaging = new ImagingService(node, Path.GetDirectoryName(compose)!) { ResumeAfterRestart = resume };
 await imaging.StartAsync();
 await using var liveStack = new LiveStackService(node, Path.GetDirectoryName(compose)!);
 await liveStack.StartAsync();
@@ -143,6 +147,14 @@ if (web)
     }
     else Console.WriteLine("web interface: the web folder is missing next to the program");
 }
+
+// what the managed heap is doing, now and then: on a small computer (a 2 GB Raspberry Pi) this is what to look at first
+using var memoryLog = new Timer(_ =>
+{
+    var g = GC.GetGCMemoryInfo();
+    long loh = g.GenerationInfo.Length > 3 ? g.GenerationInfo[3].SizeAfterBytes : 0;
+    Console.WriteLine(FormattableString.Invariant($"memory: heap {g.HeapSizeBytes >> 20} MB (large objects {loh >> 20} MB, fragmented {g.FragmentedBytes >> 20} MB), committed {g.TotalCommittedBytes >> 20} MB, process {Environment.WorkingSet >> 20} MB, gen2 collections {GC.CollectionCount(2)}, paused {g.PauseTimePercentage:0.0}%"));
+}, null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(5));
 
 int exit = 0;
 if (ui)

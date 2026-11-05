@@ -28,8 +28,22 @@ public static class ElinkNode
     public static Task<TypeSafeEVentNode> CreateAsync(string name, int port, IPAddress? listen = null, params ICommsProtocol[] extra) =>
         Task.Run(() => Construct(name, port, listen, extra));
 
-    private static TypeSafeEVentNode Construct(string name, int port, IPAddress? listen, ICommsProtocol[] extra) =>
-        new(name, [new TCPServer(listen ?? IPAddress.Loopback, port, name), .. extra]);
+    private static TypeSafeEVentNode Construct(string name, int port, IPAddress? listen, ICommsProtocol[] extra)
+    {
+        var node = new TypeSafeEVentNode(name, [new TCPServer(listen ?? IPAddress.Loopback, port, name), .. extra]);
+        Frames.Serve(node);     // frames handed out by reference can be fetched from here by other processes
+        return node;
+    }
+
+    /// <summary>How long a state event waits for its subscribers to take it. A peer that stops reading (a phone asleep with the page
+    /// open, a frozen tab) would otherwise hold every state change up for the whole call timeout, and with it whatever published it
+    /// (a scope in the middle of a shot); a state is current again with the next one anyway.</summary>
+    public static readonly TimeSpan StateDelivery = TimeSpan.FromSeconds(3);
+
+    /// <summary>For a station that others join: ping every peer and drop one that has not answered for a while, so a peer that is
+    /// gone without closing its connection (asleep, frozen, out of Wi-Fi) stops being waited for. A page that wakes up joins again.</summary>
+    public static void DropSilentPeers(TypeSafeEVentNode node) =>
+        node.KeepAlive = new EVent.CoreFunctionality.KeepAliveOptions(TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(15));
 
     public static async Task<MergeResult> JoinAsync(TypeSafeEVentNode node, string host, int port)
     {

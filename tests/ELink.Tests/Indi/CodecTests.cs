@@ -100,6 +100,84 @@ public class CodecTests
         Assert.Contains("<oneSwitch name=\"CONNECT\">On</oneSwitch>", xml);
     }
 
+    /// <summary>A stream that hands out its bytes in chunks of the given sizes, in turn (as a socket would).</summary>
+    private sealed class Chunked(byte[] data, int[] sizes) : Stream
+    {
+        private int _pos, _k;
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            if (_pos >= data.Length) return 0;
+            int n = Math.Min(Math.Min(count, sizes[_k++ % sizes.Length]), data.Length - _pos);
+            Array.Copy(data, _pos, buffer, offset, n); _pos += n; return n;
+        }
+        public override bool CanRead => true; public override bool CanSeek => false; public override bool CanWrite => false;
+        public override long Length => data.Length; public override long Position { get => _pos; set => throw new NotSupportedException(); }
+        public override void Flush() { } public override long Seek(long o, SeekOrigin s) => throw new NotSupportedException();
+        public override void SetLength(long v) => throw new NotSupportedException(); public override void Write(byte[] b, int o, int c) => throw new NotSupportedException();
+    }
+
+    private static async Task<List<IndiMessage>> ReadChunked(byte[] data, params int[] sizes)
+    {
+        var list = new List<IndiMessage>();
+        await foreach (var m in IndiCodec.ReadAsync(new Chunked(data, sizes))) list.Add(m);
+        return list;
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(3)]
+    [InlineData(4093)]
+    [InlineData(65536)]
+    public async Task ABlobSplitAnywhereIsDecodedAsItStreamsIn(int chunk)
+    {
+        var a = new byte[200_003]; new Random(7).NextBytes(a);
+        var b = new byte[] { 9, 8, 7, 6 };
+        string text = Convert.ToBase64String(a, Base64FormattingOptions.InsertLineBreaks);   // CR LF every 76 characters, as drivers send it
+        var xml = Encoding.UTF8.GetBytes(
+            $"<setNumberVector device=\"D\" name=\"N\"><oneNumber name=\"x\">1</oneNumber></setNumberVector>\n" +
+            $"<setBLOBVector device=\"D\" name=\"CCD1\" state=\"Ok\">\n  <oneBLOB name=\"CCD1\" size=\"{a.Length}\" format=\".fits\">\n{text}\n  </oneBLOB>\n" +
+            $"  <oneBLOB name=\"CCD2\" format=\".raw\">{Convert.ToBase64String(b)}</oneBLOB>\n</setBLOBVector>\n" +
+            $"<message device=\"D\" message=\"after\"/>");
+        var msgs = await ReadChunked(xml, chunk, chunk / 2 + 1);
+        Assert.Equal(3, msgs.Count);
+        var set = Assert.IsType<IndiSet>(msgs[1]);
+        Assert.Equal(2, set.Updates.Length);
+        Assert.Equal(a, set.Updates[0].Blob);
+        Assert.Equal(".fits", set.Updates[0].BlobFormat);
+        Assert.Equal(b, set.Updates[1].Blob);             // no size given: still exact
+        Assert.Equal("after", ((IndiLog)msgs[2]).Text);
+    }
+
+    [Fact]
+    public async Task AWrongSizeOrBadBase64DoesNotBreakTheStream()
+    {
+        var xml = Encoding.UTF8.GetBytes(
+            "<setBLOBVector device=\"D\" name=\"A\"><oneBLOB name=\"A\" size=\"2\" format=\".raw\">AQIDBAUG</oneBLOB></setBLOBVector>" +
+            "<setBLOBVector device=\"D\" name=\"B\"><oneBLOB name=\"B\" size=\"3\" format=\".raw\">A*ID</oneBLOB></setBLOBVector>" +
+            "<message device=\"D\" message=\"ok\"/>");
+        var msgs = await ReadChunked(xml, 5);
+        Assert.Equal(new byte[] { 1, 2, 3, 4, 5, 6 }, ((IndiSet)msgs[0]).Updates[0].Blob);   // size= too small: grows
+        Assert.Empty(((IndiSet)msgs[1]).Updates[0].Blob!);                                    // not base64: empty, as before
+        Assert.Equal("ok", ((IndiLog)msgs[2]).Text);
+    }
+
+    [Fact]
+    public async Task ALargeFrameCostsLittleMoreThanItsOwnSize()
+    {
+        var frame = new byte[24_000_000]; new Random(3).NextBytes(frame);
+        var xml = Encoding.UTF8.GetBytes($"<setBLOBVector device=\"D\" name=\"CCD1\"><oneBLOB name=\"CCD1\" size=\"{frame.Length}\" format=\".fits\">{Convert.ToBase64String(frame, Base64FormattingOptions.InsertLineBreaks)}</oneBLOB></setBLOBVector>");
+        // the framer on this thread alone (the codec's async reads may hop threads)
+        var framer = new IndiFramer();
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int at = 0; at < xml.Length; at += 65536) framer.Append(xml.AsSpan(at, Math.Min(65536, xml.Length - at)));
+        Assert.True(framer.TryTake(out string? element, out var blobs));
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        Assert.Equal(frame, blobs![0]);
+        Assert.True(element!.Length < 200, element);
+        await Task.CompletedTask;
+        Assert.True(allocated < frame.Length * 1.2, $"reading a {frame.Length / 1e6:0} MB frame allocated {allocated / 1e6:0} MB");
+    }
+
     [Theory]
     [InlineData("12:30:00", 12.5)]
     [InlineData("-5:30", -5.5)]

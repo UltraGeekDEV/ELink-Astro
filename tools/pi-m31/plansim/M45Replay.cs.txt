@@ -1,0 +1,19 @@
+// M 45 replay: the first shots of a 60-min image and of an until-stopped one, where do they land?
+using System.Globalization;
+using ELink.Automation;
+using ELink.Core.Astro;
+CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
+double W = 8.96, H = 5.95, exp = 30, fw = 1.490, fh = 0.993, pa = 90, cam = 270;
+foreach (double target in new[] { 3600.0, 0.0 })
+{
+    double minFrame = Math.Min(fw, fh), stepover = 0.1 * minFrame, cell = Math.Max(minFrame / 12, Math.Sqrt(W * H / 40000.0));
+    var map = new CoverageMap(W, H, cell);
+    var frames = new[] { new FrameSpec(fw / 2, fh / 2, cam, 0, 0, 1, 0.894) };
+    var p = new CoveragePlanner(map, frames, [0.0], pa, exp, target, stepover);
+    if (target <= 0) { p.KeepGoing = true; p.TargetSeconds = p.HourOfDepth(); }
+    p.Plan();
+    Console.WriteLine($"target {target}: planner target {p.TargetSeconds:0.0}, passes {p.PassCount}, hop {p.PassHopX:0.000}x{p.PassHopY:0.000} map {map.Cols}x{map.Rows}");
+    for (int i = 0; i < 30 && p.Next() is { } q; i++)
+        Console.Write($"({q.X:0.00},{q.Y:0.00}) ");
+    Console.WriteLine($"\n  after 30: mean {map.Mean():0.0} min {map.Min():0} max {map.Max():0}, pass {p.CurrentPass} level {p.PassLevel:0.0} target {p.TargetSeconds:0.0}");
+}

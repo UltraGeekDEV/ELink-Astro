@@ -53,7 +53,7 @@ public sealed class DeviceDirectory
 
     private async Task Announce(bool present, DeviceInfo info)
     {
-        try { await _node.FireEventAsync(EquipmentIds.Announce, new DeviceAnnouncement { Present = present, Device = info }); }
+        try { await _node.FireEventAsync(EquipmentIds.Announce, new DeviceAnnouncement { Present = present, Device = info }, ElinkNode.StateDelivery); }
         catch (ObjectDisposedException) { }
     }
 }

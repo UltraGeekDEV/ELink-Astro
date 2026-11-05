@@ -11,6 +11,7 @@ using ELink.Core;
 using ELink.Imaging;
 using ELink.Tests.Compose;
 using Event.CoreFunctionality;
+using Event.Connections.Models.BaseBinaryConvertibles;
 using EVent.Connections.Models.BaseBinaryConvertibles;
 using Xunit;
 
@@ -51,7 +52,7 @@ public class StorageTests : IAsyncLifetime
     [Fact]
     public async Task SavesFitsWithHeadersAndALogAndAnnouncesIt()
     {
-        await using var svc = new StorageService(_node, _dir) { LocalNow = () => new DateTime(2026, 10, 2, 1, 30, 0) };
+        await using var svc = new StorageService(_node, _dir) { CompressLights = false, LocalNow = () => new DateTime(2026, 10, 2, 1, 30, 0) };
         await svc.StartAsync();
         FrameSaved? saved = null;
         await _node.HookEventAsync(StorageIds.Saved, (FrameSaved f) => saved = f);
@@ -82,14 +83,14 @@ public class StorageTests : IAsyncLifetime
     public async Task NightFolderChangesAtNoonAndNumbersContinueAfterARestart()
     {
         DateTime now = new(2026, 10, 2, 13, 0, 0);
-        await using (var svc = new StorageService(_node, _dir) { LocalNow = () => now })
+        await using (var svc = new StorageService(_node, _dir) { CompressLights = false, LocalNow = () => now })
         {
             await svc.StartAsync(); await Watch("c");
             await Fire("c"); Assert.True(await Eventually(() => svc.FramesSaved == 1));
             Assert.True(File.Exists(Path.Combine(_dir, "2026-10-02", "Light_Blue_30s_0001.fits")));   // 13:00 is the next night
         }
         using var node2 = ElinkNode.Create("ST-again", FreePort());
-        await using var again = new StorageService(node2, _dir) { LocalNow = () => now };
+        await using var again = new StorageService(node2, _dir) { CompressLights = false, LocalNow = () => now };
         await again.StartAsync();
         await Commands.CallAsync(node2, StorageIds.Watch, new StorageWatch { ShooterId = "c" });
         await node2.FireEventAsync(ShooterIds.Shot("c"), new ShotEvent { Shooter = "c", Format = ".fits", ExposureSeconds = 30, FrameType = "Light", Filter = "Blue", Data = new RawBytes(FitsImage.Write16(8, 8, new ushort[64])) });
@@ -100,7 +101,7 @@ public class StorageTests : IAsyncLifetime
     [Fact]
     public async Task NonFitsFramesAreStoredAsReceivedAndWatchCanBeSwitchedOff()
     {
-        await using var svc = new StorageService(_node, _dir); await svc.StartAsync();
+        await using var svc = new StorageService(_node, _dir) { CompressLights = false }; await svc.StartAsync();
         await Watch("cam");
         await Fire("cam", ".jpg", 1, "");
         Assert.True(await Eventually(() => svc.FramesSaved == 1));
@@ -118,7 +119,7 @@ public class StorageTests : IAsyncLifetime
     public async Task ChangingTheDirectoryAndRejectingAnUnusableOne()
     {
         string other = Path.Combine(_dir, "other");
-        await using var svc = new StorageService(_node, _dir); await svc.StartAsync();
+        await using var svc = new StorageService(_node, _dir) { CompressLights = false }; await svc.StartAsync();
         Assert.True((await Commands.CallAsync(_node, StorageIds.SetDirectory, (BinaryConvertibleString)other)).Ok.Value);
         Assert.False((await Commands.CallAsync(_node, StorageIds.SetDirectory, (BinaryConvertibleString)"")).Ok.Value);
         await Watch("cam"); await Fire("cam");
@@ -133,7 +134,7 @@ public class StorageTests : IAsyncLifetime
         var shooter = new FakeShooter(_node, "ss") { Fits = true }; await shooter.StartAsync();
         var def = new ScopeDefinition { Id = "stscope" }; def.Pointers.Add("sp"); def.Shooters.Add(new ScopeShooterRef { Id = "ss" });
         await using var scope = new SmartScope(_node, def); await scope.StartAsync();
-        await using var svc = new StorageService(_node, _dir); await svc.StartAsync();
+        await using var svc = new StorageService(_node, _dir) { CompressLights = false }; await svc.StartAsync();
         await Watch("stscope");
 
         Assert.True((await Commands.CallAsync(_node, ScopeIds.Command("stscope", "Observe"), new ObserveRequest
@@ -147,5 +148,46 @@ public class StorageTests : IAsyncLifetime
         var img = FitsImage.Parse(File.ReadAllBytes(Directory.GetFiles(_dir, "*0001.fits", SearchOption.AllDirectories).Single()));
         Assert.Equal("M 42", img.Get("OBJECT")); Assert.Equal("night1", img.Get("ELINKPLN")); Assert.Equal("Ha", img.Get("FILTER"));
         Assert.Equal(5.6 * 15, img.GetDouble("RA"), 4);                                               // the scope added its pointing
+    }
+
+    [Fact]
+    public async Task ADiskThatIsNearlyFullStopsTheSavingAndSaysSoAndSavingResumesWhenThereIsRoom()
+    {
+        long free = 10L << 30;
+        await using var svc = new StorageService(_node, _dir) { CompressLights = false, FreeBytes = _ => free, StopBelowBytes = 1L << 30 };
+        await svc.StartAsync();
+        var log = new List<LogEntry>();
+        await _node.HookEventAsync(LogIds.Entry, (LogEntry e) => { lock (log) log.Add(e); });
+        Assert.True((await Watch("cam1")).Ok.Value);
+
+        await Fire("cam1");
+        Assert.True(await Eventually(() => svc.FramesSaved == 1));
+        free = 512L << 20;                                                     // half a gigabyte left
+        await Fire("cam1"); await Fire("cam1");
+        Assert.True(await Eventually(() => { lock (log) return log.Any(e => e.Level.Text == "error" && e.Text.Text.Contains("nearly full")); }), "no warning in the session log");
+        await Task.Delay(300);
+        Assert.Equal(1, svc.FramesSaved);                                       // nothing more written
+        var state = Assert.Single((await _node.CallFunctionAsync<NOTESVoid, StorageState>(StorageIds.GetState, NOTESVoid.Void))!);
+        Assert.Contains("nearly full", state.Message.Text);
+
+        free = 10L << 30;                                                      // room again (a cleanup)
+        await Fire("cam1");
+        Assert.True(await Eventually(() => svc.FramesSaved == 2));
+        state = Assert.Single((await _node.CallFunctionAsync<NOTESVoid, StorageState>(StorageIds.GetState, NOTESVoid.Void))!);
+        Assert.Equal("", state.Message.Text);
+    }
+
+    [Fact]
+    public async Task ShortSpaceAtThePaceOfTheFramesIsWarnedOf()
+    {
+        long free = 100L << 30;
+        await using var svc = new StorageService(_node, _dir) { CompressLights = false, FreeBytes = _ => free, StopBelowBytes = 1 << 20, WarnBelow = TimeSpan.FromDays(3650) };
+        await svc.StartAsync();
+        var log = new List<LogEntry>();
+        await _node.HookEventAsync(LogIds.Entry, (LogEntry e) => { lock (log) log.Add(e); });
+        Assert.True((await Watch("cam1")).Ok.Value);
+        for (int i = 0; i < 4; i++) { await Fire("cam1"); await Task.Delay(50); }
+        Assert.True(await Eventually(() => { lock (log) return log.Any(e => e.Level.Text == "warn" && e.Text.Text.Contains("h of frames at this pace")); }), "no warning");
+        Assert.Equal(4, svc.FramesSaved);                                       // a warning only: everything is still saved
     }
 }
