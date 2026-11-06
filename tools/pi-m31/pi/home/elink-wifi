@@ -1,5 +1,5 @@
 #!/bin/sh
-# elink-wifi auto|ap|client
+# elink-wifi ap|client|auto   (at boot: ap)
 #   auto: wait for wlan0 to join a known network (netplan); if it has not within WAIT seconds, or the signal is weaker
 #         than MIN_SIGNAL dBm (a far-off home Wi-Fi at the observing spot), start the hotspot
 #   ap: the Pi's own open hotspot ELink-Pi, the Pi at 10.42.0.1 (web page http://10.42.0.1:8080/)

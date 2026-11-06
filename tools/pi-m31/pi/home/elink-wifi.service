@@ -1,10 +1,10 @@
 [Unit]
-Description=ELink Wi-Fi: join a known network, or start the ELink-Pi hotspot
+Description=ELink Wi-Fi: the ELink-Pi hotspot at boot (sudo elink-wifi client joins the known networks instead)
 After=network.target netplan-wpa-wlan0.service
 Wants=network.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/local/sbin/elink-wifi auto
+ExecStart=/usr/local/sbin/elink-wifi ap
 [Install]
 WantedBy=multi-user.target
