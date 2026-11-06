@@ -212,6 +212,9 @@
           <label>Focal length mm <input name="Focal" type="number" min="1" step="1" required></label>
           <label>Aperture mm <input name="Aperture" type="number" min="0" step="1"></label>
           <label>Pixel µm <input name="Pixel" type="number" min="0" step="0.01" placeholder="camera's"></label>
+          <label>Sensor width px <input name="SensorW" type="number" min="0" step="1" placeholder="camera's"></label>
+          <label>Sensor height px <input name="SensorH" type="number" min="0" step="1" placeholder="camera's"></label>
+          <p class="hint full">A DSLR (GPhoto) does not tell its pixel size or sensor size: fill in all three from the camera's specs, e.g. 6000 x 4000 px at 3.9 µm. Cooled astro cameras report their own: leave them empty.</p>
           <label class="check"><input name="Grade" type="checkbox" checked> reject bad frames</label>
           <label class="check"><input name="Center" type="checkbox"> centre by plate solve after each slew</label>
           <label class="check"><input name="Flip" type="checkbox" checked> meridian flip</label>

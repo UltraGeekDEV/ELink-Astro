@@ -894,7 +894,7 @@ function editScope(s, t) {
   f.Name.value = s.DisplayName || s.Id;
   const pointer = composition.MountPointers.find(p => p.Id === s.Pointers[0]);
   if (pointer) f.Mount.value = pointer.MountId;
-  if (t) { f.Camera.value = t.Cameras[0]?.CameraId ?? f.Camera.value; f.Focal.value = t.FocalLengthMm; f.Aperture.value = t.ApertureMm || ''; f.Pixel.value = t.Cameras[0]?.PixelSizeUm || ''; }
+  if (t) { f.Camera.value = t.Cameras[0]?.CameraId ?? f.Camera.value; f.Focal.value = t.FocalLengthMm; f.Aperture.value = t.ApertureMm || ''; f.Pixel.value = t.Cameras[0]?.PixelSizeUm || ''; f.SensorW.value = t.Cameras[0]?.SensorWidth || ''; f.SensorH.value = t.Cameras[0]?.SensorHeight || ''; }
   f.Grade.checked = s.GradeFrames; f.Center.checked = s.CenterAfterSlew; f.Flip.checked = s.MeridianFlip;
   $('setupInfo').textContent = `editing ${s.DisplayName || s.Id}`;
   $('setupForm').scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -916,7 +916,7 @@ $('setupForm').onsubmit = e => {
     const oldCam = editing?.train?.Cameras?.find(c => c.CameraId === f.Camera.value);
     const train = make('ImagingTrainDefinition', {
       ...(editing?.train ? clone(editing.train) : {}), Id: trainId, Label: editing?.train?.Label || `${f.Focal.value} mm`, FocalLengthMm: Number(f.Focal.value), ApertureMm: Number(f.Aperture.value) || 0,
-      Cameras: [make('TrainCamera', { ...(oldCam ? clone(oldCam) : {}), CameraId: f.Camera.value, Role: 'Imaging', PixelSizeUm: Number(f.Pixel.value) || 0 })],
+      Cameras: [make('TrainCamera', { ...(oldCam ? clone(oldCam) : {}), CameraId: f.Camera.value, Role: 'Imaging', PixelSizeUm: Number(f.Pixel.value) || 0, SensorWidth: Number(f.SensorW.value) | 0, SensorHeight: Number(f.SensorH.value) | 0 })],
     });
     if (!(await command(IDS.defineTrain, train)).Ok) return;
     const scope = make('ScopeDefinition', {
