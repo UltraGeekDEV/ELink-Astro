@@ -1,0 +1,9 @@
+#!/bin/sh
+# hostapd with /etc/elink/hotspot.conf, plus WPA2 when /etc/elink/hotspot.psk holds a password (8-63 characters)
+conf=/run/elink-hotspot.conf
+cp /etc/elink/hotspot.conf $conf
+if [ -s /etc/elink/hotspot.psk ]; then
+  printf "wpa=2\nwpa_key_mgmt=WPA-PSK\nrsn_pairwise=CCMP\nwpa_passphrase=%s\n" "$(head -n1 /etc/elink/hotspot.psk)" >> $conf
+fi
+chmod 600 $conf
+exec /usr/sbin/hostapd $conf

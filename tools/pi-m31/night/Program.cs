@@ -1,6 +1,6 @@
 // A stand-in for the desktop window on a laptop: joins the Pi station's mesh and does what a person would do in the
 // UI (connect, set up the 900 mm scope, frame M 31 wide, start, watch). It hosts no backend; it only calls the Pi.
-//   night HOST PORT setup|preview|start [stack]|watch SECONDS|pause|resume|abort|state
+//   night HOST PORT setup|preview|start [stack]|watch SECONDS|pause|resume|abort|state|saved|profile LABEL INDIPORT DRIVER...
 using System.Diagnostics;
 using System.Globalization;
 using ELink.Contracts;
@@ -41,6 +41,15 @@ switch (verb)
             string id = verb switch { "pause" => ImagingIds.Pause, "resume" => ImagingIds.Resume, _ => ImagingIds.Abort };
             var r = await Commands.CallAsync(node, id, NOTESVoid.Void);
             Log($"{verb}: {r.Ok.Value} {r.Error.Text}");
+            break;
+        }
+    case "profile":
+        {
+            // an equipment profile: the station runs indiserver with these drivers and connects the devices
+            var p = new EquipmentProfile { Label = args[3], Port = int.Parse(args[4]), AutoConnect = true };
+            foreach (var d in args.Skip(5)) p.Drivers.Add(d);
+            Log($"save profile {args[3]}: {Result(await Commands.CallAsync(node, ProfileIds.Save, p))}");
+            Log($"start profile {args[3]}: {Result(await Commands.CallAsync(node, ProfileIds.Start, (BinaryConvertibleString)args[3], TimeSpan.FromSeconds(60)))}");
             break;
         }
     case "saved":

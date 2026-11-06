@@ -1,0 +1,6 @@
+[Unit]
+Description=ELink hotspot: access point on wlan0 (started by elink-wifi)
+[Service]
+ExecStart=/usr/local/sbin/elink-hotspot-start
+Restart=on-failure
+RestartSec=3

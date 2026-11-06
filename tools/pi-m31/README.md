@@ -42,3 +42,17 @@ Install: copy the units to `/etc/systemd/system/`, `mon.sh` and `indi-ready.sh` 
 image ran on to its 10 min depth (1248 shots, about 8 hours). Found and fixed on the way: a frozen web page stalled the station
 (state events waited 30 s for it), the mount was not connected again after a power cut, the queue did not say why it stopped an
 image. Ubuntu's unattended upgrades restart the station when they update .NET (the image carries on in about 30 s).
+
+## The home rig (`pi/home/`)
+
+What the Pi boots now, in place of the simulators:
+
+| file | where | what |
+|---|---|---|
+| `elink-home.service` | `/etc/systemd/system/` | the station from `~/elink/home/station`, mesh on 5698, web on 8080/8081, state and frames in `~/elink/home`; `--profile Home` runs indiserver on 7624 with `indi_lx200_OnStep` and `indi_gphoto_ccd` and connects them (the profile lives in `~/elink/home/state/profiles.bin`; make it with `night HOST 5698 profile Home 7624 indi_lx200_OnStep indi_gphoto_ccd`) |
+| `elink-wifi` | `/usr/local/sbin/` | `auto` at boot: stay on a known Wi-Fi (netplan) if it joins within 90 s with a signal of -67 dBm or better, otherwise start the hotspot; `ap` and `client` switch by hand |
+| `elink-wifi.service` | `/etc/systemd/system/` | runs `elink-wifi auto` at boot |
+| `elink-ap-hostapd.service`, `elink-hotspot-start`, `hotspot.conf` | units; `/usr/local/sbin/`; `/etc/elink/` | the hotspot ELink-Pi on channel 6, the Pi at 10.42.0.1 (web page `http://10.42.0.1:8080/`); open unless `/etc/elink/hotspot.psk` holds a password of 8-63 characters |
+| `elink-ap-dhcp.service` | `/etc/systemd/system/` | dnsmasq handing out 10.42.0.10-100 on the hotspot (no DNS, no gateway) |
+
+Needs `hostapd`, `dnsmasq-base` and `iw` (apt), and the user in `dialout` (OnStep over USB serial) and `plugdev` (the camera).

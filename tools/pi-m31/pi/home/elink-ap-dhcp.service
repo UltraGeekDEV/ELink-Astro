@@ -1,0 +1,7 @@
+[Unit]
+Description=ELink hotspot: addresses for phones and laptops on wlan0 (started by elink-wifi)
+After=elink-ap-hostapd.service
+[Service]
+ExecStart=/usr/sbin/dnsmasq --keep-in-foreground --port=0 --interface=wlan0 --bind-dynamic --dhcp-range=10.42.0.10,10.42.0.100,12h --dhcp-option=3 --dhcp-option=6 --dhcp-leasefile=/run/elink-ap.leases --conf-file=/dev/null
+Restart=on-failure
+RestartSec=3

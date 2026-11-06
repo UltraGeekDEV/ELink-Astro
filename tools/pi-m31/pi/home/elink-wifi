@@ -1,0 +1,38 @@
+#!/bin/sh
+# elink-wifi auto|ap|client
+#   auto: wait for wlan0 to join a known network (netplan); if it has not within WAIT seconds, or the signal is weaker
+#         than MIN_SIGNAL dBm (a far-off home Wi-Fi at the observing spot), start the hotspot
+#   ap: the Pi's own open hotspot ELink-Pi, the Pi at 10.42.0.1 (web page http://10.42.0.1:8080/)
+#   client: back to joining the known networks
+WAIT=${WAIT:-90}
+MIN_SIGNAL=${MIN_SIGNAL:--67}
+AP_NET=/run/systemd/network/05-elink-ap.network
+ap() {
+  systemctl stop netplan-wpa-wlan0.service 2>/dev/null
+  printf "[Match]\nName=wlan0\n[Network]\nAddress=10.42.0.1/24\nConfigureWithoutCarrier=yes\nLinkLocalAddressing=no\nIPv6AcceptRA=no\n" > $AP_NET
+  networkctl reload; networkctl reconfigure wlan0
+  systemctl start elink-ap-hostapd.service elink-ap-dhcp.service
+  echo "hotspot ELink-Pi up: 10.42.0.1"
+}
+client() {
+  systemctl stop elink-ap-dhcp.service elink-ap-hostapd.service 2>/dev/null
+  rm -f $AP_NET; networkctl reload; networkctl reconfigure wlan0
+  systemctl start netplan-wpa-wlan0.service
+  echo "joining the known networks"
+}
+case "$1" in
+  ap) ap ;;
+  client) client ;;
+  auto)
+    i=0
+    while [ $i -lt $WAIT ]; do
+      if ip -4 addr show wlan0 | grep -q "inet "; then
+        sig=$(iw dev wlan0 link | awk "/signal:/{print \$2}")
+        if [ -n "$sig" ] && [ "$sig" -ge "$MIN_SIGNAL" ]; then echo "wlan0 joined a known network ($sig dBm)"; exit 0; fi
+        echo "known network too weak (${sig:-?} dBm)"; ap; exit 0
+      fi
+      sleep 1; i=$((i+1))
+    done
+    echo "no known network after ${WAIT} s"; ap ;;
+  *) echo "usage: elink-wifi auto|ap|client"; exit 2 ;;
+esac
